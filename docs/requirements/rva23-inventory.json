@@ -1,0 +1,10 @@
+{
+  "profile": "RVA23U64+RVA23S64",
+  "version": "1.0",
+  "date": "2024-10-17",
+  "source": "https://docs.riscv.org/reference/rva23/v1.0/_attachments/rva23-profile.pdf",
+  "scope": "Direct mandatory names plus explicit Sha members; not transitive extension closure.",
+  "mandatory_user": ["RV64I", "M", "A", "F", "D", "C", "B", "Zicsr", "Zicntr", "Zihpm", "Ziccif", "Ziccrse", "Ziccamoa", "Zicclsm", "Za64rs", "Zihintpause", "Zic64b", "Zicbom", "Zicbop", "Zicboz", "Zfhmin", "Zkt", "V", "Zvfhmin", "Zvbb", "Zvkt", "Zihintntl", "Zicond", "Zimop", "Zcmop", "Zcb", "Zfa", "Zawrs", "Supm"],
+  "mandatory_supervisor_additions": ["Zifencei", "Ss1p13", "Svbare", "Sv39", "Svade", "Ssccptr", "Sstvecd", "Sstvala", "Sscounterenw", "Svpbmt", "Svinval", "Svnapot", "Sstc", "Sscofpmf", "Ssnpm", "Ssu64xl", "Sha"],
+  "sha_members": ["H", "Ssstateen", "Shcounterenw", "Shvstvala", "Shtvala", "Shvstvecd", "Shvsatpa", "Shgatpa"]
+}

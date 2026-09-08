@@ -1,0 +1,44 @@
+{
+  "status": "pass",
+  "scope": "canonical DTS/DTB structural verification (25 checks)",
+  "observed_at_utc": "2026-09-08T14:08:16.253025+00:00",
+  "source_sha256": {
+    "software/dts/fursoy_s0.dts": "238fcea0ee8d1afa7b95c0b48b1766e50854a5802e02e8abed01b88b3e2b5951",
+    "tools/run_dt_s0.py": "7012cb37db90534afab6b51af6ffa5b7830fbf7e4b78786981d7e7a090f73f98"
+  },
+  "checks": {
+    "01_dts_compiles": true,
+    "02_dtb_decompiles": true,
+    "03_root_compatible_exact": true,
+    "04_one_hart_0_only": true,
+    "05_isa_string_exact": true,
+    "06_isa_extensions_exact": true,
+    "07_mmu_type_sv39": true,
+    "08_timebase_10mhz": true,
+    "09_memory_base_0x80000000": true,
+    "10_memory_size_256mib": true,
+    "11_firmware_reserved_base_size": true,
+    "12_firmware_has_nomap": true,
+    "13_no_active_clint_node": true,
+    "14_no_riscv_clint0": true,
+    "15_no_sifive_clint0": true,
+    "16_plic_base_aperture": true,
+    "17_plic_source_count_31": true,
+    "18_plic_s_context_binding": true,
+    "19_uart_base_aperture": true,
+    "20_uart_reg_shift_2": true,
+    "21_uart_reg_io_width_4": true,
+    "22_uart_interrupt_source_1": true,
+    "23_stdout_path_resolves_to_uart": true,
+    "24_no_riscv_virtio": true,
+    "25_dtb_safe_placement_no_overlap": true
+  },
+  "dtb_sha256": "1d15e5cce799fefea5aac2f6afae9daba474c83282bdf11e0084ae9fea2a67f7",
+  "dtb_size_bytes": 1675,
+  "fdt_header": {
+    "magic": "0xd00dfeed",
+    "totalsize": 1675,
+    "boot_cpuid_phys": 0,
+    "version": 17
+  }
+}

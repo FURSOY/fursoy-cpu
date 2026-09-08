@@ -1,0 +1,83 @@
+{
+  "status": "pass",
+  "scope": "Spike reference only; no DUT execution or PPA",
+  "observed_at_utc": "2026-09-08T09:57:06.660184+00:00",
+  "cases": [
+    {
+      "name": "success",
+      "command": [
+        "/mnt/c/Projeler/fursoy-cpu/build/spike-build/spike",
+        "--isa=RV64I_Zicsr_Zifencei",
+        "--priv=m",
+        "-m0x80000000:0x20000",
+        "+signature=/mnt/c/Projeler/fursoy-cpu/build/baremetal/success.signature",
+        "+signature-granularity=8",
+        "/mnt/c/Projeler/fursoy-cpu/build/baremetal/smoke.elf"
+      ],
+      "elf_sha256": "74a553e7e4d72bf4a4f38a5e54c05668620ec3407391c58789623839cb4002e3",
+      "outcome": "pass",
+      "expected": "pass",
+      "returncode": 0,
+      "signature": "465552534f593031\n0000000000000001\n0000000000000001\n0000000000000000\n000000000000000b\n0000000080000040\n0000000000000000\n0000000000000001\n",
+      "matched": true
+    },
+    {
+      "name": "unexpected_trap",
+      "command": [
+        "/mnt/c/Projeler/fursoy-cpu/build/spike-build/spike",
+        "--isa=RV64I_Zicsr_Zifencei",
+        "--priv=m",
+        "-m0x80000000:0x20000",
+        "+signature=/mnt/c/Projeler/fursoy-cpu/build/baremetal/unexpected_trap.signature",
+        "+signature-granularity=8",
+        "/mnt/c/Projeler/fursoy-cpu/build/baremetal/unexpected_trap.elf"
+      ],
+      "elf_sha256": "f5d63170f1109a58166441e14a88aec0e004300286fffd748aa982315c73d69f",
+      "outcome": "reported_failure",
+      "expected": "reported_failure",
+      "returncode": 1,
+      "signature": "465552534f593031\n0000000000000001\n0000000000000002\n0000000000000064\n0000000000000003\n0000000080000040\n0000000080000040\n0000000000000000\n",
+      "matched": true
+    },
+    {
+      "name": "bad_signature",
+      "command": [
+        "/mnt/c/Projeler/fursoy-cpu/build/spike-build/spike",
+        "--isa=RV64I_Zicsr_Zifencei",
+        "--priv=m",
+        "-m0x80000000:0x20000",
+        "+signature=/mnt/c/Projeler/fursoy-cpu/build/baremetal/bad_signature.signature",
+        "+signature-granularity=8",
+        "/mnt/c/Projeler/fursoy-cpu/build/baremetal/bad_signature.elf"
+      ],
+      "elf_sha256": "33a787e1fdebd2b274055f58c69d54e3175833d29533bf7a3b839b420f6d4f56",
+      "outcome": "signature_mismatch",
+      "expected": "signature_mismatch",
+      "returncode": 0,
+      "signature": "0000000000000000\n0000000000000001\n0000000000000001\n0000000000000000\n000000000000000b\n0000000080000040\n0000000000000000\n0000000000000001\n",
+      "matched": true
+    },
+    {
+      "name": "hang",
+      "command": [
+        "/mnt/c/Projeler/fursoy-cpu/build/spike-build/spike",
+        "--isa=RV64I_Zicsr_Zifencei",
+        "--priv=m",
+        "-m0x80000000:0x20000",
+        "+signature=/mnt/c/Projeler/fursoy-cpu/build/baremetal/hang.signature",
+        "+signature-granularity=8",
+        "/mnt/c/Projeler/fursoy-cpu/build/baremetal/hang.elf"
+      ],
+      "elf_sha256": "5015bc4f584794b91f61aa5ee0eb61859b6f0edfd38cb8cc594923c76970d3bb",
+      "outcome": "timeout",
+      "expected": "timeout",
+      "returncode": null,
+      "signature": null,
+      "matched": true
+    }
+  ],
+  "spike_commit": "4ffd6ba860f4190ceac2716fa3c2cf139e85538f",
+  "spike_sha256": "820d5776180d0c33224e910b724032570abbfd422a507269353061f4d5d658e2",
+  "elf_sha256": "74a553e7e4d72bf4a4f38a5e54c05668620ec3407391c58789623839cb4002e3",
+  "runner_sha256": "814712223deb7fb9370c45505bcd950f1b2411538d97fd16e4031ca06b4352d6"
+}

@@ -1,0 +1,25 @@
+From: Fursoy CPU Team <fursoy@fursoy.org>
+Subject: [PATCH] riscv: cpufeature: Report misaligned access as unsupported for trap-only hardware
+
+Fursoy Slice-0 handles misaligned memory accesses via hardware exception trap
+without hardware misaligned support. Set misaligned_access_speed to
+RISCV_HWPROBE_MISALIGNED_UNSUPPORTED to avoid slow boot probe cycles and
+truthfully report baseline hardware capabilities.
+
+---
+ arch/riscv/kernel/cpufeature.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/arch/riscv/kernel/cpufeature.c
++++ b/arch/riscv/kernel/cpufeature.c
+@@ -585,6 +585,10 @@ static void check_unaligned_access(int cpu)
+ 	void *src;
+ 	long speed = RISCV_HWPROBE_MISALIGNED_SLOW;
+ 
++	/* Hardware does not support misaligned accesses without trap */
++	per_cpu(misaligned_access_speed, cpu) = RISCV_HWPROBE_MISALIGNED_UNSUPPORTED;
++	return;
++
+ 	/* We are already set since the last check */
+ 	if (per_cpu(misaligned_access_speed, cpu) != RISCV_HWPROBE_MISALIGNED_UNKNOWN)
+ 		return;

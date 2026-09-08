@@ -1,0 +1,31 @@
+{
+  "status": "pass",
+  "scope": "DUT LSU port; no core integration",
+  "observed_at_utc": "2026-09-08T09:55:25.884684+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_lsu_port.sv": "64572b3bbc5ccbd08b615b99d47e1a02c4feee789064754466f6ae2f8f249bab",
+    "verification/lsu_port_s0_tb.cpp": "b6e73300c9c9c91660c4cec63db7d3b2c80de152c590820a10cc1907f768f3ad",
+    "tools/run_lsu_port_s0.py": "2c7d4761c3793b806064c497a435289a75b27453d1fab55716aa5cc0f0824243"
+  },
+  "build_command": [
+    "verilator",
+    "--cc",
+    "--exe",
+    "--build",
+    "--assert",
+    "-Wall",
+    "-j",
+    "2",
+    "--top-module",
+    "fursoy_s0_lsu_port",
+    "--Mdir",
+    "/mnt/c/Projeler/fursoy-cpu/build/lsu_port_s0",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_lsu_port.sv",
+    "/mnt/c/Projeler/fursoy-cpu/verification/lsu_port_s0_tb.cpp"
+  ],
+  "simulation": {
+    "status": "pass",
+    "cycles": 10,
+    "fault_checks": 2
+  }
+}

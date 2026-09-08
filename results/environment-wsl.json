@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-09-06T15:49:56.246793+00:00",
+  "host": {
+    "system": "Linux",
+    "release": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "logical_cpus": 16,
+    "probe_python": "3.12.3",
+    "MemTotal_bytes": 16634236928,
+    "SwapTotal_bytes": 4294967296
+  },
+  "tools": {
+    "g++": {
+      "command": [
+        "g++",
+        "--version"
+      ],
+      "path": "/usr/bin/g++",
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+      "stderr": ""
+    },
+    "gcc": {
+      "command": [
+        "gcc",
+        "--version"
+      ],
+      "path": "/usr/bin/gcc",
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+      "stderr": ""
+    },
+    "git": {
+      "command": [
+        "git",
+        "--version"
+      ],
+      "path": "/usr/bin/git",
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "git version 2.43.0",
+      "stderr": ""
+    },
+    "make": {
+      "command": [
+        "make",
+        "--version"
+      ],
+      "path": "/usr/bin/make",
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "GNU Make 4.3\nBuilt for x86_64-pc-linux-gnu\nCopyright (C) 1988-2020 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.",
+      "stderr": ""
+    },
+    "openroad": {
+      "status": "missing",
+      "command": [
+        "openroad",
+        "--version"
+      ]
+    },
+    "python3": {
+      "command": [
+        "python3",
+        "--version"
+      ],
+      "path": "/usr/bin/python3",
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "Python 3.12.3",
+      "stderr": ""
+    },
+    "riscv64-unknown-elf-gcc": {
+      "command": [
+        "riscv64-unknown-elf-gcc",
+        "--version"
+      ],
+      "path": "/usr/bin/riscv64-unknown-elf-gcc",
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "riscv64-unknown-elf-gcc (13.2.0-11ubuntu1+12) 13.2.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+      "stderr": ""
+    },
+    "spike": {
+      "status": "missing",
+      "command": [
+        "spike",
+        "--help"
+      ]
+    },
+    "verilator": {
+      "command": [
+        "verilator",
+        "--version"
+      ],
+      "path": "/usr/bin/verilator",
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+      "stderr": ""
+    },
+    "yosys": {
+      "status": "missing",
+      "command": [
+        "yosys",
+        "-V"
+      ]
+    }
+  },
+  "profiles": {
+    "bootstrap": "ready",
+    "rtl": "ready",
+    "isa": "not_ready",
+    "physical": "not_ready"
+  },
+  "scope": "Executable discovery and version/help invocation only; no compile, ISA or RTL validation."
+}

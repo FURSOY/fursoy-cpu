@@ -1,0 +1,92 @@
+{
+  "status": "build_verified",
+  "execution": "not_run",
+  "observed_at_utc": "2026-09-06T21:15:58.223139+00:00",
+  "source_sha256": {
+    "software/baremetal/start.S": "911ca13a4128ee22419857dc38b20b721719e3e2559c1fa020e0688cc62212e9",
+    "software/baremetal/smoke.c": "d2ddf625dd233df03a791678b5c355974559ab6d173c2da0d166d11bc5e37168",
+    "software/baremetal/link.ld": "ca8a8d5fad1d160c62d19523330c4eea847d2067d205ab2881138ccc5e05cd15",
+    "tools/build_baremetal.py": "79eac65a65ebc9c139aa2b8d3400c189e7a9636b22cf3ed82d4ab32a9ccf958b"
+  },
+  "compiler": "riscv64-unknown-elf-gcc (13.2.0-11ubuntu1+12) 13.2.0",
+  "command": [
+    "riscv64-unknown-elf-gcc",
+    "-march=rv64i_zicsr_zifencei",
+    "-mabi=lp64",
+    "-mcmodel=medany",
+    "-mno-relax",
+    "-msmall-data-limit=0",
+    "-ffreestanding",
+    "-fno-builtin",
+    "-fno-pic",
+    "-fno-pie",
+    "-fno-stack-protector",
+    "-fno-asynchronous-unwind-tables",
+    "-nostdlib",
+    "-nostartfiles",
+    "-O2",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-Wl,--no-relax",
+    "-Wl,--build-id=none",
+    "-Wl,--fatal-warnings",
+    "-T",
+    "/mnt/c/Projeler/fursoy-cpu/software/baremetal/link.ld",
+    "/mnt/c/Projeler/fursoy-cpu/software/baremetal/start.S",
+    "/mnt/c/Projeler/fursoy-cpu/software/baremetal/smoke.c",
+    "-Wl,-Map,/mnt/c/Projeler/fursoy-cpu/build/baremetal/smoke.map",
+    "-o",
+    "/mnt/c/Projeler/fursoy-cpu/build/baremetal/smoke.elf"
+  ],
+  "elf": {
+    "entry": 2147483648,
+    "load_segments": [
+      {
+        "address": 2147483648,
+        "filesz": 384,
+        "memsz": 384,
+        "flags": 5,
+        "offset": 4096
+      },
+      {
+        "address": 2147549184,
+        "filesz": 80,
+        "memsz": 80,
+        "flags": 6,
+        "offset": 8192
+      },
+      {
+        "address": 2147553280,
+        "filesz": 0,
+        "memsz": 800,
+        "flags": 6,
+        "offset": 0
+      }
+    ],
+    "symbols": {
+      "_start": 2147483648,
+      "ecall_probe": 2147483712,
+      "park": 2147483764,
+      "trap_handler": 2147483768,
+      "trap_fail": 2147483848,
+      "fail": 2147483856,
+      "smoke_main": 2147483888,
+      "tohost": 2147549184,
+      "fromhost": 2147549192,
+      "begin_signature": 2147549200,
+      "signature": 2147549200,
+      "end_signature": 2147549264,
+      "__bss_start": 2147553280,
+      "values": 2147553280,
+      "__bss_end": 2147554080,
+      "__stack_top": 2147614720
+    }
+  },
+  "elf_sha256": "74a553e7e4d72bf4a4f38a5e54c05668620ec3407391c58789623839cb4002e3",
+  "negative_link": {
+    "status": "rejected",
+    "exit_code": 1,
+    "reason": "data overlaps stack reserve"
+  }
+}

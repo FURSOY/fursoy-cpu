@@ -1,0 +1,31 @@
+{
+  "status": "pass",
+  "scope": "DUT integer ALU only; no pipeline or trap CSR",
+  "observed_at_utc": "2026-09-08T14:16:32.797546+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_int_alu.sv": "4bf05f9114c0e35c6c51020f126770127a28178d4eccd9798f8a8f5fa000e6d0",
+    "verification/int_alu_s0_tb.cpp": "37e950a144ca5dc39b196303fde69ce88ece797df5e3455d84c970b9341ce942",
+    "tools/run_int_alu_s0.py": "4cf32c7d51df76e3e89eb3ff66e59f7f3b04a4b51c59d56fc399565b28d7ffa5"
+  },
+  "build_command": [
+    "verilator",
+    "--cc",
+    "--exe",
+    "--build",
+    "--assert",
+    "-Wall",
+    "-j",
+    "2",
+    "--top-module",
+    "fursoy_s0_int_alu",
+    "--Mdir",
+    "/mnt/c/Projeler/fursoy-cpu/build/int_alu_s0/dut",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_int_alu.sv",
+    "/mnt/c/Projeler/fursoy-cpu/verification/int_alu_s0_tb.cpp"
+  ],
+  "simulation": {
+    "status": "pass",
+    "checks": 60
+  },
+  "mutation": "detected"
+}

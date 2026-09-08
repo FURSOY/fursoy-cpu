@@ -1,0 +1,30 @@
+{
+  "status": "pass",
+  "scope": "DUT Zicsr decode and RMW calculation",
+  "observed_at_utc": "2026-09-08T09:56:29.515679+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_csr.sv": "fa55d144d603522c68d03c3b5ad1bae1437698809574dc1c7d4576dcfd1a1dcc",
+    "verification/csr_s0_tb.cpp": "4becd5a4bf49934a2c77d1ed17773bb9bcd8ac648fad9be850700dc28f2c9745",
+    "tools/run_csr_s0.py": "716a730b2bf4a52f82fb48e9137fd7710dae0ee010fd1d2b79866eb833bbb0f7"
+  },
+  "build_command": [
+    "verilator",
+    "--cc",
+    "--exe",
+    "--build",
+    "--assert",
+    "-Wall",
+    "-j",
+    "2",
+    "--top-module",
+    "fursoy_s0_csr",
+    "--Mdir",
+    "/mnt/c/Projeler/fursoy-cpu/build/csr_s0",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_csr.sv",
+    "/mnt/c/Projeler/fursoy-cpu/verification/csr_s0_tb.cpp"
+  ],
+  "simulation": {
+    "status": "pass",
+    "checks": 75
+  }
+}

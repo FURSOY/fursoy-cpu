@@ -1,0 +1,45 @@
+{
+  "status": "pass",
+  "scope": "integrated Sv39 CSR, SFENCE, page-fault routing, precision and interrupt interaction",
+  "observed_at_utc": "2026-09-08T09:56:15.693707+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_fetch.sv": "a3b1cf21a06f4b0730c7a05233c5d063bce2d5f9c1ccef11456e3bb9981e0697",
+    "rtl/core/fursoy_s0_int_alu.sv": "515625ec7481a6676c31b7335bc9830243c57f585cac5c993e9de64162c079cc",
+    "rtl/core/fursoy_s0_control.sv": "d40af0f5b27a76813fed8e8c6616ffb58495b7e57795fdc2ee180fef29a720d4",
+    "rtl/core/fursoy_s0_lsu_decode.sv": "dd65866fc5cb2128d54eee8a639053fa05087fdda3f00e86b190102dd796f200",
+    "rtl/core/fursoy_s0_lsu_port.sv": "64572b3bbc5ccbd08b615b99d47e1a02c4feee789064754466f6ae2f8f249bab",
+    "rtl/core/fursoy_s0_csr.sv": "fa55d144d603522c68d03c3b5ad1bae1437698809574dc1c7d4576dcfd1a1dcc",
+    "rtl/core/fursoy_s0_mmu.sv": "d91a5e555834153b8f9f1390b32c1cc0def8a167258007bd0a38ca181ab9ea2f",
+    "rtl/core/fursoy_s0_core.sv": "c141371c904f9cd3c7a54838e6afdfedecc63913cd3f04410897c2b7255d3c6e",
+    "verification/core_sv39_s0_tb.cpp": "42d62078c0c6388fc8d5bead0b6c4ed47cafa0bab6e7896ab1cccaad976da41c",
+    "tools/run_core_sv39_s0.py": "dd70e104f27207eef249f476c88b92545ffc0994cd9296b3ad62dce6cb29c00e"
+  },
+  "build_command": [
+    "verilator",
+    "--cc",
+    "--exe",
+    "--build",
+    "--assert",
+    "-Wall",
+    "-j",
+    "2",
+    "--top-module",
+    "fursoy_s0_core",
+    "-GRESET_MTVEC=64'h0000000080000300",
+    "--Mdir",
+    "/mnt/c/Projeler/fursoy-cpu/build/core_sv39_s0",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_fetch.sv",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_int_alu.sv",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_control.sv",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_lsu_decode.sv",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_lsu_port.sv",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_csr.sv",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_mmu.sv",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_core.sv",
+    "/mnt/c/Projeler/fursoy-cpu/verification/core_sv39_s0_tb.cpp"
+  ],
+  "simulation": {
+    "status": "pass",
+    "scenarios": 21
+  }
+}

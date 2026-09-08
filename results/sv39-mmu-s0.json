@@ -1,0 +1,30 @@
+{
+  "status": "pass",
+  "scope": "Sv39 translation, serialized PTW, fault taxonomy, cancellation and store retirement",
+  "observed_at_utc": "2026-09-08T09:56:20.099498+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_mmu.sv": "d91a5e555834153b8f9f1390b32c1cc0def8a167258007bd0a38ca181ab9ea2f",
+    "verification/sv39_mmu_s0_tb.cpp": "dbe1dc67fbbf567c72d65c52ac34b6d8c01d5e4988a1af0de1a98819a3f53883",
+    "tools/run_sv39_mmu_s0.py": "0248ef48f04e17cd581e359e52bf461a70d76781922ae8c502e907279cc30721"
+  },
+  "build_command": [
+    "verilator",
+    "--cc",
+    "--exe",
+    "--build",
+    "--assert",
+    "-Wall",
+    "-j",
+    "2",
+    "--top-module",
+    "fursoy_s0_mmu",
+    "--Mdir",
+    "/mnt/c/Projeler/fursoy-cpu/build/sv39_mmu_s0",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s0_mmu.sv",
+    "/mnt/c/Projeler/fursoy-cpu/verification/sv39_mmu_s0_tb.cpp"
+  ],
+  "simulation": {
+    "status": "pass",
+    "scenarios": 54
+  }
+}

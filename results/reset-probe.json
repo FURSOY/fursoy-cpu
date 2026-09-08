@@ -1,0 +1,45 @@
+{
+  "status": "pass",
+  "scope": "Pinned Spike reset model; no Fursoy RTL reset claim",
+  "observed_at_utc": "2026-09-08T09:57:04.463991+00:00",
+  "build_command": [
+    "riscv64-unknown-elf-gcc",
+    "-march=rv64i_zicsr_zifencei",
+    "-mabi=lp64",
+    "-mcmodel=medany",
+    "-mno-relax",
+    "-msmall-data-limit=0",
+    "-nostdlib",
+    "-nostartfiles",
+    "-Wl,--no-relax",
+    "-Wl,--build-id=none",
+    "-Wl,--fatal-warnings",
+    "-T",
+    "/mnt/c/Projeler/fursoy-cpu/software/baremetal/link.ld",
+    "/mnt/c/Projeler/fursoy-cpu/software/baremetal/reset_probe.S",
+    "-o",
+    "/mnt/c/Projeler/fursoy-cpu/build/baremetal/reset_probe.elf"
+  ],
+  "spike_command": [
+    "/mnt/c/Projeler/fursoy-cpu/build/spike-build/spike",
+    "--isa=RV64I_Zicsr_Zifencei",
+    "--priv=m",
+    "-m0x80000000:0x20000",
+    "+signature=/mnt/c/Projeler/fursoy-cpu/build/baremetal/reset_probe.signature",
+    "+signature-granularity=8",
+    "/mnt/c/Projeler/fursoy-cpu/build/baremetal/reset_probe.elf"
+  ],
+  "elf_sha256": "704e74aa87abc70dc868bed960f25de2fc1000f49eb820a9b9210b367b3aeb4b",
+  "spike_sha256": "820d5776180d0c33224e910b724032570abbfd422a507269353061f4d5d658e2",
+  "signature": [
+    5068047473442369585,
+    1,
+    1,
+    6144,
+    0,
+    0,
+    0,
+    0
+  ],
+  "matched": true
+}

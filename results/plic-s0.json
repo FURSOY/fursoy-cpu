@@ -1,0 +1,31 @@
+{
+  "status": "pass",
+  "scope": "Fursoy CPU PLIC v1 focused architectural verification suite",
+  "observed_at_utc": "2026-09-08T14:17:12.771749+00:00",
+  "source_sha256": {
+    "rtl/platform/fursoy_s0_plic.sv": "8df8a0fc541740f13a1c9b1e57e015404d84cc9fee079b8024e647496f090d5d",
+    "verification/plic_s0_tb.cpp": "b3ff89d5f66ba7fb30092042aa3f191647ebeccc0a4e0f06b4d7fe488a932e91",
+    "tools/run_plic_s0.py": "e20c2a8e4ce1242fe66799d055a977cbd06e69ddb85a68bc1eab11a5634103e1"
+  },
+  "build_command": [
+    "verilator",
+    "--cc",
+    "--exe",
+    "--build",
+    "--assert",
+    "-Wall",
+    "-j",
+    "2",
+    "--top-module",
+    "fursoy_s0_plic",
+    "--Mdir",
+    "/mnt/c/Projeler/fursoy-cpu/build/plic_s0",
+    "/mnt/c/Projeler/fursoy-cpu/rtl/platform/fursoy_s0_plic.sv",
+    "/mnt/c/Projeler/fursoy-cpu/verification/plic_s0_tb.cpp"
+  ],
+  "simulation": {
+    "status": "pass",
+    "scenarios": 28,
+    "cycles": 364
+  }
+}

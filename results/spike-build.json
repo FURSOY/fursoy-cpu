@@ -1,0 +1,12 @@
+{
+  "status": "built",
+  "lock": {
+    "repository": "https://github.com/riscv-software-src/riscv-isa-sim.git",
+    "commit": "4ffd6ba860f4190ceac2716fa3c2cf139e85538f",
+    "selection": "Observed upstream HEAD on 2026-09-06; pinned development snapshot, not a stable-release claim.",
+    "jobs": 4,
+    "configure": []
+  },
+  "observed_at_utc": "2026-09-06T15:26:10.087350+00:00",
+  "binary_sha256": "820d5776180d0c33224e910b724032570abbfd422a507269353061f4d5d658e2"
+}

@@ -1,0 +1,44 @@
+# Fursoy CPU .gitignore
+# ==============================================================================
+
+# Rebuildable compilation and simulation outputs
+build/
+obj_dir/
+
+# Intermediate object and binary artifacts outside build/
+*.o
+*.a
+*.so
+*.dylib
+*.elf
+*.bin
+*.hex
+*.exe
+
+# Waveforms and simulation traces
+*.vcd
+*.fst
+*.vpd
+*.wlf
+
+# Python bytecode and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+ENV/
+
+# Editor and IDE metadata / swap files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# OS-generated metadata
+.DS_Store
+Thumbs.db
