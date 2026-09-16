@@ -1,0 +1,719 @@
+{
+  "status": "pass",
+  "milestone": "Slice-0 FPGA-Targeted Synthesis and Sub-Block P&R Characterization",
+  "observed_at_utc": "2026-09-16T18:15:50.699532+00:00",
+  "tool_versions": {
+    "yosys": "Yosys 0.33 (git sha1 2584903a060)",
+    "abc": "UC Berkeley, ABC 1.01 (compiled Apr 1 2024 04:53:45)",
+    "nextpnr_ecp5": "nextpnr-ecp5 0.6-3build5",
+    "verilator": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+    "sv2v": "sv2v v0.0.13"
+  },
+  "classification": {
+    "generic_rtl_elaboration": "Yosys 0.33 AST/RTLIL elaboration across all 18 production SoC modules",
+    "fpga_technology_mapping": "Yosys 0.33 synth_ecp5 for targeted blocks",
+    "fpga_subblock_pnr": "nextpnr-ecp5 0.6-3build5 (LFE5U-85F-6CABGA381, speed 8) out-of-context for selected sub-blocks",
+    "full_core_fpga_pnr": "NOT PERFORMED (bounded by un-macroed cache array flattening)",
+    "full_soc_fpga_pnr": "NOT PERFORMED",
+    "asic_synthesis": "NOT PERFORMED",
+    "asic_sta": "NOT PERFORMED",
+    "memory_modeling": "Qualitative physical macro expectation; no specific ASIC PDK area claimed"
+  },
+  "frozen_hashes": {
+    "core_sha256": "d343b180ba63c4e18fcd93d0fb52d8e0e6963df8f5454ef09218b646e23571ce",
+    "sb_sha256": "301a9f99c86811ef6d915e675588f648673b4920e420ecf4b841825dd4a20d38",
+    "manifest_sha256": "bd609b91e6471bb0abbb2c8c67dc1d9bdadc1f109a36d1488c1c21c88c1d43f2"
+  },
+  "production_rtl_unchanged": true,
+  "module_elaboration_stats": {
+    "fursoy_s0_int_alu": {
+      "wires": 256,
+      "wire_bits": 7241,
+      "public_wires": 61,
+      "public_wire_bits": 2156,
+      "cells_total": 206,
+      "cells": {
+        "$add": 5,
+        "$and": 2,
+        "$div": 4,
+        "$eq": 20,
+        "$logic_and": 5,
+        "$logic_not": 18,
+        "$lt": 4,
+        "$mod": 4,
+        "$mul": 5,
+        "$mux": 102,
+        "$or": 2,
+        "$pmux": 12,
+        "$reduce_bool": 1,
+        "$reduce_or": 6,
+        "$shl": 4,
+        "$shr": 4,
+        "$sshr": 4,
+        "$sub": 2,
+        "$xor": 2
+      }
+    },
+    "fursoy_s0_control": {
+      "wires": 45,
+      "wire_bits": 844,
+      "public_wires": 15,
+      "public_wire_bits": 436,
+      "cells_total": 37,
+      "cells": {
+        "$add": 4,
+        "$eq": 9,
+        "$ge": 2,
+        "$logic_and": 3,
+        "$logic_not": 1,
+        "$lt": 2,
+        "$mux": 8,
+        "$ne": 2,
+        "$pmux": 3,
+        "$reduce_bool": 2,
+        "$reduce_or": 1
+      }
+    },
+    "fursoy_s0_lsu_decode": {
+      "wires": 80,
+      "wire_bits": 718,
+      "public_wires": 25,
+      "public_wire_bits": 391,
+      "cells_total": 79,
+      "cells": {
+        "$add": 1,
+        "$and": 1,
+        "$eq": 19,
+        "$logic_and": 6,
+        "$logic_not": 3,
+        "$logic_or": 3,
+        "$mux": 33,
+        "$pmux": 3,
+        "$reduce_bool": 1,
+        "$reduce_or": 7,
+        "$shl": 1,
+        "$sub": 1
+      }
+    },
+    "fursoy_s0_lsu_port": {
+      "wires": 186,
+      "wire_bits": 3078,
+      "public_wires": 80,
+      "public_wire_bits": 1613,
+      "cells_total": 141,
+      "cells": {
+        "$add": 2,
+        "$and": 2,
+        "$eq": 13,
+        "$gt": 4,
+        "$logic_and": 24,
+        "$logic_not": 9,
+        "$logic_or": 9,
+        "$lt": 4,
+        "$mux": 33,
+        "$ne": 4,
+        "$not": 2,
+        "$or": 2,
+        "$pmux": 4,
+        "$reduce_and": 5,
+        "$reduce_bool": 3,
+        "$reduce_or": 1,
+        "$sdffe": 18,
+        "$xor": 2
+      }
+    },
+    "fursoy_s0_csr": {
+      "wires": 156,
+      "wire_bits": 3636,
+      "public_wires": 51,
+      "public_wire_bits": 3076,
+      "cells_total": 136,
+      "cells": {
+        "$and": 3,
+        "$eq": 58,
+        "$ge": 1,
+        "$logic_and": 16,
+        "$logic_not": 11,
+        "$logic_or": 13,
+        "$mux": 13,
+        "$ne": 1,
+        "$not": 1,
+        "$or": 1,
+        "$pmux": 4,
+        "$reduce_bool": 3,
+        "$reduce_or": 9,
+        "$shiftx": 1,
+        "$sub": 1
+      }
+    },
+    "fursoy_s0_pmp_check": {
+      "wires": 4953,
+      "wire_bits": 69971,
+      "public_wires": 18,
+      "public_wire_bits": 1308,
+      "cells_total": 4987,
+      "cells": {
+        "$add": 68,
+        "$eq": 903,
+        "$ge": 128,
+        "$logic_and": 945,
+        "$logic_not": 865,
+        "$lt": 96,
+        "$mux": 1893,
+        "$pmux": 34,
+        "$shiftx": 5,
+        "$shl": 32,
+        "$shr": 16,
+        "$sub": 2
+      }
+    },
+    "fursoy_s0_pmp": {
+      "wires": 604,
+      "wire_bits": 8660,
+      "public_wires": 15,
+      "public_wire_bits": 2352,
+      "cells_total": 751,
+      "cells": {
+        "$add": 1,
+        "$eq": 3,
+        "$ge": 1,
+        "$le": 1,
+        "$logic_and": 5,
+        "$logic_not": 1,
+        "$logic_or": 3,
+        "$lt": 1,
+        "$memrd": 34,
+        "$memwr_v2": 129,
+        "$mux": 571,
+        "$sub": 1
+      }
+    },
+    "fursoy_s0_tlb": {
+      "wires": 1517,
+      "wire_bits": 12729,
+      "public_wires": 393,
+      "public_wire_bits": 6132,
+      "cells_total": 1503,
+      "cells": {
+        "$add": 255,
+        "$and": 24,
+        "$eq": 191,
+        "$logic_and": 94,
+        "$logic_not": 62,
+        "$logic_or": 2,
+        "$lt": 15,
+        "$memrd": 48,
+        "$memwr_v2": 51,
+        "$mux": 634,
+        "$neg": 2,
+        "$not": 2,
+        "$or": 24,
+        "$pmux": 64,
+        "$reduce_or": 1,
+        "$sdff": 1,
+        "$sdffe": 23,
+        "$shift": 10
+      }
+    },
+    "fursoy_s0_mmu": {
+      "wires": 4408,
+      "wire_bits": 41673,
+      "public_wires": 206,
+      "public_wire_bits": 4593,
+      "cells_total": 4293,
+      "cells": {
+        "$add": 3,
+        "$and": 8,
+        "$eq": 922,
+        "$logic_and": 945,
+        "$logic_not": 880,
+        "$logic_or": 47,
+        "$lt": 16,
+        "$mux": 1340,
+        "$ne": 60,
+        "$not": 1,
+        "$pmux": 24,
+        "$reduce_and": 9,
+        "$reduce_bool": 7,
+        "$reduce_or": 8,
+        "$sdff": 1,
+        "$sdffe": 12,
+        "$sub": 1,
+        "fursoy_s0_pmp_check": 7
+      }
+    },
+    "fursoy_s0_bpu": {
+      "wires": 482,
+      "wire_bits": 25384,
+      "public_wires": 84,
+      "public_wire_bits": 1519,
+      "cells_total": 458,
+      "cells": {
+        "$add": 9,
+        "$and": 4,
+        "$eq": 13,
+        "$logic_and": 45,
+        "$logic_not": 9,
+        "$logic_or": 10,
+        "$memrd": 7,
+        "$memwr_v2": 22,
+        "$mux": 292,
+        "$ne": 7,
+        "$neg": 4,
+        "$not": 7,
+        "$or": 4,
+        "$reduce_and": 2,
+        "$reduce_bool": 5,
+        "$reduce_or": 1,
+        "$sdff": 1,
+        "$sdffe": 2,
+        "$shift": 7,
+        "$shiftx": 5,
+        "$sub": 2
+      }
+    },
+    "fursoy_s0_sb": {
+      "wires": 209,
+      "wire_bits": 3236,
+      "public_wires": 69,
+      "public_wire_bits": 1220,
+      "cells_total": 263,
+      "cells": {
+        "$add": 4,
+        "$eq": 15,
+        "$ge": 1,
+        "$gt": 1,
+        "$logic_and": 28,
+        "$logic_not": 10,
+        "$logic_or": 5,
+        "$lt": 1,
+        "$memrd": 28,
+        "$memwr_v2": 86,
+        "$mux": 61,
+        "$ne": 1,
+        "$neg": 3,
+        "$not": 1,
+        "$or": 1,
+        "$pmux": 2,
+        "$reduce_and": 2,
+        "$reduce_or": 2,
+        "$sdffe": 4,
+        "$shift": 3,
+        "$shl": 2,
+        "$sub": 2
+      }
+    },
+    "fursoy_s0_l1i": {
+      "wires": 1598,
+      "wire_bits": 49953,
+      "public_wires": 170,
+      "public_wire_bits": 2972,
+      "cells_total": 1556,
+      "cells": {
+        "$add": 34,
+        "$and": 10,
+        "$dff": 1,
+        "$eq": 39,
+        "$ge": 2,
+        "$le": 2,
+        "$logic_and": 97,
+        "$logic_not": 36,
+        "$logic_or": 38,
+        "$memrd": 9,
+        "$memwr_v2": 18,
+        "$mul": 2,
+        "$mux": 964,
+        "$ne": 73,
+        "$neg": 8,
+        "$not": 32,
+        "$or": 11,
+        "$pmux": 38,
+        "$reduce_and": 19,
+        "$reduce_bool": 5,
+        "$reduce_or": 23,
+        "$sdff": 28,
+        "$sdffe": 28,
+        "$shift": 15,
+        "$shiftx": 17,
+        "$sub": 7
+      }
+    },
+    "fursoy_s0_l1d": {
+      "wires": 231020,
+      "wire_bits": 8862476,
+      "public_wires": 3258,
+      "public_wire_bits": 152704,
+      "cells_total": 230787,
+      "cells": {
+        "$add": 58,
+        "$and": 2,
+        "$dffe": 26,
+        "$eq": 79908,
+        "$ge": 1,
+        "$gt": 5,
+        "$le": 1,
+        "$logic_and": 137,
+        "$logic_not": 105,
+        "$logic_or": 34,
+        "$lt": 5,
+        "$memrd": 18,
+        "$memwr_v2": 10,
+        "$mux": 144053,
+        "$ne": 65,
+        "$not": 9,
+        "$or": 2,
+        "$pmux": 3296,
+        "$reduce_and": 23,
+        "$reduce_bool": 16,
+        "$reduce_or": 14,
+        "$sdff": 2899,
+        "$sdffe": 45,
+        "$shiftx": 30,
+        "$shl": 4,
+        "$sub": 19,
+        "$xor": 2
+      }
+    },
+    "fursoy_s0_clint": {
+      "wires": 53,
+      "wire_bits": 1063,
+      "public_wires": 24,
+      "public_wire_bits": 404,
+      "cells_total": 40,
+      "cells": {
+        "$add": 1,
+        "$eq": 5,
+        "$ge": 1,
+        "$logic_and": 5,
+        "$logic_not": 2,
+        "$logic_or": 1,
+        "$mux": 14,
+        "$not": 2,
+        "$reduce_and": 3,
+        "$sdff": 2,
+        "$sdffe": 4
+      }
+    },
+    "fursoy_s0_plic": {
+      "wires": 1123,
+      "wire_bits": 3110,
+      "public_wires": 69,
+      "public_wire_bits": 800,
+      "cells_total": 1313,
+      "cells": {
+        "$eq": 70,
+        "$ge": 7,
+        "$gt": 153,
+        "$le": 6,
+        "$logic_and": 291,
+        "$logic_not": 65,
+        "$logic_or": 18,
+        "$lt": 1,
+        "$memrd": 92,
+        "$memwr_v2": 32,
+        "$mux": 398,
+        "$not": 5,
+        "$reduce_and": 5,
+        "$reduce_bool": 64,
+        "$reduce_or": 33,
+        "$sdff": 1,
+        "$sdffe": 68,
+        "$shiftx": 3,
+        "$sub": 1
+      }
+    },
+    "fursoy_s0_uart": {
+      "wires": 97,
+      "wire_bits": 546,
+      "public_wires": 35,
+      "public_wire_bits": 331,
+      "cells_total": 84,
+      "cells": {
+        "$eq": 8,
+        "$ge": 1,
+        "$gt": 1,
+        "$logic_and": 9,
+        "$logic_not": 5,
+        "$lt": 1,
+        "$mux": 28,
+        "$not": 5,
+        "$pmux": 3,
+        "$reduce_and": 7,
+        "$reduce_bool": 1,
+        "$reduce_or": 1,
+        "$sdff": 3,
+        "$sdffe": 10,
+        "$sub": 1
+      }
+    }
+  },
+  "subblock_pnr_results": {
+    "fursoy_s0_control": {
+      "luts": 1139,
+      "ffs": 0,
+      "fmax_mhz": 0
+    },
+    "fursoy_s0_csr": {
+      "luts": 4146,
+      "ffs": 0,
+      "fmax_mhz": 0
+    },
+    "fursoy_s0_bpu": {
+      "luts": 19845,
+      "ffs": 776,
+      "fmax_mhz": 50.99699401855469
+    },
+    "fursoy_s0_tlb": {
+      "luts": 9737,
+      "ffs": 1552,
+      "fmax_mhz": 15.228813171386719
+    },
+    "fursoy_s0_pmp_check": {
+      "luts": 45349,
+      "ffs": 0,
+      "fmax_mhz": 0
+    },
+    "fursoy_s0_clint": {
+      "luts": 396,
+      "ffs": 195,
+      "fmax_mhz": 223.1644744873047
+    },
+    "fursoy_s0_plic": {
+      "luts": 14411,
+      "ffs": 260,
+      "fmax_mhz": 7.339987754821777
+    },
+    "fursoy_s0_uart": {
+      "luts": 324,
+      "ffs": 72,
+      "fmax_mhz": 226.5518798828125
+    }
+  },
+  "sb8_vs_sb4_reality_check": {
+    "sb4": {
+      "ffs": 939,
+      "comb_luts": 7374,
+      "fmax_mhz": 78.73,
+      "notes": "Analytical parameterized model (SB_DEPTH=4 with 3-bit pointer variables)"
+    },
+    "sb8": {
+      "ffs": 1864,
+      "comb_luts": 7382,
+      "fmax_mhz": 73.35,
+      "notes": "Production frozen RTL (SB_DEPTH=8)"
+    },
+    "delta": {
+      "ffs": 925,
+      "comb_luts_total_mapped": 8,
+      "fmax_delta_mhz": -5.38
+    },
+    "reviewer_lut_decomposition": {
+      "control_comparator_routing_luts": {
+        "sb4": 2534,
+        "sb8": 4379,
+        "delta": 1845,
+        "pct_change": 72.8
+      },
+      "data_q_associated_luts": {
+        "sb4": 4724,
+        "sb8": 2887,
+        "delta": -1837,
+        "notes": "SB4 elevated by 3-bit pointer boundary-guard muxing artifact"
+      },
+      "interpretation": "The total mapped-LUT delta of +8 is a coincidental cancellation between real control/comparator/drain growth (+1,845 LUT4) and SB4 parameterization boundary-guard artifact (-1,837 LUT4). Real control logic grew by 72.8%."
+    },
+    "methodology_note": "The SB4 experiment is an analytical parameterized comparison against production SB8, not a physically optimized independent SB4 RTL implementation. Measured FF delta (+925 FFs) is physically exact.",
+    "performance_gain": {
+      "controlled_runtime_sb4_cycles": 24227980,
+      "controlled_runtime_sb8_cycles": 23014492,
+      "cycles_saved": 1213488,
+      "runtime_reduction_pct": 5.008622
+    }
+  },
+  "sb8_frequency_sweep": {
+    "20MHz": {
+      "target_mhz": 20,
+      "achieved_mhz": 73.3460464477539,
+      "worst_slack_ns": 36.36599996276114,
+      "timing_met": true
+    },
+    "40MHz": {
+      "target_mhz": 40,
+      "achieved_mhz": 73.3460464477539,
+      "worst_slack_ns": 11.365999962761139,
+      "timing_met": true
+    },
+    "50MHz": {
+      "target_mhz": 50,
+      "achieved_mhz": 73.3460464477539,
+      "worst_slack_ns": 6.365999962761139,
+      "timing_met": true
+    },
+    "60MHz": {
+      "target_mhz": 60,
+      "achieved_mhz": 73.3460464477539,
+      "worst_slack_ns": 3.0326666294278066,
+      "timing_met": true
+    },
+    "70MHz": {
+      "target_mhz": 70,
+      "achieved_mhz": 73.3460464477539,
+      "worst_slack_ns": 0.6517142484754253,
+      "timing_met": true
+    },
+    "75MHz": {
+      "target_mhz": 75,
+      "achieved_mhz": 73.3460464477539,
+      "worst_slack_ns": -0.3006667039055273,
+      "timing_met": false
+    },
+    "80MHz": {
+      "target_mhz": 80,
+      "achieved_mhz": 73.3460464477539,
+      "worst_slack_ns": -1.1340000372388612,
+      "timing_met": false
+    }
+  },
+  "critical_paths": [
+    {
+      "path": "Combinational RV64M Division / Remainder",
+      "evidence_classification": "DIRECTLY MEASURED IN ISOLATION (Yosys ECP5 mapping)",
+      "startpoint": "Stage E operands rs1 / rs2",
+      "logic": "64-bit ripple-subtraction divider tree (unrolled 64 carry stages)",
+      "endpoint": "ALU rd_data_o / commit writeback",
+      "delay_estimate_lut_depth": "> 120 LUT levels (> 91k LUT4s in ECP5 mapping)",
+      "architectural_cause": "Stateless single-cycle combinational division operator in Slice-0 ALU",
+      "slice1_recommendation": "Iterative multi-cycle or pipelined divider candidate (exact architecture/latency to be explored in Slice-1)"
+    },
+    {
+      "path": "L1D Tag Compare & Load Hit Muxing",
+      "evidence_classification": "ARCHITECTURAL ANALYTICAL ESTIMATE (Full core not placed and routed)",
+      "startpoint": "Stage E effective address rs1 + imm",
+      "logic": "DTLB CAM match -> PMP permission check -> L1D 4-way tag compare -> way hit mux -> data alignment",
+      "endpoint": "Load retire data & Stage E stall cancellation",
+      "delay_estimate_lut_depth": "~22-26 LUT levels (~13.5 ns analytical estimate)",
+      "architectural_cause": "Single-cycle load-use contract in 2-stage in-order pipeline",
+      "slice1_recommendation": "Separate address generation (AGU) from cache access into distinct stages"
+    },
+    {
+      "path": "Instruction Fetch & MMU/ITLB Path",
+      "evidence_classification": "ARCHITECTURAL ANALYTICAL ESTIMATE (Full core not placed and routed)",
+      "startpoint": "Fetch PC register",
+      "logic": "ITLB 16-entry CAM compare -> PMP check -> L1I 4-way tag compare -> way mux -> pre-decode / BPU lookup",
+      "endpoint": "Fetch Buffer enqueue / Stage F holding register",
+      "delay_estimate_lut_depth": "~20-24 LUT levels (~12.8 ns analytical estimate)",
+      "architectural_cause": "Single-cycle fetch hit contract without skid buffer decoupling",
+      "slice1_recommendation": "Multi-stage frontend decoupling (F1 PC generation -> F2 I$ tag/data read -> D decode)"
+    },
+    {
+      "path": "Store Buffer Parallel RAW Hazard Detection",
+      "evidence_classification": "ARCHITECTURAL ANALYTICAL ESTIMATE (In full core context)",
+      "startpoint": "Load effective address",
+      "logic": "Parallel 53-bit address equality check across all 8 entries -> 8-input OR reduction",
+      "endpoint": "Store Buffer RAW load stall (dmem_req_ready_o suppression)",
+      "delay_estimate_lut_depth": "~12-14 LUT levels (~8.2 ns in isolated OOC P&R; core context is analytical estimate)",
+      "architectural_cause": "Full-array RAW load hazard checking across all 8 slots in parallel",
+      "slice1_recommendation": "Banked or age-partitioned comparator array; decoupling through pipeline load queue"
+    },
+    {
+      "path": "Branch Resolution & Redirect Bubble",
+      "evidence_classification": "ARCHITECTURAL ANALYTICAL ESTIMATE (Full core not placed and routed)",
+      "startpoint": "Register file read rs1 / rs2",
+      "logic": "ALU equality / signed comparison -> branch taken decision -> commit PC redirect multiplexer",
+      "endpoint": "Stage F fetch PC redirection mux",
+      "delay_estimate_lut_depth": "~14-16 LUT levels (~9.4 ns analytical estimate)",
+      "architectural_cause": "Branch condition evaluation in Stage E redirecting Stage F fetch",
+      "slice1_recommendation": "BPU branch prediction in fetch with decoupled branch recovery queue"
+    },
+    {
+      "path": "TLB Internal Pseudo-LRU Age Update Path",
+      "evidence_classification": "DIRECTLY MEASURED IN ISOLATION (nextpnr-ecp5)",
+      "startpoint": "age_q[1] register",
+      "logic": "Pseudo-LRU age comparator chain and update tree (~271 net hops)",
+      "endpoint": "age_q[7] register",
+      "achieved_fmax_mhz": 15.23,
+      "architectural_cause": "Age matrix update logic, NOT the CAM address match lookup",
+      "slice1_recommendation": "Tree-PLRU or simplified age update scheme to avoid long register-to-register age update paths"
+    }
+  ],
+  "memory_modeling_analysis": {
+    "register_file": {
+      "size_bits": 2048,
+      "ports": "2 asynchronous read ports, 1 synchronous write port",
+      "tool_mapping": "Flip-flops (64 x 32) + 32:1 multiplexer banks",
+      "physical_macro_feasibility": "Standard cell DFFs or dual-port register file macro; feasible as flip-flops in small cores."
+    },
+    "bpu_tables": {
+      "pht_bits": 512,
+      "btb_bits": 9984,
+      "ras_bits": 512,
+      "total_bits": 11008,
+      "tool_mapping": "776 TRELLIS_FFs + 19,845 LUT4s",
+      "physical_macro_feasibility": "Small distributed LUTRAM or dedicated synchronous SRAM macro."
+    },
+    "tlb_arrays": {
+      "itlb_bits": 1280,
+      "dtlb_bits": 1280,
+      "tool_mapping": "Fully-associative CAM registers + distributed comparator logic (4,152 LUT4s in MMU)",
+      "physical_macro_feasibility": "Fully associative CAM is strictly standard-cell / custom CAM logic; cannot use standard SRAM macros."
+    },
+    "store_buffer": {
+      "size_bits": 1848,
+      "tool_mapping": "1,864 TRELLIS_FFs + 7,266 LUT4s (SB8)",
+      "physical_macro_feasibility": "Multi-port FIFO register array with associative search logic; strictly registers/flops."
+    },
+    "l1i_cache": {
+      "data_bits": 131072,
+      "tag_bits": 11264,
+      "metadata_bits": 448,
+      "total_bits": 142784,
+      "tool_mapping": "Flattened into flip-flops & wide mux trees in generic synthesis without macro blackboxes",
+      "physical_macro_reality": "Qualitative expectation: 4 compiled single-port SRAM macros; zero standard-cell logic gates. No ASIC area claimed."
+    },
+    "l1d_cache": {
+      "data_bits": 131072,
+      "tag_bits": 11264,
+      "metadata_bits": 448,
+      "total_bits": 142784,
+      "tool_mapping": "230,787 cells (159k muxes) due to behavioral byte-write enable and combinational way hit muxing",
+      "physical_macro_reality": "Qualitative expectation: 4 compiled byte-masked pseudo-dual-port SRAM macros; zero standard-cell logic gates. No ASIC area claimed."
+    }
+  },
+  "slice1_lessons": {
+    "measured_evidence": [
+      "Current combinational RV64M division unwinds into 91.5k LUT4s (>120 logic levels) under ECP5 mapping, dominating area and creating an unviable combinational timing path.",
+      "Store Buffer depth-4 to depth-8 expansion adds 925 FFs (939 -> 1,864 FFs). Combinational LUT decomposition reveals +1,845 LUT control/comparator growth offset by a -1,837 LUT parameterization boundary-guard artifact.",
+      "Behavioral multi-dimensional cache arrays flatten into over 230k gates in generic Yosys elaboration without memory macro compilers.",
+      "NextPNR isolated TLB Fmax (15.23 MHz) is bounded by the pseudo-LRU age update ripple (age_q[1] -> age_q[7], ~271 hops), not the CAM match lookup."
+    ],
+    "strong_architectural_inferences": [
+      "Dedicated compiled SRAM macros are practically necessary for physical cache implementation in both FPGA and ASIC flows.",
+      "An iterative multi-cycle or appropriately pipelined divider is a strong candidate for Slice-1.",
+      "Deeper pipelining (such as separating address generation from cache access) is strongly indicated to break the single-cycle load-use path.",
+      "64+ entry TLBs in superscalar designs strongly favor set-associativity over fully associative CAM arrays to control timing and fan-out."
+    ],
+    "design_hypotheses_requiring_future_evidence": [
+      "Exact pipeline stage count (e.g. 4-5 stages) is a design hypothesis to be explored in Slice-1 architecture.",
+      "Superscalar 2-wide register file area impact is a design hypothesis until physical multi-port cell area is characterized.",
+      "Dual-ported or banked L1D routing congestion is a design hypothesis requiring physical layout evidence."
+    ]
+  },
+  "regressions": {
+    "soc_lint": "pass",
+    "pipeline": "pass",
+    "sv39_mmu": "pass",
+    "tlb": "pass",
+    "sb": "pass"
+  },
+  "subblock_pnr_methodology": {
+    "mode": "--out-of-context",
+    "io_delay_constraints": "None (internal register-to-register timing only)",
+    "boundary_conditions": [
+      "SB8 73.35 MHz is isolated OOC SB timing, NOT core Fmax.",
+      "TLB 15.23 MHz is isolated OOC TLB timing, NOT core Fmax.",
+      "PLIC 7.34 MHz is isolated OOC PLIC timing, NOT core Fmax.",
+      "BPU 51.00 MHz is isolated OOC BPU timing, NOT core Fmax.",
+      "Pure combinational blocks (control, CSR, pmp_check) do not have meaningful register-to-register Fmax under this OOC methodology."
+    ]
+  }
+}
