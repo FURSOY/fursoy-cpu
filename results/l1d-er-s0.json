@@ -1,0 +1,38 @@
+{
+  "status": "pass",
+  "scope": "L1 Data Cache Load Critical-Word Early Restart (L1D-ER) v1 (Persistent Handshake, Retirement/Squash Separation, Fatal Halt, 34 scenarios)",
+  "observed_at_utc": "2026-09-16T19:59:57.395602+00:00",
+  "rtl_manifest_sha256": "bd609b91e6471bb0abbb2c8c67dc1d9bdadc1f109a36d1488c1c21c88c1d43f2",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_l1i.sv": "e9445027ae6e07cdd19aed59fa2fc991b16065de86a1546b00eb952ac19aabb6",
+    "rtl/core/fursoy_s0_int_alu.sv": "4bf05f9114c0e35c6c51020f126770127a28178d4eccd9798f8a8f5fa000e6d0",
+    "rtl/core/fursoy_s0_control.sv": "d40af0f5b27a76813fed8e8c6616ffb58495b7e57795fdc2ee180fef29a720d4",
+    "rtl/core/fursoy_s0_lsu_decode.sv": "dd65866fc5cb2128d54eee8a639053fa05087fdda3f00e86b190102dd796f200",
+    "rtl/core/fursoy_s0_lsu_port.sv": "64572b3bbc5ccbd08b615b99d47e1a02c4feee789064754466f6ae2f8f249bab",
+    "rtl/core/fursoy_s0_csr.sv": "f69cf047e6aa38039783729a7ff25aae80ea279bf0d9d7e598a232bbe35a29c1",
+    "rtl/core/fursoy_s0_pmp_check.sv": "b1419afbc4e7e2e11fdcc16c6900391bf7fe3daf2ce6e7143c148c8456332580",
+    "rtl/core/fursoy_s0_pmp.sv": "c87d597cf5dcf5219b22a2e9c193302ed7b9ee1d035acb7df26a262ef82fbd03",
+    "rtl/core/fursoy_s0_tlb.sv": "0cc9951c09a8d12e718e771502ca2720da05727987d8dc1b8cb1cb2d63b66ca0",
+    "rtl/core/fursoy_s0_l1d.sv": "e95996f8191fa8a3c7b6996e9104c1db79cf12f10709c0a6553cbd2e578f67fa",
+    "rtl/core/fursoy_s0_sb.sv": "301a9f99c86811ef6d915e675588f648673b4920e420ecf4b841825dd4a20d38",
+    "rtl/core/fursoy_s0_bpu.sv": "b50c309342b8191dd08dd91869e95e4d3031b0dc5f239dfc7113cd19a926553b",
+    "rtl/core/fursoy_s0_mmu.sv": "878c6d634c34235c56a166f97f1c482bc7d11f317bc77725e4a167b9b4104c08",
+    "rtl/core/fursoy_s0_core.sv": "d343b180ba63c4e18fcd93d0fb52d8e0e6963df8f5454ef09218b646e23571ce",
+    "rtl/platform/fursoy_s0_clint.sv": "8d73be8c58dd891ea54d2d80619ee7206d6057bb0fbe1336354d35ac1bb5730e",
+    "rtl/platform/fursoy_s0_plic.sv": "8df8a0fc541740f13a1c9b1e57e015404d84cc9fee079b8024e647496f090d5d",
+    "rtl/platform/fursoy_s0_uart.sv": "a9b5e887e25a9c280a928083c3e70c031c49add363d644d6758d078b436c2592",
+    "rtl/platform/fursoy_s0_soc.sv": "2d3573034d411711b741f30962a3e54a4cd3eff86abafa5977fdacb9775a18f6",
+    "verification/l1d_er_s0_tb.cpp": "c027b681abcd13d60f07999789c232ee7d3833f82e36af7ff88042b66419894e",
+    "verification/l1d_er_unit_tb.cpp": "f63febd6452f5977d4b86b799b0d4ea090882012ceca0af7e9551a081c1c7fea",
+    "verification/l1d_er_soc_tb.cpp": "ebb7680e58cfb1ac6201b8b69ff6004a4b256e99a0be159e1df42e2396b3661b",
+    "tools/run_l1d_er_s0.py": "8e9eee65ab09cd53871e1e7b747c8648a1cdf5a381b72945878e0d1783313288"
+  },
+  "stdout": "Starting L1D Load Critical-Word Early Restart (L1D-ER v1) core scenarios...\nER-DIR-01 PASS: Clean load miss, Beat 0 (saved 13 cycles)\nER-DIR-02 PASS: Clean load miss, Beat 1 (saved 11 cycles)\nER-DIR-03 PASS: Clean load miss, Beat 2 (saved 9 cycles)\nER-DIR-04 PASS: Clean load miss, Beat 3 (saved 7 cycles)\nER-DIR-05 PASS: Clean load miss, Beat 4 (saved 5 cycles)\nER-DIR-06 PASS: Clean load miss, Beat 5 (saved 3 cycles)\nER-DIR-07 PASS: Clean load miss, Beat 6 (saved 1 cycles)\nER-DIR-08 PASS: Clean load miss, Beat 7 (saved 0 cycles)\nER-DIR-09 PASS: Dirty victim miss, Beat 0 (8-beat writeback verified)\nER-DIR-10 PASS: Dirty victim miss, Beat 3 (8-beat writeback verified)\nER-DIR-11 PASS: Dirty victim miss, Beat 7 (8-beat writeback verified)\nER-ADV-12 PASS: Multi-Cycle Stage-E Stall Across Critical Beat Arrival\nER-ADV-13 PASS: Stable Valid & Data Hold Across Stalls\nER-ADV-14 PASS: Exactly-Once Commit On Handshake Acknowledgement\nER-ADV-15 PASS: Pre-Critical Bus Error Suppresses ER and Traps with Cause 5\nER-ADV-16 PASS: Post-Retirement and Coincident-Acknowledge Trailing Errors Reach Sticky fatal_halt_o\nER-ADV-17 PASS: Subsequent Load Stalls During Trailing Refill\nER-ADV-18 PASS: Store Buffer Drains Held During Trailing Refill\nER-ADV-19 PASS: Store Buffer Full Stall Handled Safely\nER-ADV-20 PASS: Independent ALU Overlap During Trailing Burst\nER-ADV-21 PASS: LR.D Exclusion and Reservation Established at INSTALL\nER-ADV-22 PASS: SC.D Exclusion and Completion at INSTALL\nER-ADV-23 PASS: AMO Exclusion and 2-Cycle Execution After INSTALL\nER-ADV-24 PASS: SRB Collision Exclusion During Trailing Refill\nER-ADV-25 PASS: Randomized Memory Wait-State Jitter\nER-ADV-26 PASS: Trap During Trailing Refill Allows Clean Installation\nER-ADV-28 PASS: Maintenance FENCE Serialization During Refill\nER-ADV-29 PASS: Maintenance SFENCE.VMA Serialization During Refill\nER-ADV-30 PASS: Context PMP CSR Write Serialization\nER-ADV-31 PASS: Atomic INSTALL Cache Line Publication\nER-ADV-32 PASS: Tree-PLRU Exactly-Once Update on Legal Completion\nER-ADV-34 PASS: Pending-Unacknowledged Result Takes Precise Fault, Not Fatal Halt\nRAW-GATE-01 PASS: unrelated commit/RF write blocked directly on raw error edge\nRAW-GATE-02 PASS: authoritative CSR side effect blocked directly on raw error edge\nRAW-GATE-03 PASS: store commit/SB enqueue blocked directly on raw error edge\nRAW-GATE-04 PASS: conflicting trap entry blocked directly on raw error edge\n\n========================================================\nCORE 32 SCENARIOS PASSED SUCCESSFULLY!\nRAW-EDGE 4 ADDITIONAL CHECKS PASSED SUCCESSFULLY!\n========================================================\nER-ADV-27 PASS: Real redirect_i Cancels ER Result and Later Error Is Silently Discarded\nER-ADV-33 PASS: Exact Critical-Beat Error Uses Original VA and Publishes No Line Metadata\nUNIT 2 SCENARIOS PASSED SUCCESSFULLY!\nSOC-CASE-D PASS: production SoC fatal path, ownership drain, poison, stickiness, and reset verified\n{\"status\":\"pass\",\"commits_before_fatal\":4,\"ram_requests\":7,\"ram_responses\":7}",
+  "passed": 34,
+  "total": 34,
+  "raw_error_edge_checks_passed": 4,
+  "soc_case_d": {
+    "status": "pass",
+    "stdout": "SOC-CASE-D PASS: production SoC fatal path, ownership drain, poison, stickiness, and reset verified\n{\"status\":\"pass\",\"commits_before_fatal\":4,\"ram_requests\":7,\"ram_responses\":7}"
+  }
+}

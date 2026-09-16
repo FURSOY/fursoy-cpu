@@ -2,7 +2,7 @@
 from datetime import datetime,timezone
 from pathlib import Path
 import hashlib,json,subprocess,sys
-R=Path(__file__).resolve().parents[1];S=[R/"rtl/core/fursoy_s0_fetch.sv",R/"rtl/core/fursoy_s0_int_alu.sv",R/"rtl/core/fursoy_s0_control.sv",R/"rtl/core/fursoy_s0_lsu_decode.sv",R/"rtl/core/fursoy_s0_lsu_port.sv",R/"rtl/core/fursoy_s0_csr.sv",R/"rtl/core/fursoy_s0_mmu.sv",R/"rtl/core/fursoy_s0_core.sv",R/"rtl/platform/fursoy_s0_clint.sv",R/"rtl/platform/fursoy_s0_plic.sv",R/"rtl/platform/fursoy_s0_uart.sv",R/"rtl/platform/fursoy_s0_soc.sv"]
+R=Path(__file__).resolve().parents[1];S=[R/"rtl/core/fursoy_s0_l1i.sv",R/"rtl/core/fursoy_s0_int_alu.sv",R/"rtl/core/fursoy_s0_control.sv",R/"rtl/core/fursoy_s0_lsu_decode.sv",R/"rtl/core/fursoy_s0_lsu_port.sv",R/"rtl/core/fursoy_s0_csr.sv",R/"rtl/core/fursoy_s0_pmp_check.sv",R/"rtl/core/fursoy_s0_pmp.sv",R/"rtl/core/fursoy_s0_tlb.sv",R/"rtl/core/fursoy_s0_l1d.sv",R/"rtl/core/fursoy_s0_mmu.sv",R/"rtl/core/fursoy_s0_core.sv",R/"rtl/platform/fursoy_s0_clint.sv",R/"rtl/platform/fursoy_s0_plic.sv",R/"rtl/platform/fursoy_s0_uart.sv",R/"rtl/platform/fursoy_s0_soc.sv"]
 T=R/"verification/soc_sv39_s0_tb.cpp";B=R/"build/soc_sv39_s0";O=R/"results/soc-sv39-s0.json"
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def main():

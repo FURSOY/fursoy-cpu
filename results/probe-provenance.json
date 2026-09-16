@@ -5,7 +5,7 @@
       "software/baremetal/csr_write_probe.S": "fb99d3e784e0b57c0b46b1849f8bfe35a7167765ed73aac0f4bdf04209c0a2d0",
       "software/baremetal/link.ld": "ca8a8d5fad1d160c62d19523330c4eea847d2067d205ab2881138ccc5e05cd15"
     },
-    "elf_sha256": "baa54e762446d86d6ef2f4003ca346b29d6fa32fed1c04a9c294b90bc9dcbc47"
+    "elf_sha256": "06ebec9107eed9eb25b5588c1daa5e16206ffe79f5afdbbd64cad8703b48d4fc"
   },
   "illegal_probe": {
     "sources": {
@@ -13,13 +13,13 @@
       "software/baremetal/illegal_probe.S": "9c592ec0ba387e5820e8db90b463d021822a10ccb42f3be6ff28e50a4305de41",
       "software/baremetal/link.ld": "ca8a8d5fad1d160c62d19523330c4eea847d2067d205ab2881138ccc5e05cd15"
     },
-    "elf_sha256": "9ed3e15cefa01a7c60c78536a37709c9fea64a0760f2316578c8799ddad35cd8"
+    "elf_sha256": "57ee21ed38ceff4072847e4ce5250c59fc9530b1ec828dd0161fd804f94289e9"
   },
   "reset_probe": {
     "sources": {
       "software/baremetal/reset_probe.S": "f6d226acc1549934f80eaa74f7cc81195a3b986ac6b16b3322923cb5d32fc3db",
       "software/baremetal/link.ld": "ca8a8d5fad1d160c62d19523330c4eea847d2067d205ab2881138ccc5e05cd15"
     },
-    "elf_sha256": "81ecd645062d4f509e11643bfe5d7703776853fdbc31008ba610f3e8131cafce"
+    "elf_sha256": "44495fe240f422b37dec4dec3ea871518de0e46ae11be1bf01526e39b6a13c6e"
   }
 }

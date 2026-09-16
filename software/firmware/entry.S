@@ -87,6 +87,7 @@ _start:
     # 8. S-mode CSR Hygiene & Counter Enable (cycle, time, instret = 0x7)
     li t0, 7
     csrw mcounteren, t0
+    csrw scounteren, t0
     csrw satp, zero
     csrw sie, zero
     csrw sstatus, zero

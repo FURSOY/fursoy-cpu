@@ -1,4 +1,5 @@
 #include "Vfursoy_s0_core.h"
+#include "Vfursoy_s0_core___024root.h"
 #include "verilated.h"
 #include <cstdint>
 #include <cstdlib>
@@ -109,16 +110,20 @@ int main(int argc, char** argv) {
     dut.irq_external_i = 0;
     dut.imem_req_ready_i = 1;
     dut.imem_rsp_valid_i = 0;
-    dut.imem_rsp_insn_i = 0;
+    dut.imem_rsp_data_i = 0;
+    dut.imem_rsp_error_i = 0;
     dut.dmem_req_ready_i = 1;
+    dut.dmem_req_error_i = 0;
     dut.dmem_rsp_valid_i = 0;
     dut.dmem_rsp_data_i = 0;
+    dut.dmem_rsp_error_i = 0;
+    dut.irq_seip_i = 0;
     dut.eval();
 
     bool imem_pending = false;
-    uint32_t imem_insn = 0;
+    uint64_t imem_data = 0;
     bool next_imem_pending = false;
-    uint32_t next_imem_insn = 0;
+    uint64_t next_imem_data = 0;
 
     bool dmem_rsp_pending = false;
     uint64_t dmem_rsp_data = 0;
@@ -127,6 +132,7 @@ int main(int argc, char** argv) {
 
     uint64_t cycles = 0;
     uint64_t commits = 0;
+    uint64_t last_commit_pc = 0;
     uint64_t traps = 0;
     uint64_t last_trap_pc = 0;
     uint32_t last_trap_insn = 0;
@@ -136,15 +142,18 @@ int main(int argc, char** argv) {
     bool tohost_seen = false;
     int settle_cycles = 0;
 
-    auto read_u32 = [&](uint64_t addr) -> uint32_t {
-        if (addr < RAM_BASE || (addr - RAM_BASE) > RAM_SIZE - 4 || (addr % 4 != 0)) {
+    auto read_imem64 = [&](uint64_t addr) -> uint64_t {
+        if (addr < RAM_BASE || (addr - RAM_BASE) > RAM_SIZE - 8 || (addr % 8 != 0)) {
             std::ostringstream oss;
             oss << "Out-of-range or unaligned instruction fetch: addr=0x" << std::hex << addr;
             throw std::runtime_error(oss.str());
         }
         uint64_t off = addr - RAM_BASE;
-        return ram[off] | (uint32_t(ram[off + 1]) << 8) |
-               (uint32_t(ram[off + 2]) << 16) | (uint32_t(ram[off + 3]) << 24);
+        uint64_t data = 0;
+        for (unsigned i = 0; i < 8; ++i) {
+            data |= uint64_t(ram[off + i]) << (8 * i);
+        }
+        return data;
     };
 
     auto read_dmem = [&](uint64_t addr, unsigned size) -> uint64_t {
@@ -199,7 +208,8 @@ int main(int argc, char** argv) {
             dut.rst_i = 0;
             dut.imem_req_ready_i = 1;
             dut.imem_rsp_valid_i = imem_pending;
-            dut.imem_rsp_insn_i = imem_insn;
+            dut.imem_rsp_data_i = imem_data;
+            dut.imem_rsp_error_i = 0;
             dut.dmem_req_ready_i = 1;
             dut.dmem_rsp_valid_i = dmem_rsp_pending;
             dut.dmem_rsp_data_i = dmem_rsp_data;
@@ -211,7 +221,7 @@ int main(int argc, char** argv) {
             bool dmem_req_fire = dut.dmem_req_valid_o && dut.dmem_req_ready_i;
 
             next_imem_pending = imem_pending;
-            next_imem_insn = imem_insn;
+            next_imem_data = imem_data;
             next_dmem_rsp_pending = dmem_rsp_pending;
             next_dmem_rsp_data = dmem_rsp_data;
 
@@ -219,7 +229,7 @@ int main(int argc, char** argv) {
                 next_imem_pending = false;
             }
             if (imem_req_fire) {
-                next_imem_insn = read_u32(dut.imem_req_addr_o);
+                next_imem_data = read_imem64(dut.imem_req_addr_o);
                 next_imem_pending = true;
             }
 
@@ -251,6 +261,22 @@ int main(int argc, char** argv) {
             bool trap_cycle = false;
             if (dut.commit_valid_o) {
                 ++commits;
+                last_commit_pc = dut.commit_pc_o;
+                if (dut.rootp->fursoy_s0_core__DOT__is_ordinary_dram_store) {
+                    uint64_t daddr = dut.rootp->fursoy_s0_core__DOT__dtrans_pa;
+                    unsigned dsize = dut.rootp->fursoy_s0_core__DOT__lsu_size;
+                    uint64_t sdata = dut.rootp->fursoy_s0_core__DOT__lsu_store_data;
+                    if (daddr >= TOHOST_ADDR && daddr < TOHOST_ADDR + 8) {
+                        if (daddr != TOHOST_ADDR || dsize != 3) {
+                            std::ostringstream oss;
+                            oss << "Invalid tohost write: non-64-bit or unaligned store (addr=0x"
+                                << std::hex << daddr << " size=" << std::dec << dsize << ")";
+                            throw std::runtime_error(oss.str());
+                        }
+                        tohost = sdata;
+                        tohost_seen = true;
+                    }
+                }
             }
             if (dut.trap_valid_o) {
                 ++traps;
@@ -269,7 +295,7 @@ int main(int argc, char** argv) {
             }
 
             imem_pending = next_imem_pending;
-            imem_insn = next_imem_insn;
+            imem_data = next_imem_data;
             dmem_rsp_pending = next_dmem_rsp_pending;
             dmem_rsp_data = next_dmem_rsp_data;
 
@@ -290,13 +316,30 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    dut.final();
+    auto read_mem_cached = [&](uint64_t addr, unsigned size) -> uint64_t {
+        uint64_t aligned_pa = addr & ~7ULL;
+        uint32_t set = (aligned_pa >> 6) & 0x3f;
+        uint64_t tag = aligned_pa >> 12;
+        for (int w = 0; w < 4; w++) {
+            if (dut.rootp->fursoy_s0_core__DOT__l1d__DOT__valid_q[set][w] &&
+                dut.rootp->fursoy_s0_core__DOT__l1d__DOT__tag_q[set][w] == tag) {
+                uint64_t dword = dut.rootp->fursoy_s0_core__DOT__l1d__DOT__data_q[set][w][(aligned_pa >> 3) & 7];
+                unsigned shift = (addr & 7) * 8;
+                unsigned bytes = 1 << size;
+                uint64_t mask = (bytes == 8) ? ~0ULL : ((1ULL << (bytes * 8)) - 1ULL);
+                return (dword >> shift) & mask;
+            }
+        }
+        return read_dmem(addr, size);
+    };
 
     // Read 8 words of signature
     std::vector<uint64_t> signature(8, 0);
     for (int i = 0; i < 8; ++i) {
-        signature[i] = read_dmem(SIG_ADDR + i * 8, 3); // size 3 = 8 bytes
+        signature[i] = read_mem_cached(SIG_ADDR + i * 8, 3); // size 3 = 8 bytes
     }
+
+    dut.final();
 
     bool pass = tohost_seen && (tohost == 1) && (signature[2] == 1) &&
                 (signature[0] == 0x465552534f593031ULL);
@@ -310,6 +353,7 @@ int main(int argc, char** argv) {
     std::cout << "  \"traps\": " << traps << ",\n";
     std::cout << "  \"last_trap_cause\": " << last_trap_cause << ",\n";
     std::cout << "  \"last_trap_pc\": \"0x" << std::hex << last_trap_pc << "\",\n";
+    std::cout << "  \"last_commit_pc\": \"0x" << std::hex << last_commit_pc << "\",\n";
     std::cout << "  \"signature\": [\n";
     for (int i = 0; i < 8; ++i) {
         std::cout << "    \"0x" << std::hex << std::setfill('0') << std::setw(16)

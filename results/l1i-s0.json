@@ -1,0 +1,22 @@
+{
+  "status": "pass",
+  "scope": "L1 Instruction Cache (L1I) v1 (16 KiB 4-way 64B line, Tree-PLRU, 8-beat refill, stale suppression, FENCE.I, PMP, VIPT, 1-cycle hit)",
+  "observed_at_utc": "2026-09-16T19:59:55.331140+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_l1i.sv": "e9445027ae6e07cdd19aed59fa2fc991b16065de86a1546b00eb952ac19aabb6",
+    "rtl/core/fursoy_s0_int_alu.sv": "4bf05f9114c0e35c6c51020f126770127a28178d4eccd9798f8a8f5fa000e6d0",
+    "rtl/core/fursoy_s0_control.sv": "d40af0f5b27a76813fed8e8c6616ffb58495b7e57795fdc2ee180fef29a720d4",
+    "rtl/core/fursoy_s0_lsu_decode.sv": "dd65866fc5cb2128d54eee8a639053fa05087fdda3f00e86b190102dd796f200",
+    "rtl/core/fursoy_s0_lsu_port.sv": "64572b3bbc5ccbd08b615b99d47e1a02c4feee789064754466f6ae2f8f249bab",
+    "rtl/core/fursoy_s0_csr.sv": "f69cf047e6aa38039783729a7ff25aae80ea279bf0d9d7e598a232bbe35a29c1",
+    "rtl/core/fursoy_s0_pmp_check.sv": "b1419afbc4e7e2e11fdcc16c6900391bf7fe3daf2ce6e7143c148c8456332580",
+    "rtl/core/fursoy_s0_pmp.sv": "c87d597cf5dcf5219b22a2e9c193302ed7b9ee1d035acb7df26a262ef82fbd03",
+    "rtl/core/fursoy_s0_tlb.sv": "0cc9951c09a8d12e718e771502ca2720da05727987d8dc1b8cb1cb2d63b66ca0",
+    "rtl/core/fursoy_s0_l1d.sv": "e95996f8191fa8a3c7b6996e9104c1db79cf12f10709c0a6553cbd2e578f67fa",
+    "rtl/core/fursoy_s0_mmu.sv": "878c6d634c34235c56a166f97f1c482bc7d11f317bc77725e4a167b9b4104c08",
+    "rtl/core/fursoy_s0_core.sv": "d343b180ba63c4e18fcd93d0fb52d8e0e6963df8f5454ef09218b646e23571ce",
+    "verification/l1i_s0_tb.cpp": "ebbfba98bb4238fff8ad20b1e4648b9bc661c2811f82161bd12abbbd439c69d8",
+    "tools/run_l1i_s0.py": "3c2a600a33668ccac6aa0de79e8146708779d271a0f619d62bac8d62fae8e8b5"
+  },
+  "stdout": "Starting Focused L1I Verification Suite...\nScenario 1 PASS: Cold Miss, 8-Beat Refill, Hit\nScenario 2 PASS: Intra-Line Sequential 16-Word Hits\nScenario 3 PASS: Line Boundary Crossing\nScenario 4 PASS: 4-Way Conflict and Tree-PLRU Replacement\nScenario 5 PASS: Redirect during Active Refill (Line Discarded)\nScenario 6 PASS: FENCE.I Flash Invalidation\nScenario 7 PASS: Refill Interrupted by FENCE.I\nScenario 8 PASS: Refill Interrupted by PMP Flush\nScenario 9 PASS: Refill Bus Wait-State Jitter\nScenario 10 PASS: Exhaustive Tree-PLRU Eviction Traversal (All 8 States)\nScenario 11 PASS: Code Modification with FENCE.I\nScenario 12 PASS: Stale Code Preservation without FENCE.I\nScenario 13 PASS: Sv39 ITLB Translation Integration\nScenario 14 PASS: ITLB Miss & PTW Stall (Zero Speculative Refill)\nScenario 15 PASS: PMP Execution Denial on Hit & Miss\nScenario 16 PASS: Non-Canonical Virtual Address Page Fault\nScenario 17 PASS: Refill Bus Error Handling (Access Fault, Never Cached)\nScenario 18 PASS: MMIO / Unmapped Refill Suppression\nScenario 19 PASS: End-to-End Program Flow Integrity\n\n======================================================\nALL 19 FOCUSED L1I SCENARIOS EXPLICITLY PASSED!\n======================================================\n{\"status\":\"pass\",\"scenarios\":19}"
+}

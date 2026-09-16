@@ -9,9 +9,11 @@ REPORT=ROOT/"results/soc-clint-baremetal-s0.json"
 SOURCE=ROOT/"software/baremetal/clint_irq_probe.S"
 LINK=ROOT/"software/baremetal/link.ld"
 TB=ROOT/"verification/soc_clint_baremetal_s0_tb.cpp"
-RTL=[ROOT/"rtl/core/fursoy_s0_fetch.sv",ROOT/"rtl/core/fursoy_s0_int_alu.sv",
+RTL=[ROOT/"rtl/core/fursoy_s0_l1i.sv",ROOT/"rtl/core/fursoy_s0_int_alu.sv",
      ROOT/"rtl/core/fursoy_s0_control.sv",ROOT/"rtl/core/fursoy_s0_lsu_decode.sv",
-     ROOT/"rtl/core/fursoy_s0_lsu_port.sv",ROOT/"rtl/core/fursoy_s0_csr.sv",ROOT/"rtl/core/fursoy_s0_mmu.sv",
+     ROOT/"rtl/core/fursoy_s0_lsu_port.sv",ROOT/"rtl/core/fursoy_s0_csr.sv",
+     ROOT/"rtl/core/fursoy_s0_pmp_check.sv",ROOT/"rtl/core/fursoy_s0_pmp.sv",
+     ROOT/"rtl/core/fursoy_s0_tlb.sv",ROOT/"rtl/core/fursoy_s0_l1d.sv",ROOT/"rtl/core/fursoy_s0_mmu.sv",
      ROOT/"rtl/core/fursoy_s0_core.sv",ROOT/"rtl/platform/fursoy_s0_clint.sv",
      ROOT/"rtl/platform/fursoy_s0_plic.sv",ROOT/"rtl/platform/fursoy_s0_uart.sv",ROOT/"rtl/platform/fursoy_s0_soc.sv"]
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()

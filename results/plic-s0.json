@@ -1,7 +1,7 @@
 {
   "status": "pass",
   "scope": "Fursoy CPU PLIC v1 focused architectural verification suite",
-  "observed_at_utc": "2026-09-08T14:17:12.771749+00:00",
+  "observed_at_utc": "2026-09-16T20:00:22.532412+00:00",
   "source_sha256": {
     "rtl/platform/fursoy_s0_plic.sv": "8df8a0fc541740f13a1c9b1e57e015404d84cc9fee079b8024e647496f090d5d",
     "verification/plic_s0_tb.cpp": "b3ff89d5f66ba7fb30092042aa3f191647ebeccc0a4e0f06b4d7fe488a932e91",

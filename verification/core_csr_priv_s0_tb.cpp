@@ -1,4 +1,5 @@
 #include "Vfursoy_s0_core.h"
+#include "Vfursoy_s0_core___024root.h"
 #include "verilated.h"
 #include <cstdint>
 #include <iostream>
@@ -11,17 +12,17 @@ static uint32_t slli(unsigned rd,unsigned rs,unsigned sh){return(sh<<20)|(rs<<15
 static uint32_t csr(unsigned f,unsigned rd,unsigned rs,unsigned addr){return(addr<<20)|(rs<<15)|(f<<12)|(rd<<7)|0x73;}
 struct Event{bool commit=false,trap=false,rsp=false,rd_write=false;uint64_t pc=0,rsp_pc=0,rd_data=0;uint32_t insn=0;unsigned rd=0;};
 struct Sim{
-    Vfursoy_s0_core d;std::unordered_map<uint64_t,uint32_t> mem;bool pending=false;uint64_t rsp_pc=0;uint32_t rsp_insn=0;uint64_t cycles=0,commits=0;
-    void init(){d.clk_i=0;d.rst_i=1;d.imem_req_ready_i=1;d.imem_rsp_valid_i=0;d.imem_rsp_error_i=0;
+    Vfursoy_s0_core d;std::unordered_map<uint64_t,uint32_t> mem;bool pending=false;uint64_t rsp_pc=0;uint64_t rsp_data=0;uint64_t cycles=0,commits=0;
+    void init(){d.clk_i=0;d.rst_i=1;d.imem_req_ready_i=1;d.imem_rsp_valid_i=0;d.imem_rsp_data_i=0;d.imem_rsp_error_i=0;
         d.dmem_req_ready_i=1;d.dmem_req_error_i=0;d.dmem_rsp_valid_i=0;d.dmem_rsp_data_i=0;d.dmem_rsp_error_i=0;
-        d.irq_software_i=0;d.irq_timer_i=0;d.irq_external_i=0;d.eval();d.clk_i=1;d.eval();++cycles;d.clk_i=0;d.rst_i=0;d.eval();}
-    Event tick(){d.clk_i=0;d.imem_req_ready_i=1;d.imem_rsp_valid_i=pending;d.imem_rsp_insn_i=rsp_insn;d.imem_rsp_error_i=0;d.eval();
+        d.irq_software_i=0;d.irq_timer_i=0;d.irq_external_i=0;d.irq_seip_i=0;d.eval();d.clk_i=1;d.eval();++cycles;d.clk_i=0;d.rst_i=0;d.eval();}
+    Event tick(){d.clk_i=0;d.imem_req_ready_i=1;d.imem_rsp_valid_i=pending;d.imem_rsp_data_i=rsp_data;d.imem_rsp_error_i=0;d.eval();
         Event e;e.commit=d.commit_valid_o;e.trap=d.trap_valid_o;e.pc=e.commit?uint64_t(d.commit_pc_o):uint64_t(d.trap_pc_o);e.insn=e.commit?uint32_t(d.commit_insn_o):uint32_t(d.trap_insn_o);
         e.rd_write=d.commit_rd_write_o;e.rd=d.commit_rd_o;e.rd_data=d.commit_rd_data_o;
         bool rf=pending&&d.imem_rsp_ready_o,rq=d.imem_req_valid_o&&d.imem_req_ready_i;e.rsp=rf;e.rsp_pc=rsp_pc;
-        bool np=pending;uint64_t na=rsp_pc;uint32_t ni=rsp_insn;if(rf)np=false;
-        if(rq){na=d.imem_req_addr_o;auto it=mem.find(na);if(it==mem.end())throw std::runtime_error("unexpected fetch");ni=it->second;np=true;}
-        d.clk_i=1;d.eval();++cycles;pending=np;rsp_pc=na;rsp_insn=ni;if(e.commit)++commits;return e;}
+        bool np=pending;uint64_t na=rsp_pc;uint64_t nd=rsp_data;if(rf)np=false;
+        if(rq){na=d.imem_req_addr_o;uint64_t w0=mem.count(na)?uint64_t(mem[na]):0x13;uint64_t w1=mem.count(na+4)?uint64_t(mem[na+4]):0x13;nd=(w1<<32)|(w0&0xFFFFFFFFULL);np=true;}
+        d.clk_i=1;d.eval();++cycles;pending=np;rsp_pc=na;rsp_data=nd;if(e.commit)++commits;return e;}
 };
 static void check(bool ok,const char*why){if(!ok)throw std::runtime_error(why);}
 int main(int argc,char**argv){
@@ -55,7 +56,7 @@ int main(int argc,char**argv){
             Sim s;s.mem[B]=addi(3,0,1);s.mem[B+4]=slli(3,3,11);s.mem[B+8]=csr(2,0,3,0x304);
             s.mem[B+12]=csr(6,0,8,0x300);s.mem[B+16]=addi(1,0,0x55);s.mem[B+20]=csr(1,2,1,0x340);s.mem[V]=0x30200073;s.init();
             bool armed=false,trapped=false,retried=false;unsigned target_commits=0;
-            for(int i=0;i<100&&!retried;i++){auto e=s.tick();if(!trapped&&e.rsp&&e.rsp_pc==B+20){armed=true;s.d.irq_external_i=1;}
+            for(int i=0;i<100&&!retried;i++){auto e=s.tick();if(!trapped&&(s.d.rootp->fursoy_s0_core__DOT__fe_valid_w&&s.d.rootp->fursoy_s0_core__DOT__fe_pc_w==B+20)){armed=true;s.d.irq_external_i=1;}
                 if(e.trap){check(armed&&e.pc==B+20&&uint64_t(s.d.csr_mcause_o)==0x800000000000000bULL&&
                     uint64_t(s.d.csr_mscratch_o)==0,"interrupt did not suppress CSR");trapped=true;s.d.irq_external_i=0;}
                 if(e.commit&&e.pc==B+20){++target_commits;check(trapped&&uint64_t(s.d.csr_mscratch_o)==0x55&&
@@ -65,7 +66,7 @@ int main(int argc,char**argv){
         { // Illegal CSR exception wins over an eligible interrupt.
             Sim s;s.mem[B]=addi(3,0,1);s.mem[B+4]=slli(3,3,11);s.mem[B+8]=csr(2,0,3,0x304);
             s.mem[B+12]=csr(6,0,8,0x300);s.mem[B+16]=csr(1,5,0,0xc00);s.init();bool trapped=false;
-            for(int i=0;i<60&&!trapped;i++){auto e=s.tick();if(e.rsp&&e.rsp_pc==B+16)s.d.irq_external_i=1;
+            for(int i=0;i<60&&!trapped;i++){auto e=s.tick();if(s.d.rootp->fursoy_s0_core__DOT__fe_valid_w&&s.d.rootp->fursoy_s0_core__DOT__fe_pc_w==B+16)s.d.irq_external_i=1;
                 if(e.trap){trapped=true;check(e.pc==B+16&&uint64_t(s.d.csr_mcause_o)==2&&
                     (uint64_t(s.d.csr_mip_o)&0x800)&&!s.d.commit_valid_o,"CSR exception priority");}}
             check(trapped&&s.commits==4,"exception-priority completion");++scenarios;

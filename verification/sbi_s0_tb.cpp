@@ -3,6 +3,7 @@
 // Verifies all 40 required scenarios.
 
 #include "Vfursoy_s0_soc.h"
+#include "Vfursoy_s0_soc___024root.h"
 #include "verilated.h"
 #include <cstdint>
 #include <fstream>
@@ -74,6 +75,23 @@ static void write_mem(std::vector<uint8_t>& ram, uint64_t addr, unsigned size, u
     for (unsigned i = 0; i < n; i++) ram[addr - RAM_BASE + i] = uint8_t(value >> (8 * i));
 }
 
+static uint64_t read_mem_cached(Vfursoy_s0_soc& dut, const std::vector<uint8_t>& ram, uint64_t addr, unsigned size) {
+    uint64_t aligned_pa = addr & ~7ULL;
+    uint32_t set = (aligned_pa >> 6) & 0x3f;
+    uint64_t tag = aligned_pa >> 12;
+    for (int w = 0; w < 4; w++) {
+        if (dut.rootp->fursoy_s0_soc__DOT__core__DOT__l1d__DOT__valid_q[set][w] &&
+            dut.rootp->fursoy_s0_soc__DOT__core__DOT__l1d__DOT__tag_q[set][w] == tag) {
+            uint64_t dword = dut.rootp->fursoy_s0_soc__DOT__core__DOT__l1d__DOT__data_q[set][w][(aligned_pa >> 3) & 7];
+            unsigned shift = (addr & 7) * 8;
+            unsigned bytes = 1 << size;
+            uint64_t mask = (bytes == 8) ? ~0ULL : ((1ULL << (bytes * 8)) - 1ULL);
+            return (dword >> shift) & mask;
+        }
+    }
+    return read_mem(ram, addr, size);
+}
+
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     if (argc < 7) {
@@ -107,6 +125,7 @@ int main(int argc, char** argv) {
         dut.rst_i = 1;
         dut.imem_req_ready_i = 1;
         dut.imem_rsp_valid_i = 0;
+        dut.imem_rsp_data_i = 0;
         dut.imem_rsp_error_i = 0;
         dut.ram_req_ready_i = 1;
         dut.ram_req_error_i = 0;
@@ -123,7 +142,7 @@ int main(int argc, char** argv) {
         dut.rst_i = 0;
 
         bool ip = false, dp = false;
-        uint32_t ii = 0;
+        uint64_t ii = 0;
         uint64_t dd = 0;
         uint64_t cycles = 0, commits = 0;
         bool phase1_halted = false;
@@ -138,7 +157,7 @@ int main(int argc, char** argv) {
             dut.clk_i = 0;
             dut.imem_req_ready_i = 1;
             dut.imem_rsp_valid_i = ip;
-            dut.imem_rsp_insn_i = ii;
+            dut.imem_rsp_data_i = ii;
             dut.imem_rsp_error_i = 0;
 
             dut.ram_req_ready_i = 1;
@@ -154,7 +173,7 @@ int main(int argc, char** argv) {
             bool dreq = dut.ram_req_valid_o && dut.ram_req_ready_i;
 
             bool nip = ip, ndp = false;
-            uint32_t nii = ii;
+            uint64_t nii = ii;
             uint64_t ndd = 0;
 
             if (ifire) nip = false;
@@ -162,8 +181,8 @@ int main(int argc, char** argv) {
 
             if (ireq) {
                 uint64_t addr = dut.imem_req_addr_o;
-                if (addr >= RAM_BASE && addr + 4 <= RAM_BASE + RAM_SIZE) {
-                    nii = uint32_t(read_mem(ram, addr, 2));
+                if (addr >= RAM_BASE && addr + 8 <= RAM_BASE + RAM_SIZE) {
+                    nii = read_mem(ram, addr, 3);
                     nip = true;
                 }
             }
@@ -224,14 +243,14 @@ int main(int argc, char** argv) {
                       << " csr_mstatus=0x" << dut.csr_mstatus_o
                       << std::dec << "\n";
             std::cerr << "UART OUTPUT: [" << uart_output << "]\n";
-            uint32_t sig_magic = uint32_t(read_mem(ram, 0x80250000ULL, 2));
-            uint32_t sig_pass = uint32_t(read_mem(ram, 0x80250004ULL, 2));
-            uint32_t sig_fail = uint32_t(read_mem(ram, 0x80250008ULL, 2));
+            uint32_t sig_magic = uint32_t(read_mem_cached(dut, ram, 0x80250000ULL, 2));
+            uint32_t sig_pass = uint32_t(read_mem_cached(dut, ram, 0x80250004ULL, 2));
+            uint32_t sig_fail = uint32_t(read_mem_cached(dut, ram, 0x80250008ULL, 2));
             std::cerr << "SIGNATURE: magic=0x" << std::hex << sig_magic
                       << " pass=" << std::dec << sig_pass
                       << " fail=" << sig_fail << "\n";
             for (int i = 1; i <= 40; i++) {
-                uint32_t st = uint32_t(read_mem(ram, 0x8025000CULL + 4 * i, 2));
+                uint32_t st = uint32_t(read_mem_cached(dut, ram, 0x8025000CULL + 4 * i, 2));
                 if (st != 0) std::cerr << "Scn " << i << ": " << (st == 1 ? "PASS" : "FAIL") << "\n";
             }
             throw std::runtime_error("Phase 1 simulation timed out without reaching SRST halt_loop");
@@ -243,9 +262,9 @@ int main(int argc, char** argv) {
         if (!seen_handoff_pc) throw std::runtime_error("Scenario 13 FAIL: Core did not transition to 0x8020_0000");
 
         // Inspect S-mode test signature at 0x8025_0000
-        uint32_t sig_magic = uint32_t(read_mem(ram, 0x80250000ULL, 2));
-        uint32_t sig_pass = uint32_t(read_mem(ram, 0x80250004ULL, 2));
-        uint32_t sig_fail = uint32_t(read_mem(ram, 0x80250008ULL, 2));
+        uint32_t sig_magic = uint32_t(read_mem_cached(dut, ram, 0x80250000ULL, 2));
+        uint32_t sig_pass = uint32_t(read_mem_cached(dut, ram, 0x80250004ULL, 2));
+        uint32_t sig_fail = uint32_t(read_mem_cached(dut, ram, 0x80250008ULL, 2));
 
         if (sig_magic != 0x53424931) {
             throw std::runtime_error("Invalid signature magic: " + std::to_string(sig_magic));
@@ -253,7 +272,7 @@ int main(int argc, char** argv) {
         if (sig_fail > 0) {
             std::string failed_scenarios = "";
             for (int i = 1; i <= 40; i++) {
-                uint32_t st = uint32_t(read_mem(ram, 0x8025000CULL + 4 * i, 2));
+                uint32_t st = uint32_t(read_mem_cached(dut, ram, 0x8025000CULL + 4 * i, 2));
                 if (st == 2) failed_scenarios += " " + std::to_string(i);
             }
             throw std::runtime_error("Payload reported failures in scenarios:" + failed_scenarios);
@@ -272,6 +291,7 @@ int main(int argc, char** argv) {
         dut2.rst_i = 1;
         dut2.imem_req_ready_i = 1;
         dut2.imem_rsp_valid_i = 0;
+        dut2.imem_rsp_data_i = 0;
         dut2.imem_rsp_error_i = 0;
         dut2.ram_req_ready_i = 1;
         dut2.ram_req_error_i = 0;
@@ -297,7 +317,7 @@ int main(int argc, char** argv) {
             dut2.clk_i = 0;
             dut2.imem_req_ready_i = 1;
             dut2.imem_rsp_valid_i = ip;
-            dut2.imem_rsp_insn_i = ii;
+            dut2.imem_rsp_data_i = ii;
             dut2.imem_rsp_error_i = 0;
 
             dut2.ram_req_ready_i = 1;
@@ -313,7 +333,7 @@ int main(int argc, char** argv) {
             bool dreq = dut2.ram_req_valid_o && dut2.ram_req_ready_i;
 
             bool nip = ip, ndp = false;
-            uint32_t nii = ii;
+            uint64_t nii = ii;
             uint64_t ndd = 0;
 
             if (ifire) nip = false;
@@ -321,8 +341,8 @@ int main(int argc, char** argv) {
 
             if (ireq) {
                 uint64_t addr = dut2.imem_req_addr_o;
-                if (addr >= RAM_BASE && addr + 4 <= RAM_BASE + RAM_SIZE) {
-                    nii = uint32_t(read_mem(ram2, addr, 2));
+                if (addr >= RAM_BASE && addr + 8 <= RAM_BASE + RAM_SIZE) {
+                    nii = read_mem(ram2, addr, 3);
                     nip = true;
                 }
             }

@@ -64,7 +64,7 @@ struct CoreSim {
     std::unordered_map<uint64_t, uint64_t> dmem;
     bool fetch_pending = false;
     uint64_t rsp_pc = 0;
-    uint32_t rsp_insn = 0;
+    uint64_t rsp_data = 0;
     uint64_t cycles = 0;
     uint64_t commits = 0;
 
@@ -78,6 +78,7 @@ struct CoreSim {
         dut.rst_i = 1;
         dut.imem_req_ready_i = 1;
         dut.imem_rsp_valid_i = 0;
+        dut.imem_rsp_data_i = 0;
         dut.imem_rsp_error_i = 0;
         dut.dmem_req_ready_i = 1;
         dut.dmem_req_error_i = 0;
@@ -103,7 +104,7 @@ struct CoreSim {
         dut.clk_i = 0;
         dut.imem_req_ready_i = 1;
         dut.imem_rsp_valid_i = fetch_pending;
-        dut.imem_rsp_insn_i = rsp_insn;
+        dut.imem_rsp_data_i = rsp_data;
         dut.imem_rsp_error_i = 0;
 
         dut.dmem_req_ready_i = 1;
@@ -131,19 +132,15 @@ struct CoreSim {
 
         bool next_pending = fetch_pending;
         uint64_t next_pc = rsp_pc;
-        uint32_t next_insn = rsp_insn;
+        uint64_t next_data = rsp_data;
 
         if (rsp_fire) next_pending = false;
         if (req_fire) {
             next_pc = dut.imem_req_addr_o;
-            auto it = mem.find(next_pc);
-            if (it != mem.end()) {
-                next_insn = it->second;
-                next_pending = true;
-            } else {
-                next_insn = 0x00000013; // nop if unmapped
-                next_pending = true;
-            }
+            uint64_t w0 = mem.count(next_pc) ? uint64_t(mem[next_pc]) : 0x00000013ULL;
+            uint64_t w1 = mem.count(next_pc + 4) ? uint64_t(mem[next_pc + 4]) : 0x00000013ULL;
+            next_data = (w1 << 32) | (w0 & 0xFFFFFFFFULL);
+            next_pending = true;
         }
 
         bool next_dmem_pending = dmem_rsp_pending;
@@ -166,7 +163,7 @@ struct CoreSim {
         ++cycles;
         fetch_pending = next_pending;
         rsp_pc = next_pc;
-        rsp_insn = next_insn;
+        rsp_data = next_data;
 
         dmem_rsp_pending = next_dmem_pending;
         dmem_rsp_data = next_dmem_data;
@@ -175,7 +172,7 @@ struct CoreSim {
         return ev;
     }
 
-    Event step_until_commit_at(uint64_t expected_pc, unsigned max_cycles = 100) {
+    Event step_until_commit_at(uint64_t expected_pc, unsigned max_cycles = 200) {
         for (unsigned c = 0; c < max_cycles; ++c) {
             Event e = tick();
             if (e.commit && e.pc == expected_pc) return e;
@@ -183,7 +180,7 @@ struct CoreSim {
         throw std::runtime_error("timeout waiting for commit");
     }
 
-    Event step_until_trap(unsigned max_cycles = 100) {
+    Event step_until_trap(unsigned max_cycles = 200) {
         for (unsigned c = 0; c < max_cycles; ++c) {
             Event e = tick();
             if (e.trap) return e;
@@ -242,7 +239,7 @@ int main(int argc, char** argv) {
             // csrc mstatus, x1
             // x2 = 0x0800 (MPP = S = 1)
             // csrs mstatus, x2
-            // x3 = kB + 0x30 (target in S-mode)
+            // x3 = kB + 0x28 (target in S-mode)
             // csrw mepc, x3
             // mret
             sim.mem[kB + 0x00] = addi(1, 0, 3);
@@ -251,24 +248,23 @@ int main(int argc, char** argv) {
             sim.mem[kB + 0x0c] = addi(2, 0, 1);
             sim.mem[kB + 0x10] = slli(2, 2, 11);               // x2 = 0x0800 (MPP=S)
             sim.mem[kB + 0x14] = csrrs(0, 2, 0x300);            // set MPP=S
-            sim.mem[kB + 0x18] = addi(3, 0, 0x30);
-            sim.mem[kB + 0x1c] = slli(3, 3, 20);               // x3 = 0x03000000
-            sim.mem[kB + 0x20] = addi(3, 0, 0x30);             // simpler: target = kB + 0x2c
-            sim.mem[kB + 0x24] = csrrw(0, 3, 0x341);            // mepc = x3
-            sim.mem[kB + 0x28] = kMret;                        // MRET to S-mode!
-            sim.mem[0x30]      = addi(4, 0, 0x5a);              // S-mode instruction!
+            sim.mem[kB + 0x18] = auipc(3, 0);                  // x3 = kB + 0x18
+            sim.mem[kB + 0x1c] = addi(3, 3, 0x10);             // x3 = kB + 0x28
+            sim.mem[kB + 0x20] = csrrw(0, 3, 0x341);           // mepc = kB + 0x28
+            sim.mem[kB + 0x24] = kMret;                        // MRET to S-mode at kB + 0x28!
+            sim.mem[kB + 0x28] = addi(4, 0, 0x5a);             // S-mode instruction!
             sim.init();
 
             bool returned_to_s = false;
-            for (int i = 0; i < 60; ++i) {
+            for (int i = 0; i < 120; ++i) {
                 Event e = sim.tick();
-                if (e.commit && e.pc == kB + 0x28) {
+                if (e.commit && e.pc == kB + 0x24) {
                     // MRET commits
                     check(sim.dut.priv_mode_o == 1, "Privilege after MRET with MPP=S must be S-mode (1)");
                     check((uint64_t(sim.dut.csr_mstatus_o) & 0x1800) == 0,
                           "mstatus.MPP must be cleared to U (0) on MRET");
                 }
-                if (e.commit && e.pc == 0x30) {
+                if (e.commit && e.pc == kB + 0x28) {
                     check(sim.dut.priv_mode_o == 1, "Target instruction executed in S-mode");
                     check(e.rd == 4 && e.rd_data == 0x5a, "S-mode commit result correct");
                     returned_to_s = true;
@@ -309,20 +305,21 @@ int main(int argc, char** argv) {
             sim.mem[kB + 0x00] = addi(1, 0, 1);
             sim.mem[kB + 0x04] = slli(1, 1, 11);               // x1 = 0x800 (MPP=S)
             sim.mem[kB + 0x08] = csrrw(0, 1, 0x300);            // mstatus.MPP = S
-            sim.mem[kB + 0x0c] = addi(2, 0, 0x40);
-            sim.mem[kB + 0x10] = csrrw(0, 2, 0x341);            // mepc = 0x40
-            sim.mem[kB + 0x14] = addi(3, 0, 0x80);
-            sim.mem[kB + 0x18] = csrrw(0, 3, 0x305);            // mtvec = 0x80 (handler)
-            sim.mem[kB + 0x1c] = kMret;                        // enter S-mode at 0x40
+            sim.mem[kB + 0x0c] = auipc(2, 0);                  // x2 = kB + 0x0c
+            sim.mem[kB + 0x10] = addi(2, 2, 0x34);             // mepc = kB + 0x40
+            sim.mem[kB + 0x14] = csrrw(0, 2, 0x341);
+            sim.mem[kB + 0x18] = addi(3, 2, 0x40);             // mtvec = kB + 0x80 (handler)
+            sim.mem[kB + 0x1c] = csrrw(0, 3, 0x305);
+            sim.mem[kB + 0x20] = kMret;                        // enter S-mode at kB + 0x40
 
-            // S-mode code at 0x40:
-            sim.mem[0x40] = csrrwi(0, 31, 0x140);              // csrw sscratch, 31 (legal in S)
-            sim.mem[0x44] = csrrw(4, 0, 0x180);                // csrr x4, satp (legal in S)
-            sim.mem[0x48] = addi(5, 0, 0x5a);                  // x5 = 0x5a
-            sim.mem[0x4c] = csrrw(5, 0, 0x340);                // csrrw x5, mscratch, x0 (ILLEGAL in S!)
+            // S-mode code at kB + 0x40:
+            sim.mem[kB + 0x40] = csrrwi(0, 31, 0x140);         // csrw sscratch, 31 (legal in S)
+            sim.mem[kB + 0x44] = csrrw(4, 0, 0x180);           // csrr x4, satp (legal in S)
+            sim.mem[kB + 0x48] = addi(5, 0, 0x5a);             // x5 = 0x5a
+            sim.mem[kB + 0x4c] = csrrw(5, 0, 0x340);           // csrrw x5, mscratch, x0 (ILLEGAL in S!)
 
-            // M-mode handler at 0x80:
-            sim.mem[0x80] = addi(6, 5, 0);                     // read x5 into x6 to verify preservation
+            // M-mode handler at kB + 0x80:
+            sim.mem[kB + 0x80] = addi(6, 5, 0);                // read x5 into x6 to verify preservation
 
             bool sscratch_written = false;
             bool satp_read = false;
@@ -331,27 +328,27 @@ int main(int argc, char** argv) {
 
             for (int i = 0; i < 80; ++i) {
                 Event e = sim.tick();
-                if (e.commit && e.pc == 0x40) {
+                if (e.commit && e.pc == kB + 0x40) {
                     check(sim.dut.priv_mode_o == 1, "sscratch executed in S-mode");
                     check(uint64_t(sim.dut.csr_sscratch_o) == 31, "sscratch written correctly");
                     sscratch_written = true;
                 }
-                if (e.commit && e.pc == 0x44) {
+                if (e.commit && e.pc == kB + 0x44) {
                     check(e.rd == 4 && e.rd_data == 0, "satp read in S-mode returned 0");
                     satp_read = true;
                 }
                 if (e.trap) {
-                    check(e.pc == 0x4c, "Trap event PC must be 0x4c (mscratch access)");
+                    check(e.pc == kB + 0x4c, "Trap event PC must be kB + 0x4c (mscratch access)");
                     check(uint64_t(sim.dut.csr_mcause_o) == 2, "Trap cause must be 2 (illegal instruction)");
-                    check(uint64_t(sim.dut.csr_mepc_o) == 0x4c, "mepc must be faulting PC 0x4c");
-                    check(uint64_t(sim.dut.csr_mtval_o) == sim.mem[0x4c], "mtval must be faulting instruction");
+                    check(uint64_t(sim.dut.csr_mepc_o) == kB + 0x4c, "mepc must be faulting PC kB + 0x4c");
+                    check(uint64_t(sim.dut.csr_mtval_o) == sim.mem[kB + 0x4c], "mtval must be faulting instruction");
                     check(uint64_t(sim.dut.csr_mscratch_o) == 0, "mscratch must NOT be modified");
                     check((uint64_t(sim.dut.csr_mstatus_o) & 0x1800) == 0x800,
                           "mstatus.MPP must record origin privilege S (1)");
                     check(sim.dut.priv_mode_o == 3, "Trap must enter M-mode (3)");
                     trap_observed = true;
                 }
-                if (e.commit && e.pc == 0x80) {
+                if (e.commit && e.pc == kB + 0x80) {
                     check(e.rd == 6 && e.rd_data == 0x5a,
                           "Faulting CSR instruction must NOT have modified destination register x5");
                     x5_preserved = true;
@@ -372,33 +369,33 @@ int main(int argc, char** argv) {
             sim.init();
 
             // M-mode setup:
-            // mtvec = 0x100, stvec = 0x200, medeleg = 0
-            // mepc = 0x40, MPP = U (0)
-            // MRET to U-mode at 0x40
-            sim.mem[kB + 0x00] = addi(1, 0, 0x10);
-            sim.mem[kB + 0x04] = slli(1, 1, 4);                // x1 = 0x100
-            sim.mem[kB + 0x08] = csrrw(0, 1, 0x305);           // mtvec = 0x100
-            sim.mem[kB + 0x0c] = addi(2, 0, 0x20);
-            sim.mem[kB + 0x10] = slli(2, 2, 4);                // x2 = 0x200
-            sim.mem[kB + 0x14] = csrrw(0, 2, 0x105);           // stvec = 0x200
-            sim.mem[kB + 0x18] = addi(4, 0, 3);
-            sim.mem[kB + 0x1c] = slli(4, 4, 11);               // x4 = 0x1800
-            sim.mem[kB + 0x20] = csrrc(0, 4, 0x300);           // mstatus.MPP = 0 (U-mode)
-            sim.mem[kB + 0x24] = addi(3, 0, 0x40);             // target PC
-            sim.mem[kB + 0x28] = csrrw(0, 3, 0x341);           // mepc = 0x40
+            // mtvec = kB + 0x100, stvec = kB + 0x200, medeleg = 0
+            // mepc = kB + 0x40, MPP = U (0)
+            // MRET to U-mode at kB + 0x40
+            sim.mem[kB + 0x00] = auipc(1, 0);
+            sim.mem[kB + 0x04] = addi(1, 1, 0x100);            // x1 = kB + 0x100
+            sim.mem[kB + 0x08] = csrrw(0, 1, 0x305);           // mtvec = kB + 0x100
+            sim.mem[kB + 0x0c] = addi(2, 1, 0x100);            // x2 = kB + 0x200
+            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);           // stvec = kB + 0x200
+            sim.mem[kB + 0x14] = addi(4, 0, 3);
+            sim.mem[kB + 0x18] = slli(4, 4, 11);               // x4 = 0x1800
+            sim.mem[kB + 0x1c] = csrrc(0, 4, 0x300);           // mstatus.MPP = 0 (U-mode)
+            sim.mem[kB + 0x20] = auipc(3, 0);
+            sim.mem[kB + 0x24] = addi(3, 3, 0x20);             // target PC = kB + 0x40
+            sim.mem[kB + 0x28] = csrrw(0, 3, 0x341);           // mepc = kB + 0x40
             sim.mem[kB + 0x2c] = kMret;                        // MRET into U-mode
 
-            // U-mode code at 0x40:
-            sim.mem[0x40] = kEcall;                            // ECALL in U-mode!
+            // U-mode code at kB + 0x40:
+            sim.mem[kB + 0x40] = kEcall;                       // ECALL in U-mode!
 
             bool trapped_to_m = false;
-            for (int i = 0; i < 60; ++i) {
+            for (int i = 0; i < 100; ++i) {
                 Event e = sim.tick();
                 if (e.trap) {
-                    check(e.pc == 0x40, "Trap PC is 0x40");
+                    check(e.pc == kB + 0x40, "Trap PC is kB + 0x40");
                     check(sim.dut.priv_mode_o == 3, "Trap went to M-mode");
                     check(uint64_t(sim.dut.csr_mcause_o) == 8, "mcause is 8 (U-mode ECALL)");
-                    check(uint64_t(sim.dut.csr_mepc_o) == 0x40, "mepc is 0x40");
+                    check(uint64_t(sim.dut.csr_mepc_o) == kB + 0x40, "mepc is kB + 0x40");
                     check(uint64_t(sim.dut.csr_mtval_o) == 0, "mtval is 0");
                     check((uint64_t(sim.dut.csr_mstatus_o) & 0x1800) == 0, "MPP is U (0)");
                     // S-bank must remain 0:
@@ -417,27 +414,28 @@ int main(int argc, char** argv) {
             sim2.mem[kB + 0x00] = addi(1, 0, 1);
             sim2.mem[kB + 0x04] = slli(1, 1, 8);               // x1 = 0x100 (bit 8 = cause 8)
             sim2.mem[kB + 0x08] = csrrw(0, 1, 0x302);          // medeleg[8] = 1
-            sim2.mem[kB + 0x0c] = addi(2, 0, 0x20);
-            sim2.mem[kB + 0x10] = slli(2, 2, 4);               // x2 = 0x200
-            sim2.mem[kB + 0x14] = csrrw(0, 2, 0x105);          // stvec = 0x200
+            sim2.mem[kB + 0x0c] = auipc(2, 0);
+            sim2.mem[kB + 0x10] = addi(2, 2, 0x1f4);           // x2 = kB + 0x200
+            sim2.mem[kB + 0x14] = csrrw(0, 2, 0x105);          // stvec = kB + 0x200
             sim2.mem[kB + 0x18] = addi(4, 0, 3);
             sim2.mem[kB + 0x1c] = slli(4, 4, 11);              // x4 = 0x1800
             sim2.mem[kB + 0x20] = csrrc(0, 4, 0x300);          // mstatus.MPP = 0 (U-mode)
-            sim2.mem[kB + 0x24] = addi(3, 0, 0x40);            // target PC
-            sim2.mem[kB + 0x28] = csrrw(0, 3, 0x341);          // mepc = 0x40
-            sim2.mem[kB + 0x2c] = kMret;                       // MRET into U-mode
+            sim2.mem[kB + 0x24] = auipc(3, 0);
+            sim2.mem[kB + 0x28] = addi(3, 3, 0x1c);            // mepc = kB + 0x40
+            sim2.mem[kB + 0x2c] = csrrw(0, 3, 0x341);
+            sim2.mem[kB + 0x30] = kMret;                       // MRET into U-mode
 
-            // U-mode code at 0x40:
-            sim2.mem[0x40] = kEcall;                           // ECALL in U-mode!
+            // U-mode code at kB + 0x40:
+            sim2.mem[kB + 0x40] = kEcall;                      // ECALL in U-mode!
 
             bool trapped_to_s = false;
-            for (int i = 0; i < 60; ++i) {
+            for (int i = 0; i < 100; ++i) {
                 Event e = sim2.tick();
                 if (e.trap) {
-                    check(e.pc == 0x40, "Trap PC is 0x40");
+                    check(e.pc == kB + 0x40, "Trap PC is kB + 0x40");
                     check(sim2.dut.priv_mode_o == 1, "Delegated trap must enter S-mode (1)");
                     check(uint64_t(sim2.dut.csr_scause_o) == 8, "scause is 8 (U-mode ECALL)");
-                    check(uint64_t(sim2.dut.csr_sepc_o) == 0x40, "sepc is 0x40");
+                    check(uint64_t(sim2.dut.csr_sepc_o) == kB + 0x40, "sepc is kB + 0x40");
                     check(uint64_t(sim2.dut.csr_stval_o) == 0, "stval is 0");
                     check((uint64_t(sim2.dut.csr_mstatus_o) & 0x100) == 0, "SPP is U (0)");
                     // M-bank must remain untouched:
@@ -460,60 +458,61 @@ int main(int argc, char** argv) {
 
             // 1. M-mode setup:
             // medeleg[2] = 1 (illegal instruction delegated to S)
-            // stvec = 0x200
-            // return to S-mode at 0x40
+            // stvec = kB + 0x200
+            // return to S-mode at kB + 0x40
             sim.mem[kB + 0x00] = addi(1, 0, 4);                // bit 2 = cause 2
             sim.mem[kB + 0x04] = csrrw(0, 1, 0x302);           // medeleg[2] = 1
-            sim.mem[kB + 0x08] = addi(2, 0, 0x20);
-            sim.mem[kB + 0x0c] = slli(2, 2, 4);               // x2 = 0x200
-            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);           // stvec = 0x200
+            sim.mem[kB + 0x08] = auipc(2, 0);
+            sim.mem[kB + 0x0c] = addi(2, 2, 0x1f8);            // x2 = kB + 0x200
+            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);           // stvec = kB + 0x200
             sim.mem[kB + 0x14] = addi(3, 0, 1);
             sim.mem[kB + 0x18] = slli(3, 3, 11);              // x3 = 0x800 (MPP=S)
             sim.mem[kB + 0x1c] = csrrw(0, 3, 0x300);           // mstatus.MPP = S
-            sim.mem[kB + 0x20] = addi(4, 0, 0x40);
-            sim.mem[kB + 0x24] = csrrw(0, 4, 0x341);           // mepc = 0x40
-            sim.mem[kB + 0x28] = kMret;                       // enter S-mode at 0x40
+            sim.mem[kB + 0x20] = auipc(4, 0);
+            sim.mem[kB + 0x24] = addi(4, 4, 0x20);             // mepc = kB + 0x40
+            sim.mem[kB + 0x28] = csrrw(0, 4, 0x341);
+            sim.mem[kB + 0x2c] = kMret;                        // enter S-mode at kB + 0x40
 
-            // S-mode code at 0x40:
+            // S-mode code at kB + 0x40:
             // Trigger delegated illegal instruction (e.g. 0xffffffff)
-            sim.mem[0x40] = 0xffffffff;
+            sim.mem[kB + 0x40] = 0xffffffff;
 
-            // S-mode handler at 0x200:
-            // sepc has 0x40. We advance sepc to 0x44 and return via SRET:
+            // S-mode handler at kB + 0x200:
+            // sepc has kB + 0x40. We advance sepc to kB + 0x44 and return via SRET:
             // x1 = sepc + 4
             // csrw sepc, x1
             // sret
-            sim.mem[0x200] = csrrw(1, 0, 0x141);              // csrr x1, sepc
-            sim.mem[0x204] = addi(1, 1, 4);                   // x1 += 4
-            sim.mem[0x208] = csrrw(0, 1, 0x141);              // csrw sepc, x1
-            sim.mem[0x20c] = kSret;                           // SRET!
+            sim.mem[kB + 0x200] = csrrw(1, 0, 0x141);         // csrr x1, sepc
+            sim.mem[kB + 0x204] = addi(1, 1, 4);              // x1 += 4
+            sim.mem[kB + 0x208] = csrrw(0, 1, 0x141);         // csrw sepc, x1
+            sim.mem[kB + 0x20c] = kSret;                      // SRET!
 
-            // Target after SRET at 0x44:
-            sim.mem[0x44] = addi(7, 0, 0x33);
+            // Target after SRET at kB + 0x44:
+            sim.mem[kB + 0x44] = addi(7, 0, 0x33);
 
             bool trapped_to_s = false;
             bool sret_executed = false;
             bool resumed_after_sret = false;
 
-            for (int i = 0; i < 90; ++i) {
+            for (int i = 0; i < 120; ++i) {
                 Event e = sim.tick();
                 if (e.trap) {
-                    check(e.pc == 0x40, "Trap PC is 0x40");
+                    check(e.pc == kB + 0x40, "Trap PC is kB + 0x40");
                     check(sim.dut.priv_mode_o == 1, "Delegated trap to S-mode");
                     check(uint64_t(sim.dut.csr_scause_o) == 2, "scause is 2 (illegal insn)");
-                    check(uint64_t(sim.dut.csr_sepc_o) == 0x40, "sepc is 0x40");
+                    check(uint64_t(sim.dut.csr_sepc_o) == kB + 0x40, "sepc is kB + 0x40");
                     check(uint64_t(sim.dut.csr_stval_o) == 0xffffffff, "stval is faulting insn");
                     check((uint64_t(sim.dut.csr_mstatus_o) & 0x100) == 0x100,
                           "mstatus.SPP is 1 (origin was S-mode)");
                     trapped_to_s = true;
                 }
-                if (e.commit && e.pc == 0x20c) {
+                if (e.commit && e.pc == kB + 0x20c) {
                     check(sim.dut.priv_mode_o == 1, "SRET executed from S-mode");
                     check((uint64_t(sim.dut.csr_mstatus_o) & 0x100) == 0,
                           "mstatus.SPP must be cleared to U (0) on SRET");
                     sret_executed = true;
                 }
-                if (e.commit && e.pc == 0x44) {
+                if (e.commit && e.pc == kB + 0x44) {
                     check(sim.dut.priv_mode_o == 1, "Resumed execution at sepc in S-mode");
                     check(e.rd == 7 && e.rd_data == 0x33, "Commit value after SRET correct");
                     resumed_after_sret = true;
@@ -533,21 +532,22 @@ int main(int argc, char** argv) {
             CoreSim sim;
             sim.init();
 
-            // Setup: in M-mode, clear MPP to U and return to U-mode at 0x40
+            // Setup: in M-mode, clear MPP to U and return to U-mode at kB + 0x40
             sim.mem[kB + 0x00] = addi(4, 0, 3);
             sim.mem[kB + 0x04] = slli(4, 4, 11);               // x4 = 0x1800
             sim.mem[kB + 0x08] = csrrc(0, 4, 0x300);           // mstatus.MPP = 0 (U-mode)
-            sim.mem[kB + 0x0c] = addi(1, 0, 0x40);
-            sim.mem[kB + 0x10] = csrrw(0, 1, 0x341);           // mepc = 0x40
-            sim.mem[kB + 0x14] = kMret;                        // enter U-mode
+            sim.mem[kB + 0x0c] = auipc(1, 0);
+            sim.mem[kB + 0x10] = addi(1, 1, 0x34);             // mepc = kB + 0x40
+            sim.mem[kB + 0x14] = csrrw(0, 1, 0x341);
+            sim.mem[kB + 0x18] = kMret;                        // enter U-mode
 
             // Test WFI in U-mode:
-            sim.mem[0x40] = kWfi;
+            sim.mem[kB + 0x40] = kWfi;
 
-            sim.step_until_commit_at(kB + 0x14);
+            sim.step_until_commit_at(kB + 0x18);
             check(sim.dut.priv_mode_o == 0, "Now in U-mode");
             Event trap_wfi = sim.step_until_trap();
-            check(trap_wfi.pc == 0x40 && uint64_t(sim.dut.csr_mcause_o) == 2,
+            check(trap_wfi.pc == kB + 0x40 && uint64_t(sim.dut.csr_mcause_o) == 2,
                   "WFI in U-mode must raise illegal instruction (cause 2)");
 
             // 6B: In S-mode: TSR intercept for SRET
@@ -563,17 +563,18 @@ int main(int argc, char** argv) {
             sim2.mem[kB + 0x18] = slli(2, 2, 11);              // x2 = 0x800 (MPP=S)
             sim2.mem[kB + 0x1c] = csrrs(0, 1, 0x300);          // set TSR
             sim2.mem[kB + 0x20] = csrrs(0, 2, 0x300);          // set MPP=S
-            sim2.mem[kB + 0x24] = addi(3, 0, 0x50);
-            sim2.mem[kB + 0x28] = csrrw(0, 3, 0x341);          // mepc = 0x50
-            sim2.mem[kB + 0x2c] = kMret;                       // enter S-mode at 0x50
+            sim2.mem[kB + 0x24] = auipc(3, 0);
+            sim2.mem[kB + 0x28] = addi(3, 3, 0x2c);            // mepc = kB + 0x50
+            sim2.mem[kB + 0x2c] = csrrw(0, 3, 0x341);
+            sim2.mem[kB + 0x30] = kMret;                       // enter S-mode at kB + 0x50
 
-            // S-mode code at 0x50:
-            sim2.mem[0x50] = kSret;                            // SRET with TSR=1 -> must trap!
+            // S-mode code at kB + 0x50:
+            sim2.mem[kB + 0x50] = kSret;                       // SRET with TSR=1 -> must trap!
 
-            sim2.step_until_commit_at(kB + 0x2c);
+            sim2.step_until_commit_at(kB + 0x30);
             check(sim2.dut.priv_mode_o == 1, "Now in S-mode with TSR=1");
             Event trap_sret = sim2.step_until_trap();
-            check(trap_sret.pc == 0x50 && uint64_t(sim2.dut.csr_mcause_o) == 2,
+            check(trap_sret.pc == kB + 0x50 && uint64_t(sim2.dut.csr_mcause_o) == 2,
                   "SRET in S-mode with TSR=1 must raise illegal instruction (cause 2)");
 
             // 6C: In S-mode: TW intercept for WFI
@@ -589,17 +590,18 @@ int main(int argc, char** argv) {
             sim3.mem[kB + 0x18] = slli(2, 2, 11);              // x2 = 0x800 (MPP=S)
             sim3.mem[kB + 0x1c] = csrrs(0, 1, 0x300);          // set TW
             sim3.mem[kB + 0x20] = csrrs(0, 2, 0x300);          // set MPP=S
-            sim3.mem[kB + 0x24] = addi(3, 0, 0x60);
-            sim3.mem[kB + 0x28] = csrrw(0, 3, 0x341);          // mepc = 0x60
-            sim3.mem[kB + 0x2c] = kMret;                       // enter S-mode at 0x60
+            sim3.mem[kB + 0x24] = auipc(3, 0);
+            sim3.mem[kB + 0x28] = addi(3, 3, 0x3c);            // mepc = kB + 0x60
+            sim3.mem[kB + 0x2c] = csrrw(0, 3, 0x341);
+            sim3.mem[kB + 0x30] = kMret;                       // enter S-mode at kB + 0x60
 
-            // S-mode code at 0x60:
-            sim3.mem[0x60] = kWfi;                             // WFI with TW=1 -> must trap!
+            // S-mode code at kB + 0x60:
+            sim3.mem[kB + 0x60] = kWfi;                        // WFI with TW=1 -> must trap!
 
-            sim3.step_until_commit_at(kB + 0x2c);
+            sim3.step_until_commit_at(kB + 0x30);
             check(sim3.dut.priv_mode_o == 1, "Now in S-mode with TW=1");
             Event trap_wfi_tw = sim3.step_until_trap();
-            check(trap_wfi_tw.pc == 0x60 && uint64_t(sim3.dut.csr_mcause_o) == 2,
+            check(trap_wfi_tw.pc == kB + 0x60 && uint64_t(sim3.dut.csr_mcause_o) == 2,
                   "WFI in S-mode with TW=1 must raise illegal instruction (cause 2)");
 
             // 6D: SFENCE.VMA is legal in M-mode even when satp is Bare.
@@ -623,13 +625,13 @@ int main(int argc, char** argv) {
             // Set medeleg to all 1s (0x3ff)
             sim.mem[kB + 0x00] = addi(1, 0, 0x3ff);
             sim.mem[kB + 0x04] = csrrw(0, 1, 0x302);          // medeleg = 0x3ff
-            sim.mem[kB + 0x08] = addi(2, 0, 0x20);
-            sim.mem[kB + 0x0c] = slli(2, 2, 4);               // x2 = 0x200
-            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);          // stvec = 0x200
+            sim.mem[kB + 0x08] = auipc(2, 0);
+            sim.mem[kB + 0x0c] = addi(2, 2, 0x1f8);           // x2 = kB + 0x200
+            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);          // stvec = kB + 0x200
             // In M-mode, execute ECALL (cause 11)
             sim.mem[kB + 0x14] = kEcall;
 
-            for (int i = 0; i < 40; ++i) {
+            for (int i = 0; i < 80; ++i) {
                 Event e = sim.tick();
                 if (e.trap) {
                     check(e.pc == kB + 0x14, "Trap PC must be kB + 0x14");
@@ -656,44 +658,45 @@ int main(int argc, char** argv) {
             // Delegate load misaligned (cause 4): bit 4 = 0x10
             sim.mem[kB + 0x00] = addi(1, 0, 0x10);            // bit 4
             sim.mem[kB + 0x04] = csrrw(0, 1, 0x302);          // medeleg[4] = 1
-            sim.mem[kB + 0x08] = addi(2, 0, 0x20);
-            sim.mem[kB + 0x0c] = slli(2, 2, 4);               // x2 = 0x200
-            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);          // stvec = 0x200
+            sim.mem[kB + 0x08] = auipc(2, 0);
+            sim.mem[kB + 0x0c] = addi(2, 2, 0x1f8);           // x2 = kB + 0x200
+            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);          // stvec = kB + 0x200
             sim.mem[kB + 0x14] = addi(4, 0, 3);
             sim.mem[kB + 0x18] = slli(4, 4, 11);              // x4 = 0x1800
             sim.mem[kB + 0x1c] = csrrc(0, 4, 0x300);          // clear MPP to U
             sim.mem[kB + 0x20] = addi(5, 0, 1);
             sim.mem[kB + 0x24] = slli(5, 5, 11);              // x5 = 0x800 (MPP=S)
             sim.mem[kB + 0x28] = csrrs(0, 5, 0x300);          // set MPP=S
-            sim.mem[kB + 0x2c] = addi(3, 0, 0x40);
-            sim.mem[kB + 0x30] = csrrw(0, 3, 0x341);          // mepc = 0x40
-            sim.mem[kB + 0x34] = kMret;                       // enter S-mode at 0x40
+            sim.mem[kB + 0x2c] = auipc(3, 0);
+            sim.mem[kB + 0x30] = addi(3, 3, 0x14);            // mepc = kB + 0x40
+            sim.mem[kB + 0x34] = csrrw(0, 3, 0x341);
+            sim.mem[kB + 0x38] = kMret;                       // enter S-mode at kB + 0x40
 
-            // S-mode code at 0x40:
+            // S-mode code at kB + 0x40:
             // LW x6, 1(x0) -> misaligned load at address 1! (LW opcode: 0x00102303)
-            sim.mem[0x40] = addi(6, 0, 0x55);                 // init x6 = 0x55
-            sim.mem[0x44] = 0x00102303;                       // lw x6, 1(x0) - misaligned!
+            sim.mem[kB + 0x40] = addi(6, 0, 0x55);            // init x6 = 0x55
+            sim.mem[kB + 0x44] = 0x00102303;                  // lw x6, 1(x0) - misaligned!
 
-            // S-mode handler at 0x200:
-            sim.mem[0x200] = addi(7, 6, 0);                   // read x6 into x7
+            // S-mode handler at kB + 0x200:
+            sim.mem[kB + 0x200] = addi(7, 6, 0);              // read x6 into x7
 
             bool trapped_to_s = false;
             bool x6_preserved = false;
 
-            for (int i = 0; i < 80; ++i) {
+            for (int i = 0; i < 120; ++i) {
                 Event e = sim.tick();
                 if (e.trap) {
-                    check(e.pc == 0x44, "Trap PC must be 0x44");
+                    check(e.pc == kB + 0x44, "Trap PC must be kB + 0x44");
                     check(sim.dut.priv_mode_o == 1, "Trap must enter S-mode");
                     check(uint64_t(sim.dut.csr_scause_o) == 4, "scause must be 4 (load misaligned)");
-                    check(uint64_t(sim.dut.csr_sepc_o) == 0x44, "sepc must be 0x44");
+                    check(uint64_t(sim.dut.csr_sepc_o) == kB + 0x44, "sepc must be kB + 0x44");
                     check(uint64_t(sim.dut.csr_stval_o) == 1, "stval must be faulting effective address 1");
                     check((uint64_t(sim.dut.csr_mstatus_o) & 0x100) == 0x100, "SPP must be S (1)");
                     // M-bank untouched:
                     check(uint64_t(sim.dut.csr_mcause_o) == 0, "mcause untouched");
                     trapped_to_s = true;
                 }
-                if (e.commit && e.pc == 0x200) {
+                if (e.commit && e.pc == kB + 0x200) {
                     check(e.rd == 7 && e.rd_data == 0x55,
                           "Destination register x6 of misaligned load must NOT be modified");
                     x6_preserved = true;
@@ -714,35 +717,36 @@ int main(int argc, char** argv) {
             // Delegate illegal instruction (cause 2) to S:
             sim.mem[kB + 0x00] = addi(1, 0, 4);               // bit 2
             sim.mem[kB + 0x04] = csrrw(0, 1, 0x302);          // medeleg[2] = 1
-            sim.mem[kB + 0x08] = addi(2, 0, 0x20);
-            sim.mem[kB + 0x0c] = slli(2, 2, 4);               // x2 = 0x200
-            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);          // stvec = 0x200
+            sim.mem[kB + 0x08] = auipc(2, 0);
+            sim.mem[kB + 0x0c] = addi(2, 2, 0x1f8);           // x2 = kB + 0x200
+            sim.mem[kB + 0x10] = csrrw(0, 2, 0x105);          // stvec = kB + 0x200
             sim.mem[kB + 0x14] = addi(4, 0, 3);
             sim.mem[kB + 0x18] = slli(4, 4, 11);              // x4 = 0x1800
             sim.mem[kB + 0x1c] = csrrc(0, 4, 0x300);          // clear MPP to U
             sim.mem[kB + 0x20] = addi(5, 0, 1);
             sim.mem[kB + 0x24] = slli(5, 5, 11);              // x5 = 0x800 (MPP=S)
             sim.mem[kB + 0x28] = csrrs(0, 5, 0x300);          // set MPP=S
-            sim.mem[kB + 0x2c] = addi(3, 0, 0x40);
-            sim.mem[kB + 0x30] = csrrw(0, 3, 0x341);          // mepc = 0x40
-            sim.mem[kB + 0x34] = kMret;                       // enter S-mode at 0x40 (with mcounteren.CY = 0)
+            sim.mem[kB + 0x2c] = auipc(3, 0);
+            sim.mem[kB + 0x30] = addi(3, 3, 0x14);            // mepc = kB + 0x40
+            sim.mem[kB + 0x34] = csrrw(0, 3, 0x341);
+            sim.mem[kB + 0x38] = kMret;                       // enter S-mode at kB + 0x40
 
-            // S-mode code at 0x40:
+            // S-mode code at kB + 0x40:
             // csrr x6, cycle (0xc00) -> illegal because mcounteren.CY == 0!
-            sim.mem[0x40] = csrrw(6, 0, 0xc00);
+            sim.mem[kB + 0x40] = csrrw(6, 0, 0xc00);
 
-            // Handler at 0x200:
-            // SRET to 0x44
-            sim.mem[0x200] = csrrw(1, 0, 0x141);              // sepc
-            sim.mem[0x204] = addi(1, 1, 4);
-            sim.mem[0x208] = csrrw(0, 1, 0x141);              // sepc += 4
-            sim.mem[0x20c] = kSret;
+            // Handler at kB + 0x200:
+            // SRET to kB + 0x44
+            sim.mem[kB + 0x200] = csrrw(1, 0, 0x141);         // sepc
+            sim.mem[kB + 0x204] = addi(1, 1, 4);
+            sim.mem[kB + 0x208] = csrrw(0, 1, 0x141);         // sepc += 4
+            sim.mem[kB + 0x20c] = kSret;
 
             bool cycle_trapped = false;
-            for (int i = 0; i < 60; ++i) {
+            for (int i = 0; i < 100; ++i) {
                 Event e = sim.tick();
                 if (e.trap) {
-                    check(e.pc == 0x40 && uint64_t(sim.dut.csr_scause_o) == 2,
+                    check(e.pc == kB + 0x40 && uint64_t(sim.dut.csr_scause_o) == 2,
                           "cycle read in S-mode with mcounteren.CY=0 must trap to S (cause 2)");
                     cycle_trapped = true;
                     break;
@@ -882,7 +886,7 @@ int main(int argc, char** argv) {
             sim.mem[kB + 0x5c] = csrrs(11, 0, 0x100);         // read new sstatus into x11 (no write)
             sim.mem[kB + 0x60] = addi(12, 0, 1);              // done marker
 
-            sim.step_until_commit_at(kB + 0x60, 80);
+            sim.step_until_commit_at(kB + 0x60, 200);
 
             // Check S-mode view of sstatus:
             // In S-mode: writable mask is 0x122 (SIE=1, SPIE=1, SPP=1)

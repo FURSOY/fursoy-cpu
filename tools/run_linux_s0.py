@@ -10,7 +10,7 @@ LOG_FILE = ROOT / "results/linux_boot.log"
 TB = ROOT / "verification/linux_s0_tb.cpp"
 
 RTL = [
-    ROOT / "rtl/core/fursoy_s0_fetch.sv",
+    ROOT / "rtl/core/fursoy_s0_l1i.sv",
     ROOT / "rtl/core/fursoy_s0_int_alu.sv",
     ROOT / "rtl/core/fursoy_s0_control.sv",
     ROOT / "rtl/core/fursoy_s0_lsu_decode.sv",
@@ -18,6 +18,10 @@ RTL = [
     ROOT / "rtl/core/fursoy_s0_csr.sv",
     ROOT / "rtl/core/fursoy_s0_pmp_check.sv",
     ROOT / "rtl/core/fursoy_s0_pmp.sv",
+    ROOT / "rtl/core/fursoy_s0_tlb.sv",
+    ROOT / "rtl/core/fursoy_s0_l1d.sv",
+    ROOT / "rtl/core/fursoy_s0_sb.sv",
+    ROOT / "rtl/core/fursoy_s0_bpu.sv",
     ROOT / "rtl/core/fursoy_s0_mmu.sv",
     ROOT / "rtl/core/fursoy_s0_core.sv",
     ROOT / "rtl/platform/fursoy_s0_clint.sv",
@@ -28,6 +32,13 @@ RTL = [
 
 def sha(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
+
+def manifest_sha(paths):
+    h = hashlib.sha256()
+    for p in sorted(paths, key=lambda x: str(x.relative_to(ROOT))):
+        h.update(str(p.relative_to(ROOT)).replace("\\", "/").encode() + b"\0")
+        h.update(p.read_bytes() + b"\0")
+    return h.hexdigest()
 
 def main():
     BUILD.mkdir(parents=True, exist_ok=True)
@@ -46,7 +57,14 @@ def main():
         dtb_file = ROOT / "build/dts/fursoy_s0.dtb"
         dtb_src = ROOT / "software/dts/fursoy_s0.dts"
         kernel_img = ROOT / "build/linux-6.6.50/arch/riscv/boot/Image"
+        kernel_dir = ROOT / "build/linux-6.6.50"
         config_file = ROOT / "software/linux/fursoy_s0_defconfig"
+        busybox_bin = ROOT / "build/busybox/busybox-1.36.1/busybox"
+        mem_stress_src = ROOT / "software/initramfs/mem_stress.c"
+        mem_stress_bin = ROOT / "build/initramfs_root/bin/mem_stress"
+        init_script = ROOT / "software/initramfs/init.sh"
+        initramfs_cpio = ROOT / "build/initramfs.cpio"
+        rootfs = ROOT / "build/initramfs_root"
 
         # 1. Rebuild DTB if needed
         dtb_file.parent.mkdir(parents=True, exist_ok=True)
@@ -59,19 +77,54 @@ def main():
         if not fw_elf.exists():
             subprocess.run(["python3", "tools/run_sbi_s0.py"], cwd=ROOT, check=True, timeout=120)
 
-        # 3. Check Kernel Image
-        if not kernel_img.exists():
-            raise RuntimeError(f"Kernel Image not found at {kernel_img}. Please build kernel first.")
+        # 3. Check / Build BusyBox if needed
+        if not busybox_bin.exists():
+            print("[RUNNER] Building BusyBox 1.36.1...")
+            subprocess.run(["bash", str(ROOT / "scratch/build_busybox.sh")], cwd=ROOT, check=True, timeout=300)
 
-        # Record hashes
+        # 4. Assemble rootfs and generate initramfs.cpio if needed
+        rebuild_cpio = False
+        if not initramfs_cpio.exists() or not mem_stress_bin.exists():
+            rebuild_cpio = True
+        elif mem_stress_src.stat().st_mtime > mem_stress_bin.stat().st_mtime:
+            rebuild_cpio = True
+        elif init_script.stat().st_mtime > initramfs_cpio.stat().st_mtime:
+            rebuild_cpio = True
+
+        if rebuild_cpio:
+            print("[RUNNER] Assembling initramfs rootfs and generating cpio archive...")
+            subprocess.run(["bash", str(ROOT / "scratch/prepare_initramfs.sh")], cwd=ROOT, check=True, timeout=120)
+
+        # Ensure usr/initramfs_data.cpio is present and up to date in kernel tree
+        kernel_cpio = kernel_dir / "usr/initramfs_data.cpio"
+        if not kernel_cpio.exists() or initramfs_cpio.stat().st_mtime > kernel_cpio.stat().st_mtime:
+            import shutil
+            shutil.copy2(str(initramfs_cpio), str(kernel_cpio))
+
+        # 5. Check / Rebuild Kernel Image
+        if not kernel_img.exists() or kernel_cpio.stat().st_mtime > kernel_img.stat().st_mtime:
+            print("[RUNNER] Rebuilding Linux kernel Image with embedded initramfs...")
+            k_cmd = ["make", "-C", str(kernel_dir), "ARCH=riscv", "CROSS_COMPILE=riscv64-linux-gnu-", "-j4", "Image"]
+            k_run = subprocess.run(k_cmd, cwd=ROOT, capture_output=True, text=True, timeout=300)
+            if k_run.returncode:
+                raise RuntimeError("Kernel build failed:\n" + k_run.stderr)
+
+        # Record hashes and provenance
         report["source_sha256"] = {
             "firmware_elf": sha(fw_elf),
             "dtb": sha(dtb_file),
             "kernel_image": sha(kernel_img),
             "defconfig": sha(config_file),
+            "initramfs_cpio": sha(initramfs_cpio),
+            "busybox_bin": sha(busybox_bin),
+            "mem_stress_bin": sha(mem_stress_bin),
+            "init_script": sha(init_script),
         }
+        report["rtl_source_sha256"] = {str(p.relative_to(ROOT)): sha(p) for p in RTL}
+        report["rtl_manifest_sha256"] = manifest_sha(RTL)
+        report["busybox_version"] = "1.36.1"
 
-        # 4. Build Verilator Simulation executable
+        # 6. Build Verilator Simulation executable
         v_cmd = [
             "verilator", "--cc", "--exe", "--build", "-O3", "--assert", "-Wall", "-j", "4",
             "--top-module", "fursoy_s0_soc", "--Mdir", str(BUILD / "obj"),
@@ -83,13 +136,13 @@ def main():
         if b_v.returncode:
             raise RuntimeError(f"Verilator build failed. Check {BUILD / 'verilator_build.log'}")
 
-        # 5. Execute Simulation
-        max_cycles = sys.argv[1] if len(sys.argv) > 1 else "15000000"
+        # 7. Execute Simulation
+        max_cycles = sys.argv[1] if len(sys.argv) > 1 else "210000000"
         sim_cmd = [
             str(BUILD / "obj/Vfursoy_s0_soc"),
             str(fw_elf), str(kernel_img), str(dtb_file), max_cycles,
         ]
-        print(f"[RUNNER] Launching Linux boot simulation (max_cycles={max_cycles})...")
+        print(f"[RUNNER] Launching Linux BusyBox userspace simulation (max_cycles={max_cycles})...")
 
         with LOG_FILE.open("w", encoding="utf-8") as log:
             import threading
@@ -130,16 +183,31 @@ def main():
             try:
                 tb_report = json.loads(full_output[json_start:])
                 report["tb_report"] = tb_report
-                if tb_report.get("status") in ["pass", "earlycon_pass"]:
+                report["cycles"] = tb_report.get("cycles")
+                report["commits"] = tb_report.get("commits")
+                report["timer_interrupts"] = tb_report.get("mtip_count")
+                report["seen_userspace_begin"] = tb_report.get("seen_userspace_begin", False)
+                report["seen_userspace_pass"] = tb_report.get("seen_userspace_pass", False)
+                report["seen_userspace_fail"] = tb_report.get("seen_userspace_fail", False)
+                if tb_report.get("status") in ["pass", "earlycon_pass", "userspace_fail", "init_reached"]:
                     report["status"] = tb_report["status"]
             except Exception as e:
                 report["json_parse_error"] = str(e)
 
         if "Kernel panic" in full_output:
             report["status"] = "panic"
-        elif "[INIT]" in full_output or "Userspace active" in full_output:
+            report["fatal_halt"] = True
+        else:
+            report["fatal_halt"] = False
+
+        if "FURSOY_USERSPACE_PASS" in full_output and "FURSOY_USERSPACE_FAIL" not in full_output and report["status"] != "panic":
             report["status"] = "pass"
-            print("\n[RUNNER] SUCCESS: Linux boot reached userspace (/init)!")
+            print("\n========================================================")
+            print("[RUNNER] SUCCESS: Linux BusyBox userspace smoke & memory suite PASSED!")
+            print("========================================================")
+        elif "FURSOY_USERSPACE_FAIL" in full_output:
+            report["status"] = "fail"
+            print("\n[RUNNER] FAILURE: Userspace smoke test failed.")
 
         print(f"\n[RUNNER] Simulation exited. Status: {report['status']}")
 

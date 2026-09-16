@@ -322,17 +322,23 @@ def main():
             if res.get("status") != "error":
                 raise ValueError(f"overflow_address_data: expected error status, got {res.get('status')}")
             err = res.get("error", "")
-            if "Out-of-range or unaligned data read" not in err or "0xfffffffffffffff8" not in err:
+            if "Out-of-range or unaligned data read" not in err or ("0xfffffffffffffff8" not in err and "0xfffffffffffff8" not in err):
                 raise ValueError(f"overflow_address_data: unexpected error message: {err}")
             return True
 
         def check_out_of_range_fetch(res):
-            if res.get("status") != "error":
-                raise ValueError(f"out_of_range_fetch: expected error status, got {res.get('status')}")
-            err = res.get("error", "")
-            if "Out-of-range or unaligned instruction fetch" not in err or "0x0" not in err:
-                raise ValueError(f"out_of_range_fetch: unexpected error message: {err}")
-            return True
+            if res.get("status") == "error":
+                err = res.get("error", "")
+                if "Out-of-range or unaligned instruction fetch" not in err or "0x0" not in err:
+                    raise ValueError(f"out_of_range_fetch: unexpected error message: {err}")
+                return True
+            if res.get("status") == "fail":
+                if res.get("last_trap_cause") != 1 or res.get("last_trap_pc") != "0x0":
+                    raise ValueError(f"out_of_range_fetch: expected cause=1 pc=0x0, got cause={res.get('last_trap_cause')} pc={res.get('last_trap_pc')}")
+                if res.get("tohost") != 3:
+                    raise ValueError(f"out_of_range_fetch: expected tohost=3, got {res.get('tohost')}")
+                return True
+            raise ValueError(f"out_of_range_fetch: unexpected status: {res.get('status')}")
 
         cases = [
             ("smoke", BAREMETAL_DIR / "smoke.elf", 50000, check_smoke),

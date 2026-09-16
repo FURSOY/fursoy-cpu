@@ -22,8 +22,13 @@ module fursoy_s0_pmp (
 
     // PMP array outputs to MMU checker instances
     output logic [7:0]  pmp_cfg_o [16],
-    output logic [53:0] pmp_addr_o [16]
+    output logic [53:0] pmp_addr_o [16],
+
+    // Flush strobe to L1I on PMP configuration update
+    output logic        pmp_flush_o
 );
+    assign pmp_flush_o = !rst_i && csr_we_i && ((csr_addr_i == 12'h3a0) || (csr_addr_i == 12'h3a2) ||
+                                                 ((csr_addr_i >= 12'h3b0) && (csr_addr_i <= 12'h3bf)));
     logic [7:0]  pmp_cfg_q  [16];
     logic [53:0] pmp_addr_q [16];
 

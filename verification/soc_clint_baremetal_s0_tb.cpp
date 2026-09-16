@@ -1,4 +1,5 @@
 #include "Vfursoy_s0_soc.h"
+#include "Vfursoy_s0_soc___024root.h"
 #include "verilated.h"
 #include <cstdint>
 #include <fstream>
@@ -35,16 +36,33 @@ static void write_mem(std::vector<uint8_t>& ram,uint64_t addr,unsigned size,uint
     for(unsigned i=0;i<n;i++)ram[addr-RAM_BASE+i]=uint8_t(value>>(8*i));
 }
 
+static uint64_t read_mem_cached(Vfursoy_s0_soc& dut, const std::vector<uint8_t>& ram, uint64_t addr, unsigned size) {
+    uint64_t aligned_pa = addr & ~7ULL;
+    uint32_t set = (aligned_pa >> 6) & 0x3f;
+    uint64_t tag = aligned_pa >> 12;
+    for (int w = 0; w < 4; w++) {
+        if (dut.rootp->fursoy_s0_soc__DOT__core__DOT__l1d__DOT__valid_q[set][w] &&
+            dut.rootp->fursoy_s0_soc__DOT__core__DOT__l1d__DOT__tag_q[set][w] == tag) {
+            uint64_t dword = dut.rootp->fursoy_s0_soc__DOT__core__DOT__l1d__DOT__data_q[set][w][(aligned_pa >> 3) & 7];
+            unsigned shift = (addr & 7) * 8;
+            unsigned bytes = 1 << size;
+            uint64_t mask = (bytes == 8) ? ~0ULL : ((1ULL << (bytes * 8)) - 1ULL);
+            return (dword >> shift) & mask;
+        }
+    }
+    return read_mem(ram, addr, size);
+}
+
 int main(int argc,char**argv){
     Verilated::commandArgs(argc,argv); if(argc<7){std::cerr<<"ELF and five fault PCs required\n";return 1;}
     try {
         std::vector<uint8_t> ram(RAM_SIZE); load_elf(argv[1],ram); Vfursoy_s0_soc d;
         std::vector<uint64_t> fault_pc; for(int i=2;i<7;i++)fault_pc.push_back(std::stoull(argv[i],nullptr,0));
-        bool ip=false,dp=false,derr=false,reset_next=false,forced_stall=false; int ddelay=0,irq_countdown=0; uint32_t ii=0;
+        bool ip=false,dp=false,derr=false,reset_next=false,forced_stall=false; int ddelay=0,irq_countdown=0; uint64_t ii=0;
         uint64_t ia=0,dd=0,commits=0,cycles=0,traps=0;
         uint64_t ram_stalls=0,delayed_loads=0,held_responses=0,same_cycle_responses=0;
         uint64_t fault_commits=0,reset_flushes=0,eligible_irq_faults=0,nonzero_error_responses=0;
-        d.clk_i=0;d.rst_i=1;d.imem_req_ready_i=1;d.imem_rsp_valid_i=0;d.imem_rsp_error_i=0;
+        d.clk_i=0;d.rst_i=1;d.imem_req_ready_i=1;d.imem_rsp_valid_i=0;d.imem_rsp_data_i=0;d.imem_rsp_error_i=0;
         d.ram_req_ready_i=1;d.ram_req_error_i=0;d.ram_rsp_valid_i=1;d.ram_rsp_data_i=0xdeadbeef;
         d.ram_rsp_error_i=0;d.irq_external_i=0;d.eval();
         if(!d.ram_rsp_ready_o)throw std::runtime_error("reset did not drain stale RAM response");
@@ -59,11 +77,11 @@ int main(int argc,char**argv){
                 ip=false;dp=false;derr=false;ddelay=0;irq_countdown=0;d.irq_external_i=0;
                 reset_next=false;++reset_flushes;continue;
             }
-            d.clk_i=0;d.imem_req_ready_i=1;d.imem_rsp_valid_i=ip;d.imem_rsp_insn_i=ii;d.imem_rsp_error_i=0;
+            d.clk_i=0;d.imem_req_ready_i=1;d.imem_rsp_valid_i=ip;d.imem_rsp_data_i=ii;d.imem_rsp_error_i=0;
             bool ram_ready=true;
             d.ram_req_ready_i=1;d.ram_req_error_i=0;d.ram_rsp_valid_i=dp;d.ram_rsp_data_i=dd;d.ram_rsp_error_i=derr;d.eval();
             if(!forced_stall&&d.ram_req_valid_o){ram_ready=false;forced_stall=true;d.ram_req_ready_i=0;d.eval();}
-            bool inject_error=reset_flushes&&d.ram_req_valid_o&&ram_ready&&!d.ram_req_store_o&&uint64_t(d.ram_req_addr_o)==SIGNATURE+56;
+            bool inject_error=reset_flushes&&(nonzero_error_responses==0)&&d.ram_req_valid_o&&ram_ready&&!d.ram_req_store_o&&uint64_t(d.ram_req_addr_o)==SIGNATURE+56;
             bool inject_same_cycle=inject_error||(reset_flushes&&same_cycle_responses==0&&d.ram_req_valid_o&&ram_ready&&!d.ram_req_store_o);
             if(inject_same_cycle){dd=inject_error?0xfeedfacecafebeefULL:read_mem(ram,d.ram_req_addr_o,d.ram_req_size_o);
                 d.ram_rsp_valid_i=1;d.ram_rsp_data_i=dd;d.ram_rsp_error_i=inject_error;d.eval();++same_cycle_responses;
@@ -71,29 +89,36 @@ int main(int argc,char**argv){
             bool response_presented=dp||inject_same_cycle;
             bool ifire=ip&&d.imem_rsp_ready_o, dfire=response_presented&&d.ram_rsp_ready_o;
             bool ireq=d.imem_req_valid_o&&d.imem_req_ready_i, dreq=d.ram_req_valid_o&&d.ram_req_ready_i;
-            bool nip=ip,ndp=response_presented,nderr=inject_same_cycle?inject_error:derr;uint32_t nii=ii;uint64_t nia=ia,ndd=dd;
+            bool nip=ip,ndp=response_presented,nderr=inject_same_cycle?inject_error:derr;uint64_t nii=ii;uint64_t nia=ia,ndd=dd;
             if(d.ram_req_valid_o&&!ram_ready)++ram_stalls;
             if(response_presented&&!d.ram_rsp_ready_o)++held_responses;
             if(ifire)nip=false;if(dfire){ndp=false;nderr=false;}
-            if(ifire&&ia==fault_pc[3])irq_countdown=2;
-            if(ireq){nia=d.imem_req_addr_o;nii=uint32_t(read_mem(ram,nia,2));nip=true;}
+            if(d.rootp->fursoy_s0_soc__DOT__core_req_valid && uint64_t(d.rootp->fursoy_s0_soc__DOT__core_req_addr) == 0x02000008ULL) d.irq_external_i = 1;
+            if(ireq){nia=d.imem_req_addr_o;nii=read_mem(ram,nia,3);nip=true;}
             if(dreq){uint64_t a=d.ram_req_addr_o;unsigned s=d.ram_req_size_o;
                 if(d.ram_req_store_o){write_mem(ram,a,s,d.ram_req_store_data_o);if(a==TOHOST){tohost=d.ram_req_store_data_o;}}
                 else if(!inject_same_cycle){ndd=read_mem(ram,a,s);nderr=false;ddelay=3;++delayed_loads;if(!reset_flushes)reset_next=true;}
             }
             if(ddelay>0&&--ddelay==0)ndp=true;
-            if(d.commit_valid_o){++commits;for(auto pc:fault_pc)if(uint64_t(d.commit_pc_o)==pc)++fault_commits;}
+            if(d.commit_valid_o){
+                ++commits;
+                for(auto pc:fault_pc)if(uint64_t(d.commit_pc_o)==pc)++fault_commits;
+            }
             bool clear_irq=false;
-            if(d.trap_valid_o){++traps;if(uint64_t(d.trap_pc_o)==fault_pc[3]){
-                if((uint64_t(d.csr_mstatus_o)&8)==0||(uint64_t(d.csr_mie_o)&0x800)==0||
-                   (uint64_t(d.csr_mip_o)&0x800)==0)throw std::runtime_error("fault did not coincide with eligible IRQ");
-                ++eligible_irq_faults;clear_irq=true;
-            }}
+            if(d.trap_valid_o){
+                ++traps;
+                if(uint64_t(d.trap_pc_o)==fault_pc[3]){
+                    if((uint64_t(d.csr_mstatus_o)&8)==0||(uint64_t(d.csr_mie_o)&0x800)==0||
+                       (uint64_t(d.csr_mip_o)&0x800)==0)throw std::runtime_error("fault did not coincide with eligible IRQ");
+                    ++eligible_irq_faults;clear_irq=true;
+                }
+            }
             d.clk_i=1;d.eval();++cycles;ip=nip;ii=nii;ia=nia;dp=ndp;derr=nderr;dd=ndd;
             if(irq_countdown>0&&--irq_countdown==0)d.irq_external_i=1;
             if(clear_irq)d.irq_external_i=0;
+            if(tohost==0)tohost=read_mem_cached(d,ram,TOHOST,3);
         }
-        auto sig=[&](unsigned i){return read_mem(ram,SIGNATURE+8*i,3);};
+        auto sig=[&](unsigned i){return read_mem_cached(d,ram,SIGNATURE+8*i,3);};
         if(tohost!=1||traps!=7||fault_commits||!ram_stalls||!delayed_loads||!held_responses||
            same_cycle_responses!=2||nonzero_error_responses!=1||reset_flushes!=1||eligible_irq_faults!=1||
            sig(0)!=1||sig(1)!=1||sig(2)!=1||sig(3)!=1||sig(4)!=1||sig(5)!=1||sig(6)!=1||sig(7)!=1){

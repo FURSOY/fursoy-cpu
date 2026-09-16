@@ -1,7 +1,7 @@
 {
   "status": "pass",
   "scope": "single-hart CLINT-style MMIO adapter; no core or PLIC integration",
-  "observed_at_utc": "2026-09-08T09:56:28.784958+00:00",
+  "observed_at_utc": "2026-09-14T20:59:06.254077+00:00",
   "source_sha256": {
     "rtl/platform/fursoy_s0_clint.sv": "8d73be8c58dd891ea54d2d80619ee7206d6057bb0fbe1336354d35ac1bb5730e",
     "verification/clint_s0_tb.cpp": "2f45d76a2bf80d5fc8569b8ce20e6f0260edfab53b590c932d8788b428298666",

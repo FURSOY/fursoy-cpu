@@ -42,3 +42,6 @@ ENV/
 # OS-generated metadata
 .DS_Store
 Thumbs.db
+
+# Scratch and transient working scripts
+scratch/

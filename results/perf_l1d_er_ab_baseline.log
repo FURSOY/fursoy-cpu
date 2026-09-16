@@ -1,0 +1,2451 @@
+[    0.000000] Linux version 6.6.50 (fsoye@FURSOY) (riscv64-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #19 Tue Sep  8 21:09:17 +03 2026
+[    0.000000] Machine model: Fursoy Slice-0 RISC-V Server Platform
+[    0.000000] SBI specification v2.0 detected
+[    0.000000] SBI implementation ID=0xf00501 Version=0x1
+[    0.000000] SBI TIME extension detected
+[    0.000000] SBI SRST extension detected
+[    0.000000] earlycon: uart8250 at MMIO32 0x0000000010000000 (options '')
+[    0.000000] printk: bootconsole [uart8250] enabled
+[    0.000000] printk: debug: skip boot console de-registration.
+[    0.000000] OF: reserved mem: 0x0000000080000000..0x00000000801fffff (2048 KiB) nomap non-reusable firmware_sbi@80000000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080000000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080000000-0x00000000801fffff]
+[    0.000000]   node   0: [mem 0x0000000080200000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080000000-0x000000008fffffff]
+[    0.000000] riscv: base ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] pcpu-alloc: s0 r0 d32768 u32768 alloc=1*32768
+[    0.000000] pcpu-alloc: [0] 0 
+[    0.000000] Kernel command line: console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x10000000 root=/dev/ram0 rw console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x10000000 keep_bootcon loglevel=8 root=/dev/ram0 rw init=/init initcall_debug
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 64640
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] Memory: 241736K/262144K available (2316K kernel code, 4624K rwdata, 2048K rodata, 2104K init, 219K bss, 20408K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-1, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] plic: plic@c000000: mapped 31 interrupts with 1 handlers for 2 contexts.
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x24e6a1710, max_idle_ns: 440795202120 ns
+[    0.000046] sched_clock: 64 bits at 10MHz, resolution 100ns, wraps every 4398046511100ns
+[    0.005621] Calibrating delay loop (skipped), value calculated using timer frequency.. 20.00 BogoMIPS (lpj=100000)
+[    0.008064] pid_max: default: 32768 minimum: 301
+[    0.011209] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.014047] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.087265] calling  compat_mode_detect+0x0/0x94 @ 1
+[    0.090307] riscv: ELF compat mode unsupported
+[    0.090700] initcall compat_mode_detect+0x0/0x94 returned 0 after 0 usecs
+[    0.093766] calling  asids_init+0x0/0x1ac @ 1
+[    0.095949] ASID allocator disabled (0 bits)
+[    0.097005] initcall asids_init+0x0/0x1ac returned 0 after 0 usecs
+[    0.099956] calling  spawn_ksoftirqd+0x0/0x5c @ 1
+[    0.109479] initcall spawn_ksoftirqd+0x0/0x5c returned 0 after 0 usecs
+[    0.113025] calling  init_signal_sysctls+0x0/0x48 @ 1
+[    0.115137] initcall init_signal_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.117225] calling  init_umh_sysctls+0x0/0x48 @ 1
+[    0.119328] initcall init_umh_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.121362] calling  irq_work_init_threads+0x0/0x1c @ 1
+[    0.123976] initcall irq_work_init_threads+0x0/0x1c returned 0 after 0 usecs
+[    0.126270] calling  init_zero_pfn+0x0/0xc8 @ 1
+[    0.128165] initcall init_zero_pfn+0x0/0xc8 returned 0 after 0 usecs
+[    0.130330] calling  init_fs_inode_sysctls+0x0/0x48 @ 1
+[    0.132795] initcall init_fs_inode_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.135933] calling  init_fs_locks_sysctls+0x0/0x48 @ 1
+[    0.138500] initcall init_fs_locks_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.141073] calling  init_fs_sysctls+0x0/0x48 @ 1
+[    0.143445] initcall init_fs_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.162269] devtmpfs: initialized
+[    0.204763] calling  init_mmap_min_addr+0x0/0x28 @ 1
+[    0.206748] initcall init_mmap_min_addr+0x0/0x28 returned 0 after 0 usecs
+[    0.210435] calling  wq_sysfs_init+0x0/0x88 @ 1
+[    0.216210] initcall wq_sysfs_init+0x0/0x88 returned 0 after 0 usecs
+[    0.218401] calling  ksysfs_init+0x0/0xd8 @ 1
+[    0.222009] initcall ksysfs_init+0x0/0xd8 returned 0 after 0 usecs
+[    0.224132] calling  init_jiffies_clocksource+0x0/0x38 @ 1
+[    0.226085] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.228110] initcall init_jiffies_clocksource+0x0/0x38 returned 0 after 0 usecs
+[    0.230969] calling  futex_init+0x0/0xd4 @ 1
+[    0.233013] futex hash table entries: 256 (order: 0, 6144 bytes, linear)
+[    0.234971] initcall futex_init+0x0/0xd4 returned 0 after 0 usecs
+[    0.237126] calling  fsnotify_init+0x0/0x70 @ 1
+[    0.239337] initcall fsnotify_init+0x0/0x70 returned 0 after 0 usecs
+[    0.242450] calling  filelock_init+0x0/0x94 @ 1
+[    0.245154] initcall filelock_init+0x0/0x94 returned 0 after 0 usecs
+[    0.247639] calling  init_script_binfmt+0x0/0x38 @ 1
+[    0.249773] initcall init_script_binfmt+0x0/0x38 returned 0 after 0 usecs
+[    0.253223] calling  init_elf_binfmt+0x0/0x38 @ 1
+[    0.255548] initcall init_elf_binfmt+0x0/0x38 returned 0 after 0 usecs
+[    0.257977] calling  init_compat_elf_binfmt+0x0/0x38 @ 1
+[    0.260166] initcall init_compat_elf_binfmt+0x0/0x38 returned 0 after 0 usecs
+[    0.263334] calling  free_raw_capacity+0x0/0x44 @ 1
+[    0.265103] initcall free_raw_capacity+0x0/0x44 returned 0 after 0 usecs
+[    0.268103] calling  irq_sysfs_init+0x0/0x160 @ 1
+[    0.275063] initcall irq_sysfs_init+0x0/0x160 returned 0 after 10000 usecs
+[    0.277459] calling  dma_atomic_pool_init+0x0/0xf8 @ 1
+[    0.280747] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+[    0.284394] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    0.286316] initcall dma_atomic_pool_init+0x0/0xf8 returned 0 after 10000 usecs
+[    0.288654] calling  bdi_class_init+0x0/0x30 @ 1
+[    0.292008] initcall bdi_class_init+0x0/0x30 returned 0 after 0 usecs
+[    0.295091] calling  mm_sysfs_init+0x0/0x50 @ 1
+[    0.297429] initcall mm_sysfs_init+0x0/0x50 returned 0 after 0 usecs
+[    0.299657] calling  init_per_zone_wmark_min+0x0/0x3c @ 1
+[    0.302064] initcall init_per_zone_wmark_min+0x0/0x3c returned 0 after 0 usecs
+[    0.305462] calling  tty_class_init+0x0/0x30 @ 1
+[    0.308702] initcall tty_class_init+0x0/0x30 returned 0 after 0 usecs
+[    0.310903] calling  devlink_class_init+0x0/0x6c @ 1
+[    0.314047] initcall devlink_class_init+0x0/0x6c returned 0 after 0 usecs
+[    0.317032] calling  software_node_init+0x0/0x54 @ 1
+[    0.319456] initcall software_node_init+0x0/0x54 returned 0 after 0 usecs
+[    0.322800] calling  riscv_cpuinfo_init+0x0/0x70 @ 1
+[    0.325054] initcall riscv_cpuinfo_init+0x0/0x70 returned 0 after 0 usecs
+[    0.328101] calling  check_unaligned_access_boot_cpu+0x0/0x28 @ 1
+[    0.330089] initcall check_unaligned_access_boot_cpu+0x0/0x28 returned 0 after 0 usecs
+[    0.332286] calling  vdso_init+0x0/0x44 @ 1
+[    0.334360] initcall vdso_init+0x0/0x44 returned 0 after 0 usecs
+[    0.336590] calling  serial_base_init+0x0/0xa4 @ 1
+[    0.344991] initcall serial_base_init+0x0/0xa4 returned 0 after 0 usecs
+[    0.347707] calling  init_hwprobe_vdso_data+0x0/0xf0 @ 1
+[    0.350655] initcall init_hwprobe_vdso_data+0x0/0xf0 returned 0 after 0 usecs
+[    0.353490] calling  of_platform_default_populate_init+0x0/0x118 @ 1
+[    0.378670] initcall of_platform_default_populate_init+0x0/0x118 returned 0 after 20000 usecs
+[    0.383187] calling  topology_init+0x0/0x64 @ 1
+[    0.389109] initcall topology_init+0x0/0x64 returned 0 after 0 usecs
+[    0.391674] calling  uid_cache_init+0x0/0xa8 @ 1
+[    0.394150] initcall uid_cache_init+0x0/0xa8 returned 0 after 0 usecs
+[    0.396176] calling  param_sysfs_init+0x0/0x70 @ 1
+[    0.398341] initcall param_sysfs_init+0x0/0x70 returned 0 after 0 usecs
+[    0.400472] calling  user_namespace_sysctl_init+0x0/0xe8 @ 1
+[    0.405279] initcall user_namespace_sysctl_init+0x0/0xe8 returned 0 after 10000 usecs
+[    0.407779] calling  oom_init+0x0/0x78 @ 1
+[    0.417385] initcall oom_init+0x0/0x78 returned 0 after 10000 usecs
+[    0.419874] calling  default_bdi_init+0x0/0x50 @ 1
+[    0.434130] initcall default_bdi_init+0x0/0x50 returned 0 after 10000 usecs
+[    0.437364] calling  percpu_enable_async+0x0/0x28 @ 1
+[    0.439478] initcall percpu_enable_async+0x0/0x28 returned 0 after 0 usecs
+[    0.441715] calling  kcompactd_init+0x0/0xa4 @ 1
+[    0.451676] initcall kcompactd_init+0x0/0xa4 returned 0 after 10000 usecs
+[    0.454356] calling  init_reserve_notifier+0x0/0x1c @ 1
+[    0.456490] initcall init_reserve_notifier+0x0/0x1c returned 0 after 0 usecs
+[    0.459578] calling  init_admin_reserve+0x0/0x3c @ 1
+[    0.461421] initcall init_admin_reserve+0x0/0x3c returned 0 after 0 usecs
+[    0.463472] calling  init_user_reserve+0x0/0x3c @ 1
+[    0.465185] initcall init_user_reserve+0x0/0x3c returned 0 after 0 usecs
+[    0.467187] calling  io_wq_init+0x0/0x5c @ 1
+[    0.469346] initcall io_wq_init+0x0/0x5c returned 0 after 0 usecs
+[    0.471409] calling  misc_init+0x0/0xe4 @ 1
+[    0.474998] initcall misc_init+0x0/0xe4 returned 0 after 0 usecs
+[    0.477223] calling  register_cpu_capacity_sysctl+0x0/0x58 @ 1
+[    0.480059] initcall register_cpu_capacity_sysctl+0x0/0x58 returned 0 after 0 usecs
+[    0.482415] calling  serio_init+0x0/0x58 @ 1
+[    0.487004] initcall serio_init+0x0/0x58 returned 0 after 0 usecs
+[    0.490310] calling  hwmon_init+0x0/0x54 @ 1
+[    0.493674] initcall hwmon_init+0x0/0x54 returned 0 after 0 usecs
+[    0.495943] calling  vsprintf_init_hashval+0x0/0x34 @ 1
+[    0.498060] initcall vsprintf_init_hashval+0x0/0x34 returned 0 after 0 usecs
+[    0.502119] calling  iomem_init_inode+0x0/0xd0 @ 1
+[    0.506492] initcall iomem_init_inode+0x0/0xd0 returned 0 after 0 usecs
+[    0.509281] calling  clocksource_done_booting+0x0/0x78 @ 1
+[    0.512010] clocksource: Switched to clocksource riscv_clocksource
+[    0.513461] initcall clocksource_done_booting+0x0/0x78 returned 0 after 1537 usecs
+[    0.515827] calling  secretmem_init+0x0/0x6c @ 1
+[    0.519758] initcall secretmem_init+0x0/0x6c returned 0 after 1914 usecs
+[    0.523313] calling  init_fs_stat_sysctls+0x0/0x48 @ 1
+[    0.525977] initcall init_fs_stat_sysctls+0x0/0x48 returned 0 after 401 usecs
+[    0.528512] calling  init_fs_exec_sysctls+0x0/0x48 @ 1
+[    0.530830] initcall init_fs_exec_sysctls+0x0/0x48 returned 0 after 253 usecs
+[    0.534076] calling  init_pipe_fs+0x0/0xa0 @ 1
+[    0.538700] initcall init_pipe_fs+0x0/0xa0 returned 0 after 2550 usecs
+[    0.541707] calling  init_fs_namei_sysctls+0x0/0x48 @ 1
+[    0.545065] initcall init_fs_namei_sysctls+0x0/0x48 returned 0 after 576 usecs
+[    0.547668] calling  init_fs_dcache_sysctls+0x0/0x48 @ 1
+[    0.550026] initcall init_fs_dcache_sysctls+0x0/0x48 returned 0 after 263 usecs
+[    0.553251] calling  init_fs_namespace_sysctls+0x0/0x48 @ 1
+[    0.555885] initcall init_fs_namespace_sysctls+0x0/0x48 returned 0 after 267 usecs
+[    0.558527] calling  inotify_user_setup+0x0/0x114 @ 1
+[    0.561359] initcall inotify_user_setup+0x0/0x114 returned 0 after 677 usecs
+[    0.564723] calling  eventpoll_init+0x0/0x130 @ 1
+[    0.567582] initcall eventpoll_init+0x0/0x130 returned 0 after 654 usecs
+[    0.570133] calling  anon_inode_init+0x0/0x8c @ 1
+[    0.574877] initcall anon_inode_init+0x0/0x8c returned 0 after 2015 usecs
+[    0.577727] calling  proc_locks_init+0x0/0x4c @ 1
+[    0.580075] initcall proc_locks_init+0x0/0x4c returned 0 after 258 usecs
+[    0.583325] calling  init_fs_coredump_sysctls+0x0/0x48 @ 1
+[    0.586225] initcall init_fs_coredump_sysctls+0x0/0x48 returned 0 after 473 usecs
+[    0.589220] calling  proc_cmdline_init+0x0/0x6c @ 1
+[    0.591758] initcall proc_cmdline_init+0x0/0x6c returned 0 after 259 usecs
+[    0.595089] calling  proc_consoles_init+0x0/0x4c @ 1
+[    0.597607] initcall proc_consoles_init+0x0/0x4c returned 0 after 266 usecs
+[    0.600219] calling  proc_cpuinfo_init+0x0/0x44 @ 1
+[    0.603394] initcall proc_cpuinfo_init+0x0/0x44 returned 0 after 414 usecs
+[    0.606219] calling  proc_devices_init+0x0/0x5c @ 1
+[    0.608067] initcall proc_devices_init+0x0/0x5c returned 0 after 231 usecs
+[    0.610132] calling  proc_interrupts_init+0x0/0x4c @ 1
+[    0.612613] initcall proc_interrupts_init+0x0/0x4c returned 0 after 828 usecs
+[    0.614889] calling  proc_loadavg_init+0x0/0x58 @ 1
+[    0.616767] initcall proc_loadavg_init+0x0/0x58 returned 0 after 252 usecs
+[    0.618860] calling  proc_meminfo_init+0x0/0x58 @ 1
+[    0.620714] initcall proc_meminfo_init+0x0/0x58 returned 0 after 218 usecs
+[    0.623422] calling  proc_stat_init+0x0/0x44 @ 1
+[    0.625384] initcall proc_stat_init+0x0/0x44 returned 0 after 270 usecs
+[    0.627746] calling  proc_uptime_init+0x0/0x58 @ 1
+[    0.629746] initcall proc_uptime_init+0x0/0x58 returned 0 after 245 usecs
+[    0.631812] calling  proc_version_init+0x0/0x58 @ 1
+[    0.634410] initcall proc_version_init+0x0/0x58 returned 0 after 276 usecs
+[    0.636582] calling  proc_softirqs_init+0x0/0x58 @ 1
+[    0.638446] initcall proc_softirqs_init+0x0/0x58 returned 0 after 223 usecs
+[    0.640555] calling  proc_kmsg_init+0x0/0x44 @ 1
+[    0.642973] initcall proc_kmsg_init+0x0/0x44 returned 0 after 244 usecs
+[    0.645160] calling  proc_page_init+0x0/0x64 @ 1
+[    0.647128] initcall proc_page_init+0x0/0x64 returned 0 after 379 usecs
+[    0.649211] calling  init_ramfs_fs+0x0/0x30 @ 1
+[    0.650880] initcall init_ramfs_fs+0x0/0x30 returned 0 after 76 usecs
+[    0.653544] calling  chr_dev_init+0x0/0xec @ 1
+[    0.722601] initcall chr_dev_init+0x0/0xec returned 0 after 67258 usecs
+[    0.725017] calling  hwrng_modinit+0x0/0xd8 @ 1
+[    0.733677] initcall hwrng_modinit+0x0/0xd8 returned 0 after 6928 usecs
+[    0.736056] calling  firmware_class_init+0x0/0x44 @ 1
+[    0.737959] initcall firmware_class_init+0x0/0x44 returned 0 after 41 usecs
+[    0.740155] calling  populate_rootfs+0x0/0x6c @ 1
+[    0.743130] initcall populate_rootfs+0x0/0x6c returned 0 after 343 usecs
+[    0.746735] calling  register_kernel_offset_dumper+0x0/0x1c @ 1
+[    0.748982] initcall register_kernel_offset_dumper+0x0/0x1c returned 0 after 9 usecs
+[    0.751443] calling  proc_execdomains_init+0x0/0x48 @ 1
+[    0.754629] initcall proc_execdomains_init+0x0/0x48 returned 0 after 267 usecs
+[    0.757382] calling  register_warn_debugfs+0x0/0x1c @ 1
+[    0.759561] initcall register_warn_debugfs+0x0/0x1c returned 0 after 9 usecs
+[    0.762660] calling  ioresources_init+0x0/0x84 @ 1
+[    0.765398] initcall ioresources_init+0x0/0x84 returned 0 after 406 usecs
+[    0.768341] calling  timekeeping_init_ops+0x0/0x34 @ 1
+[    0.770379] initcall timekeeping_init_ops+0x0/0x34 returned 0 after 29 usecs
+[    0.773196] calling  init_clocksource_sysfs+0x0/0x48 @ 1
+[    0.782629] initcall init_clocksource_sysfs+0x0/0x48 returned 0 after 7421 usecs
+[    0.785218] calling  init_timer_list_procfs+0x0/0x58 @ 1
+[    0.787360] initcall init_timer_list_procfs+0x0/0x58 returned 0 after 299 usecs
+[    0.789669] calling  alarmtimer_init+0x0/0x88 @ 1
+[    0.794349] initcall alarmtimer_init+0x0/0x88 returned 0 after 2896 usecs
+[    0.796792] calling  init_posix_timers+0x0/0x4c @ 1
+[    0.798984] initcall init_posix_timers+0x0/0x4c returned 0 after 380 usecs
+[    0.801263] calling  clockevents_init_sysfs+0x0/0x9c @ 1
+[    0.810142] initcall clockevents_init_sysfs+0x0/0x9c returned 0 after 6230 usecs
+[    0.813407] calling  sched_clock_syscore_init+0x0/0x34 @ 1
+[    0.815510] initcall sched_clock_syscore_init+0x0/0x34 returned 0 after 29 usecs
+[    0.817739] calling  kallsyms_init+0x0/0x44 @ 1
+[    0.819767] initcall kallsyms_init+0x0/0x44 returned 0 after 286 usecs
+[    0.822892] calling  seccomp_sysctl_init+0x0/0x48 @ 1
+[    0.825506] initcall seccomp_sysctl_init+0x0/0x48 returned 0 after 525 usecs
+[    0.827796] calling  utsname_sysctl_init+0x0/0x40 @ 1
+[    0.830287] initcall utsname_sysctl_init+0x0/0x40 returned 0 after 642 usecs
+[    0.833225] calling  kswapd_init+0x0/0x38 @ 1
+[    0.875657] initcall kswapd_init+0x0/0x38 returned 0 after 40505 usecs
+[    0.878208] calling  workingset_init+0x0/0x150 @ 1
+[    0.880128] workingset: timestamp_bits=62 max_order=16 bucket_order=0
+[    0.881749] initcall workingset_init+0x0/0x150 returned 0 after 1631 usecs
+[    0.884821] calling  proc_vmalloc_init+0x0/0x4c @ 1
+[    0.887115] initcall proc_vmalloc_init+0x0/0x4c returned 0 after 270 usecs
+[    0.889502] calling  fcntl_init+0x0/0x4c @ 1
+[    0.891685] initcall fcntl_init+0x0/0x4c returned 0 after 242 usecs
+[    0.894787] calling  proc_filesystems_init+0x0/0x48 @ 1
+[    0.897287] initcall proc_filesystems_init+0x0/0x48 returned 0 after 282 usecs
+[    0.899881] calling  start_dirtytime_writeback+0x0/0x54 @ 1
+[    0.902766] initcall start_dirtytime_writeback+0x0/0x54 returned 0 after 86 usecs
+[    0.905528] calling  dnotify_init+0x0/0xd4 @ 1
+[    0.908276] initcall dnotify_init+0x0/0xd4 returned 0 after 701 usecs
+[    0.910892] calling  aio_setup+0x0/0xd0 @ 1
+[    0.916085] initcall aio_setup+0x0/0xd0 returned 0 after 2442 usecs
+[    0.919162] calling  init_devpts_fs+0x0/0x60 @ 1
+[    0.921524] initcall init_devpts_fs+0x0/0x60 returned 0 after 603 usecs
+[    0.924376] calling  io_uring_init+0x0/0xa8 @ 1
+[    0.927828] initcall io_uring_init+0x0/0xa8 returned 0 after 1748 usecs
+[    0.930086] calling  blake2s_mod_init+0x0/0x1c @ 1
+[    0.931768] initcall blake2s_mod_init+0x0/0x1c returned 0 after 10 usecs
+[    0.934553] calling  simple_pm_bus_driver_init+0x0/0x34 @ 1
+[    0.941019] probe of soc returned 0 after 3631 usecs
+[    0.944949] initcall simple_pm_bus_driver_init+0x0/0x34 returned 0 after 8505 usecs
+[    0.947395] calling  of_fixed_factor_clk_driver_init+0x0/0x34 @ 1
+[    0.951401] initcall of_fixed_factor_clk_driver_init+0x0/0x34 returned 0 after 2079 usecs
+[    0.954639] calling  of_fixed_clk_driver_init+0x0/0x34 @ 1
+[    0.958734] initcall of_fixed_clk_driver_init+0x0/0x34 returned 0 after 2196 usecs
+[    0.961142] calling  gpio_clk_driver_init+0x0/0x34 @ 1
+[    0.965855] initcall gpio_clk_driver_init+0x0/0x34 returned 0 after 2187 usecs
+[    0.968245] calling  n_null_init+0x0/0x38 @ 1
+[    0.969894] initcall n_null_init+0x0/0x38 returned 0 after 21 usecs
+[    0.972851] calling  pty_init+0x0/0x27c @ 1
+[    0.988170] initcall pty_init+0x0/0x27c returned 0 after 13482 usecs
+[    0.990425] calling  serial8250_init+0x0/0x1e0 @ 1
+[    0.993231] Serial: 8250/16550 driver, 1 ports, IRQ sharing disabled
+[    1.004210] probe of serial8250:0 returned 0 after 2625 usecs
+[    1.010608] probe of serial8250:0.0 returned 0 after 1757 usecs
+[    1.025156] probe of serial8250 returned 0 after 1864 usecs
+[    1.028352] initcall serial8250_init+0x0/0x1e0 returned 0 after 35120 usecs
+[    1.030730] calling  of_platform_serial_driver_init+0x0/0x34 @ 1
+[    1.049267] printk: console [ttyS0] disabled
+[    1.063912] probe of 10000000.serial:0 returned 0 after 2592 usecs
+[    1.070680] probe of 10000000.serial:0.0 returned 0 after 1821 usecs
+[    1.074228] 10000000.serial: ttyS0 at MMIO 0x10000000 (irq = 2, base_baud = 625000) is a 16550A
+[    1.077184] printk: console [ttyS0] enabled
+[    1.077184] printk: console [ttyS0] enabled
+[    1.094662] probe of 10000000.serial returned 0 after 59338 usecs
+[    1.094662] probe of 10000000.serial returned 0 after 59338 usecs
+[    1.099096] initcall of_platform_serial_driver_init+0x0/0x34 returned 0 after 65745 usecs
+[    1.099096] initcall of_platform_serial_driver_init+0x0/0x34 returned 0 after 65745 usecs
+[    1.103714] calling  random_sysctls_init+0x0/0x48 @ 1
+[    1.103714] calling  random_sysctls_init+0x0/0x48 @ 1
+[    1.107433] initcall random_sysctls_init+0x0/0x48 returned 0 after 882 usecs
+[    1.107433] initcall random_sysctls_init+0x0/0x48 returned 0 after 882 usecs
+[    1.110840] calling  topology_sysfs_init+0x0/0x4c @ 1
+[    1.110840] calling  topology_sysfs_init+0x0/0x4c @ 1
+[    1.116919] initcall topology_sysfs_init+0x0/0x4c returned 0 after 2600 usecs
+[    1.116919] initcall topology_sysfs_init+0x0/0x4c returned 0 after 2600 usecs
+[    1.120544] calling  cacheinfo_sysfs_init+0x0/0x4c @ 1
+[    1.120544] calling  cacheinfo_sysfs_init+0x0/0x4c @ 1
+[    1.124100] initcall cacheinfo_sysfs_init+0x0/0x4c returned -2 after 76 usecs
+[    1.124100] initcall cacheinfo_sysfs_init+0x0/0x4c returned -2 after 76 usecs
+[    1.127589] calling  serport_init+0x0/0x54 @ 1
+[    1.127589] calling  serport_init+0x0/0x54 @ 1
+[    1.130167] initcall serport_init+0x0/0x54 returned 0 after 21 usecs
+[    1.130167] initcall serport_init+0x0/0x54 returned 0 after 21 usecs
+[    1.135064] calling  kernel_do_mounts_initrd_sysctls_init+0x0/0x48 @ 1
+[    1.135064] calling  kernel_do_mounts_initrd_sysctls_init+0x0/0x48 @ 1
+[    1.138824] initcall kernel_do_mounts_initrd_sysctls_init+0x0/0x48 returned 0 after 305 usecs
+[    1.138824] initcall kernel_do_mounts_initrd_sysctls_init+0x0/0x48 returned 0 after 305 usecs
+[    1.143759] calling  kernel_panic_sysfs_init+0x0/0x40 @ 1
+[    1.143759] calling  kernel_panic_sysfs_init+0x0/0x40 @ 1
+[    1.147568] initcall kernel_panic_sysfs_init+0x0/0x40 returned 0 after 374 usecs
+[    1.147568] initcall kernel_panic_sysfs_init+0x0/0x40 returned 0 after 374 usecs
+[    1.151442] calling  kernel_panic_sysctls_init+0x0/0x48 @ 1
+[    1.151442] calling  kernel_panic_sysctls_init+0x0/0x48 @ 1
+[    1.155687] initcall kernel_panic_sysctls_init+0x0/0x48 returned 0 after 322 usecs
+[    1.155687] initcall kernel_panic_sysctls_init+0x0/0x48 returned 0 after 322 usecs
+[    1.159733] calling  kernel_exit_sysfs_init+0x0/0x40 @ 1
+[    1.159733] calling  kernel_exit_sysfs_init+0x0/0x40 @ 1
+[    1.164200] initcall kernel_exit_sysfs_init+0x0/0x40 returned 0 after 364 usecs
+[    1.164200] initcall kernel_exit_sysfs_init+0x0/0x40 returned 0 after 364 usecs
+[    1.168212] calling  kernel_exit_sysctls_init+0x0/0x48 @ 1
+[    1.168212] calling  kernel_exit_sysctls_init+0x0/0x48 @ 1
+[    1.171709] initcall kernel_exit_sysctls_init+0x0/0x48 returned 0 after 314 usecs
+[    1.171709] initcall kernel_exit_sysctls_init+0x0/0x48 returned 0 after 314 usecs
+[    1.176362] calling  param_sysfs_builtin_init+0x0/0x41c @ 1
+[    1.176362] calling  param_sysfs_builtin_init+0x0/0x41c @ 1
+[    1.257537] initcall param_sysfs_builtin_init+0x0/0x41c returned 0 after 78315 usecs
+[    1.257537] initcall param_sysfs_builtin_init+0x0/0x41c returned 0 after 78315 usecs
+[    1.261199] calling  reboot_ksysfs_init+0x0/0xa4 @ 1
+[    1.261199] calling  reboot_ksysfs_init+0x0/0xa4 @ 1
+[    1.265659] initcall reboot_ksysfs_init+0x0/0xa4 returned 0 after 1106 usecs
+[    1.265659] initcall reboot_ksysfs_init+0x0/0xa4 returned 0 after 1106 usecs
+[    1.269068] calling  sched_core_sysctl_init+0x0/0x48 @ 1
+[    1.269068] calling  sched_core_sysctl_init+0x0/0x48 @ 1
+[    1.271880] initcall sched_core_sysctl_init+0x0/0x48 returned 0 after 171 usecs
+[    1.271880] initcall sched_core_sysctl_init+0x0/0x48 returned 0 after 171 usecs
+[    1.275983] calling  sched_fair_sysctl_init+0x0/0x48 @ 1
+[    1.275983] calling  sched_fair_sysctl_init+0x0/0x48 @ 1
+[    1.279017] initcall sched_fair_sysctl_init+0x0/0x48 returned 0 after 307 usecs
+[    1.279017] initcall sched_fair_sysctl_init+0x0/0x48 returned 0 after 307 usecs
+[    1.283345] calling  sched_dl_sysctl_init+0x0/0x48 @ 1
+[    1.283345] calling  sched_dl_sysctl_init+0x0/0x48 @ 1
+[    1.286656] initcall sched_dl_sysctl_init+0x0/0x48 returned 0 after 434 usecs
+[    1.286656] initcall sched_dl_sysctl_init+0x0/0x48 returned 0 after 434 usecs
+[    1.290007] calling  sched_rt_sysctl_init+0x0/0x48 @ 1
+[    1.290007] calling  sched_rt_sysctl_init+0x0/0x48 @ 1
+[    1.293886] initcall sched_rt_sysctl_init+0x0/0x48 returned 0 after 593 usecs
+[    1.293886] initcall sched_rt_sysctl_init+0x0/0x48 returned 0 after 593 usecs
+[    1.297341] calling  printk_late_init+0x0/0x184 @ 1
+[    1.297341] calling  printk_late_init+0x0/0x184 @ 1
+[    1.300925] initcall printk_late_init+0x0/0x184 returned 0 after 998 usecs
+[    1.300925] initcall printk_late_init+0x0/0x184 returned 0 after 998 usecs
+[    1.305007] calling  check_early_ioremap_leak+0x0/0x70 @ 1
+[    1.305007] calling  check_early_ioremap_leak+0x0/0x70 @ 1
+[    1.308204] initcall check_early_ioremap_leak+0x0/0x70 returned 0 after 17 usecs
+[    1.308204] initcall check_early_ioremap_leak+0x0/0x70 returned 0 after 17 usecs
+[    1.311789] calling  sync_state_resume_initcall+0x0/0x28 @ 1
+[    1.311789] calling  sync_state_resume_initcall+0x0/0x28 @ 1
+[    1.315400] initcall sync_state_resume_initcall+0x0/0x28 returned 0 after 34 usecs
+[    1.315400] initcall sync_state_resume_initcall+0x0/0x28 returned 0 after 34 usecs
+[    1.318956] calling  deferred_probe_initcall+0x0/0xb4 @ 1
+[    1.318956] calling  deferred_probe_initcall+0x0/0xb4 @ 1
+[    1.326927] initcall deferred_probe_initcall+0x0/0xb4 returned 0 after 4436 usecs
+[    1.326927] initcall deferred_probe_initcall+0x0/0xb4 returned 0 after 4436 usecs
+[    1.330953] calling  of_fdt_raw_init+0x0/0xc0 @ 1
+[    1.330953] calling  of_fdt_raw_init+0x0/0xc0 @ 1
+[    1.336284] initcall of_fdt_raw_init+0x0/0xc0 returned 0 after 1789 usecs
+[    1.336284] initcall of_fdt_raw_init+0x0/0xc0 returned 0 after 1789 usecs
+[    1.339880] calling  clk_disable_unused+0x0/0x13c @ 1
+[    1.339880] calling  clk_disable_unused+0x0/0x13c @ 1
+[    1.343131] clk: Disabling unused clocks
+[    1.343131] clk: Disabling unused clocks
+[    1.344998] initcall clk_disable_unused+0x0/0x13c returned 0 after 1872 usecs
+[    1.344998] initcall clk_disable_unused+0x0/0x13c returned 0 after 1872 usecs
+[    1.348663] calling  of_platform_sync_state_init+0x0/0x2c @ 1
+[    1.348663] calling  of_platform_sync_state_init+0x0/0x2c @ 1
+[    1.351840] initcall of_platform_sync_state_init+0x0/0x2c returned 0 after 37 usecs
+[    1.351840] initcall of_platform_sync_state_init+0x0/0x2c returned 0 after 37 usecs
+[    1.497084] Freeing unused kernel image (initmem) memory: 2104K
+[    1.497084] Freeing unused kernel image (initmem) memory: 2104K
+[    1.500712] Run /init as init process
+[    1.500712] Run /init as init process
+[    1.502952]   with arguments:
+[    1.502952]   with arguments:
+[    1.504309]     /init
+[    1.504309]     /init
+[    1.505457]   with environment:
+[    1.505457]   with environment:
+[    1.506692]     HOME=/
+[    1.506692]     HOME=/
+[    1.507838]     TERM=linux
+[    1.507838]     TERM=linux
+
+====================================================
+[INIT] Fursoy Slice-0 Linux Userspace active! PID 1
+[INIT] Execution reached /init in initramfs.
+====================================================
+[PERF] CPU_WORKLOAD_START
+[PERF] CPU_WORKLOAD_END
+[PERF] MEM_WORKLOAD_START
+[PERF] MEM_WORKLOAD_END
+[PERF] ALL_BENCHMARKS_COMPLETE
+--- PERF JSON REPORT ---
+{
+  "status": "pass",
+  "scope": "L1D Load Critical-Word Early Restart (L1D-ER v1) performance profiling (Fursoy Slice-0)",
+  "l1d_er_enabled": false,
+  "seen_reset": true,
+  "seen_handoff": true,
+  "seen_satp_sv39": true,
+  "seen_init_banner": true,
+  "seen_cpu_workload": true,
+  "seen_mem_workload": true,
+  "seen_benchmarks_complete": true,
+  "cycle_handoff": 578,
+  "cycle_init_banner": 24703387,
+  "cycle_bench_complete": 24808765,
+  "full_execution": {
+    "total_cycles": 24810766,
+    "committed_instructions": 14902391,
+    "ipc": 0.600642,
+    "cpi": 1.664885,
+    "privilege_mode_cycles": {
+      "m_mode": 78749,
+      "s_mode": 24714329,
+      "u_mode": 17688
+    },
+    "instruction_fetch_wait_cycles": 2575745,
+    "load_store_stall_cycles": 2903764,
+    "lsu_detail": {
+      "req_wait_cycles": 1072684,
+      "rsp_wait_cycles": 1820114,
+      "amo_wait_cycles": 10966
+    },
+    "branch_control_flow": {
+      "commits": 1870014,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 593,
+      "walk_count_insn": 94,
+      "walk_count_load": 363,
+      "walk_count_store": 133,
+      "walk_count_amo": 3,
+      "total_ptw_cycles": 4217,
+      "ptw_cycles_insn": 1618,
+      "ptw_cycles_data": 2599,
+      "page_table_memory_accesses": 1484,
+      "translation_stall_cycles": 4217
+    },
+    "tlb": {
+      "itlb_hits": 15174391,
+      "itlb_misses": 137,
+      "itlb_refills": 137,
+      "itlb_hit_rate": 0.999991,
+      "dtlb_hits": 11838128,
+      "dtlb_misses": 499,
+      "dtlb_refills": 499,
+      "dtlb_hit_rate": 0.999958
+    },
+    "l1i": {
+      "l1i_hits": 14317499,
+      "l1i_misses": 165813,
+      "l1i_refills": 148699,
+      "l1i_refills_clean_installed": 148699,
+      "l1i_refills_aborted": 9703,
+      "l1i_refills_initiated_total": 158402,
+      "l1i_early_restarts": 158327,
+      "l1i_pre_critical_aborts": 75,
+      "l1i_streaming_hits": 11648,
+      "l1i_hit_rate": 0.988551,
+      "l1i_nlp_hardware_telemetry": {
+        "candidate_events": 156257,
+        "issued_events": 152473,
+        "suppressed_page_events": 2600,
+        "suppressed_pmp_events": 0,
+        "suppressed_resident_events": 31534,
+        "suppressed_duplicate_events": 38,
+        "useful_hit_events": 42734,
+        "streaming_hit_events": 724603,
+        "preempted_events": 12836,
+        "dormant_abandon_events": 15883,
+        "discard_redirect_events": 84756,
+        "discard_maint_events": 40,
+        "discard_error_events": 0,
+        "promote_events": 42734,
+        "hidden_cycles_total": 769212
+      }
+    },
+    "l1d": {
+      "l1d_hits": 4784569,
+      "l1d_misses": 290906,
+      "l1d_refills": 290906,
+      "l1d_evictions": 251190,
+      "l1d_load_hits": 2408713,
+      "l1d_load_misses": 111281,
+      "l1d_store_hits": 2375655,
+      "l1d_store_misses": 179625,
+      "l1d_er_events": 0,
+      "l1d_er_saved_cycles_total": 0,
+      "l1d_hit_rate": 0.942684,
+      "l1d_load_hit_rate": 0.955841,
+      "l1d_store_hit_rate": 0.929704
+    },
+    "l1d_er_trailing_refill_diagnostics": {
+      "accounting_note": "overlapping diagnostic; excluded from disjoint_cycle_partition",
+      "active_cycles": 0,
+      "active_pct": 0.000000,
+      "useful_commit_cycles": 0,
+      "blocked_later_load_cycles": 0,
+      "blocked_store_cycles": 0,
+      "blocked_serialization_cycles": 0,
+      "other_zero_retire_cycles": 0,
+      "zero_retire_subcategory_sum": 0,
+      "active_cycle_exact_match": true,
+      "sb_nonempty_cycles": 0,
+      "sb_full_cycles": 0,
+      "refill_error_edge_cycles": 0,
+      "fatal_halt_cycles": 0
+    },
+    "platform_events": {
+      "sbi_ecall_count": 163,
+      "user_ecall_count": 6,
+      "mtip_count": 149,
+      "stip_count": 149,
+      "seip_count": 21,
+      "sync_trap_count": 3,
+      "trap_overhead_cycles": 1078275
+    },
+    "uart_mmio": {
+      "access_count": 55301
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 14902391,
+      "cycles_useful_retire_pct": 60.064212,
+      "cycles_zero_retire": 9908375,
+      "cycles_zero_retire_pct": 39.935788
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 2540537,
+      "sb_enqueues": 2539060,
+      "sb_tail_merges": 1477,
+      "merge_rate_pct": 0.058137,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 18976461,
+        "occ_0_pct": 76.484785,
+        "occ_1_cycles": 2103641,
+        "occ_1_pct": 8.478743,
+        "occ_2_cycles": 238217,
+        "occ_2_pct": 0.960136,
+        "occ_3_cycles": 806271,
+        "occ_3_pct": 3.249682,
+        "occ_4_cycles": 2686176,
+        "occ_4_pct": 10.826655
+      },
+      "full_buffer_stall_cycles": 2676452,
+      "raw_conflict_stall_cycles": 8817,
+      "arbitration_load_stall_cycles": 3588,
+      "visible_drain_stall_cycles": 13803,
+      "drain_requests": 2539060,
+      "drain_completions": 2539060,
+      "drain_hits": 2360301,
+      "drain_clean_misses": 13895,
+      "drain_dirty_misses": 164864,
+      "cycles_hidden_behind_useful_execution": 14902278,
+      "average_drain_latency_cycles": 10.771378
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 4355455,
+      "srb_active_pct": 17.554698,
+      "srb_installs": 178759,
+      "srb_clean_victims": 14190,
+      "srb_dirty_victims": 164569,
+      "srb_raw_load_stall_cycles": 1158409,
+      "srb_secondary_load_miss_stall_cycles": 15963
+    },
+    "bpu_telemetry": {
+      "branch_count": 2096762,
+      "branch_taken_count": 1033548,
+      "branch_correct_count": 1888804,
+      "branch_mispred_count": 207958,
+      "branch_accuracy_pct": 90.081945,
+      "jal_count": 460701,
+      "jal_correct_count": 398464,
+      "jalr_count": 376402,
+      "jalr_correct_count": 290148,
+      "ras_push_count": 239622,
+      "ras_pop_count": 239728,
+      "ras_correct_count": 179014,
+      "btb_hit_count": 1961889,
+      "btb_miss_count": 971976,
+      "false_hit_count": 0,
+      "bubbles_saved": 1579702
+    },
+    "l1d_fsm_latency_distributions": {
+      "clean_load_miss": {
+        "count": 23831,
+        "min_cycles": 19,
+        "avg_cycles": 21.498259,
+        "max_cycles": 27
+      },
+      "dirty_victim_eviction": {
+        "count": 80497,
+        "min_cycles": 10,
+        "avg_cycles": 24.605600,
+        "max_cycles": 94769
+      },
+      "dirty_victim_refill": {
+        "count": 80497,
+        "min_cycles": 17,
+        "avg_cycles": 17.000000,
+        "max_cycles": 17
+      },
+      "dirty_victim_total": {
+        "count": 86985,
+        "min_cycles": 19,
+        "avg_cycles": 26.212922,
+        "max_cycles": 27
+      },
+      "install_duration": {
+        "count": 112147,
+        "min_cycles": 1,
+        "avg_cycles": 1.000000,
+        "max_cycles": 1
+      },
+      "sb_drain_structural_collision": {
+        "count": 3584,
+        "min_cycles": 1,
+        "avg_cycles": 1.001116,
+        "max_cycles": 3
+      }
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 14902391,
+      "useful_commit_pct": 60.064212,
+      "store_buffer_stall_cycles": 2676452,
+      "store_buffer_stall_pct": 10.787462,
+      "sb_full_backpressure_cycles": 2676452,
+      "sb_full_backpressure_pct": 10.787462,
+      "raw_load_stall_cycles": 8817,
+      "raw_load_stall_pct": 0.035537,
+      "srb_raw_load_stall_cycles": 1158409,
+      "srb_raw_load_stall_pct": 4.668977,
+      "l1d_load_structural_arb_stall_cycles": 3588,
+      "l1d_load_structural_arb_stall_pct": 0.014461,
+      "srb_install_bubble_stall_cycles": 1554,
+      "srb_install_bubble_stall_pct": 0.006263,
+      "srb_secondary_load_miss_stall_cycles": 15963,
+      "srb_secondary_load_miss_stall_pct": 0.064339,
+      "arbitration_load_stall_cycles": 3588,
+      "arbitration_load_stall_pct": 0.014461,
+      "l1d_load_clean_miss_refill_stall_cycles": 316212,
+      "l1d_load_clean_miss_refill_stall_pct": 1.274495,
+      "l1d_load_dirty_evict_stall_cycles": 857718,
+      "l1d_load_dirty_evict_stall_pct": 3.457040,
+      "l1d_load_dirty_refill_stall_cycles": 1607988,
+      "l1d_load_dirty_refill_stall_pct": 6.481009,
+      "l1d_load_hit_latency_cycles": 27831,
+      "l1d_load_hit_latency_pct": 0.112173,
+      "visible_drain_stall_cycles": 13803,
+      "visible_drain_stall_pct": 0.055633,
+      "l1d_load_stall_cycles": 2809749,
+      "l1d_load_stall_pct": 11.324717,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 27831,
+        "clean_miss_refill_cycles": 316212,
+        "dirty_victim_evict_cycles": 857718,
+        "dirty_victim_refill_cycles": 1607988,
+        "dirty_victim_total_contribution_cycles": 2465706
+      },
+      "l1d_store_stall_cycles": 2676452,
+      "l1d_store_stall_pct": 10.787462,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 60575,
+      "amo_lr_sc_stall_pct": 0.244148,
+      "l1i_hit_fetch_stall_cycles": 88726,
+      "l1i_hit_fetch_stall_pct": 0.357611,
+      "l1i_miss_refill_cycles": 2337855,
+      "l1i_miss_refill_pct": 9.422744,
+      "l1i_total_stall_cycles": 2426581,
+      "l1i_total_stall_pct": 9.780355,
+      "branch_redirect_bubble_cycles": 348003,
+      "branch_redirect_bubble_pct": 1.402629,
+      "csr_serialization_flush_cycles": 21769,
+      "csr_serialization_flush_pct": 0.087740,
+      "trap_return_overhead_cycles": 1365,
+      "trap_return_overhead_pct": 0.005502,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 491,
+        "trap_vector_bubble_cycles": 466,
+        "mret_sret_redirect_bubble_cycles": 408
+      },
+      "ptw_tlb_stall_cycles": 4351,
+      "ptw_tlb_stall_pct": 0.017537,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 1618,
+        "dtlb_ptw_cycles": 2599,
+        "itlb_translation_latency_cycles": 134
+      },
+      "l1d_maintenance_cycles": 109247,
+      "l1d_maintenance_pct": 0.440321,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 96187,
+        "fence_i_cycles": 2075,
+        "pmp_maintenance_cycles": 10985
+      },
+      "mmio_stall_cycles": 83081,
+      "mmio_stall_pct": 0.334859,
+      "arbitration_contention_cycles": 10533,
+      "arbitration_contention_pct": 0.042453,
+      "refill_handoff_bubble_cycles": 154535,
+      "refill_handoff_bubble_pct": 0.622855,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 24810766,
+      "total_cycles": 24810766,
+      "disjoint_exact_match": true
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 2000942,
+      "dmem_load_requests": 2327248,
+      "dmem_store_requests": 2071504,
+      "l1d_refill_beats": 2327248,
+      "l1d_writeback_beats": 2009520,
+      "l1i_refill_beats": 1189592,
+      "ptw_memory_requests": 1484,
+      "total_ram_requests": 6401178,
+      "uart_mmio_requests": 55301,
+      "clint_mmio_requests": 151,
+      "plic_mmio_requests": 161,
+      "total_mmio_requests": 55613,
+      "instruction_traffic_pct": 31.258965,
+      "data_traffic_pct": 68.741035
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 2676452,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 2337855,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 348003,
+        "taken_control_flow_count": 1870014,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 2809749,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 109247,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 4351,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 2575745,
+      "raw_lsu_busy_cycles": 2903764,
+      "overlap_cycles": 237890
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 2000942,
+      "dmem_load_requests": 2327248,
+      "dmem_store_requests": 2071504,
+      "total_ram_requests": 6401178,
+      "uart_mmio_requests": 55301,
+      "clint_mmio_requests": 151,
+      "plic_mmio_requests": 161,
+      "total_mmio_requests": 55613
+    },
+    "instruction_mix": {
+      "alu_instructions": 6806246,
+      "load_instructions": 2541841,
+      "store_instructions": 2568682,
+      "amo_instructions": 22042,
+      "branch_conditional": 2096762,
+      "branch_taken": 1032911,
+      "branch_untaken": 1063851,
+      "branch_taken_pct": 49.262196,
+      "jal_unconditional": 460701,
+      "jalr_indirect": 376402,
+      "system_instructions": 29715
+    },
+    "store_buffer_full_characterization": {
+      "target_cycle_pool": 2676452,
+      "total_full_episodes": 149964,
+      "consecutive_full_cycles": {
+        "min": 1,
+        "avg": 17.847297,
+        "max": 25
+      },
+      "episode_duration_distribution": {
+        "episodes_1_to_4_cycles": 28193,
+        "episodes_5_to_10_cycles": 1190,
+        "episodes_11_to_20_cycles": 12274,
+        "episodes_21_to_50_cycles": 108307,
+        "episodes_51_to_100_cycles": 0,
+        "episodes_over_100_cycles": 0
+      },
+      "drain_throughput_while_full": {
+        "drain_completions_while_full": 122094,
+        "completions_per_full_cycle": 0.045618
+      },
+      "blocker_distribution_while_full": {
+        "blocked_by_l1d_fsm_busy_cycles": 0,
+        "blocked_by_l1d_fsm_busy_pct": 0.000000,
+        "blocked_by_srb_busy_cycles": 2526489,
+        "blocked_by_srb_busy_pct": 94.396948,
+        "blocked_by_dram_bus_contention_cycles": 0,
+        "blocked_by_dram_bus_contention_pct": 0.000000,
+        "drain_request_granted_active_cycles": 122094,
+        "drain_request_granted_active_pct": 4.561786
+      },
+      "store_production_vs_drain_rates": {
+        "total_stores_enqueued_or_merged": 2540537,
+        "total_drain_completions": 2539060,
+        "store_arrival_rate_per_cycle": 0.102397,
+        "drain_completion_rate_per_cycle": 0.102337
+      },
+      "coalescing_opportunities": {
+        "same_doubleword_match_cycles": 75,
+        "same_doubleword_match_pct": 0.002802,
+        "exact_address_match_cycles": 15,
+        "exact_address_match_pct": 0.000560
+      },
+      "shadow_fifo_depth_evaluation": {
+        "depth_4_baseline_stall_cycles": 2676452,
+        "depth_6_shadow_stall_cycles": 2404552,
+        "depth_6_avoided_cycles": 271900,
+        "depth_8_shadow_stall_cycles": 2160832,
+        "depth_8_avoided_cycles": 515620,
+        "depth_12_shadow_stall_cycles": 1674884,
+        "depth_12_avoided_cycles": 1001568
+      }
+    },
+    "l1i_next_line_prefetch_characterization": {
+      "target_cycle_pool": 2337855,
+      "demand_refills_total": 158376,
+      "sequential_transitions": {
+        "sequential_next_line_refills": 15820,
+        "sequential_next_line_pct": 9.988887,
+        "same_4k_page_eligible_candidates": 156123,
+        "same_4k_page_eligible_pct": 98.577436
+      },
+      "candidate_filtering": {
+        "already_cached_filtered": 28106,
+        "issued_candidates": 128017
+      },
+      "usefulness_and_accuracy": {
+        "useful_prefetches": 51361,
+        "useful_prefetch_pct": 40.120453,
+        "useless_prefetches": 76656,
+        "useless_prefetch_pct": 59.879547,
+        "redirects_before_use": 36496462
+      },
+      "lead_time_distribution": {
+        "min_lead_time_cycles": 17,
+        "avg_lead_time_cycles": 2259.876755,
+        "max_lead_time_cycles": 3930722,
+        "under_18_cycles_partial_hide": 656,
+        "18_to_50_cycles_fully_hidden": 12673,
+        "51_to_200_cycles_fully_hidden": 15130,
+        "over_200_cycles_fully_hidden": 22902
+      },
+      "bus_opportunity_and_removable_pool": {
+        "bus_idle_cycles": 14593234,
+        "bus_conflicts_with_l1d": 1267007,
+        "theoretical_cycles_hidden": 923842,
+        "pct_of_target_pool_hidden": 39.516651
+      }
+    },
+    "store_to_load_forwarding_characterization": {
+      "target_cycle_pool": {
+        "srb_raw_stall_cycles": 1158409,
+        "sb_raw_stall_cycles": 8817,
+        "total_raw_stall_cycles": 1167226
+      },
+      "sb_raw_classification": {
+        "exact_64bit_dword_match_cycles": 3276,
+        "single_entry_full_coverage_cycles": 6827,
+        "multi_entry_merged_coverage_cycles": 0,
+        "partial_overlap_cycles": 1990
+      },
+      "srb_raw_classification": {
+        "srb_store_payload_hit_cycles": 9512,
+        "srb_refill_line_wait_cycles": 1148897,
+        "srb_store_payload_pct": 0.821126,
+        "srb_refill_line_wait_pct": 99.178874
+      },
+      "load_width_distribution": {
+        "byte_loads": 5315,
+        "halfword_loads": 11,
+        "word_loads": 1373,
+        "dword_loads": 1160527
+      },
+      "removable_cycle_pools": {
+        "tier_1_simple_single_entry_cycles": 16339,
+        "tier_1_pct_of_raw_pool": 1.399815,
+        "tier_2_byte_mask_merge_cycles": 16339,
+        "tier_2_pct_of_raw_pool": 1.399815,
+        "tier_3_full_with_srb_line_cycles": 16339,
+        "tier_3_pct_of_raw_pool": 1.399815
+      }
+    }
+  },
+  "boot_phase": {
+    "total_cycles": 24702809,
+    "committed_instructions": 14824243,
+    "ipc": 0.600104,
+    "cpi": 1.666379,
+    "privilege_mode_cycles": {
+      "m_mode": 77643,
+      "s_mode": 24625128,
+      "u_mode": 38
+    },
+    "instruction_fetch_wait_cycles": 2556845,
+    "load_store_stall_cycles": 2897800,
+    "lsu_detail": {
+      "req_wait_cycles": 1070417,
+      "rsp_wait_cycles": 1816535,
+      "amo_wait_cycles": 10848
+    },
+    "branch_control_flow": {
+      "commits": 1861433,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 590,
+      "walk_count_insn": 94,
+      "walk_count_load": 363,
+      "walk_count_store": 130,
+      "walk_count_amo": 3,
+      "total_ptw_cycles": 4199,
+      "ptw_cycles_insn": 1618,
+      "ptw_cycles_data": 2581,
+      "page_table_memory_accesses": 1475,
+      "translation_stall_cycles": 4199
+    },
+    "tlb": {
+      "itlb_hits": 15094306,
+      "itlb_misses": 137,
+      "itlb_refills": 137,
+      "itlb_hit_rate": 0.999991,
+      "dtlb_hits": 11805108,
+      "dtlb_misses": 496,
+      "dtlb_refills": 496,
+      "dtlb_hit_rate": 0.999958
+    },
+    "l1i": {
+      "l1i_hits": 14242522,
+      "l1i_misses": 164596,
+      "l1i_refills": 147592,
+      "l1i_refills_clean_installed": 147592,
+      "l1i_refills_aborted": 9630,
+      "l1i_refills_initiated_total": 157222,
+      "l1i_early_restarts": 157164,
+      "l1i_pre_critical_aborts": 58,
+      "l1i_streaming_hits": 11526,
+      "l1i_hit_rate": 0.988575,
+      "l1i_nlp_hardware_telemetry": {
+        "candidate_events": 155274,
+        "issued_events": 151515,
+        "suppressed_page_events": 2589,
+        "suppressed_pmp_events": 0,
+        "suppressed_resident_events": 31197,
+        "suppressed_duplicate_events": 36,
+        "useful_hit_events": 42502,
+        "streaming_hit_events": 721067,
+        "preempted_events": 12760,
+        "dormant_abandon_events": 15791,
+        "discard_redirect_events": 84188,
+        "discard_maint_events": 2,
+        "discard_error_events": 0,
+        "promote_events": 42502,
+        "hidden_cycles_total": 765036
+      }
+    },
+    "l1d": {
+      "l1d_hits": 4759288,
+      "l1d_misses": 290612,
+      "l1d_refills": 290612,
+      "l1d_evictions": 251097,
+      "l1d_load_hits": 2392502,
+      "l1d_load_misses": 111098,
+      "l1d_store_hits": 2366607,
+      "l1d_store_misses": 179514,
+      "l1d_er_events": 0,
+      "l1d_er_saved_cycles_total": 0,
+      "l1d_hit_rate": 0.942452,
+      "l1d_load_hit_rate": 0.955625,
+      "l1d_store_hit_rate": 0.929495
+    },
+    "l1d_er_trailing_refill_diagnostics": {
+      "accounting_note": "overlapping diagnostic; excluded from disjoint_cycle_partition",
+      "active_cycles": 0,
+      "active_pct": 0.000000,
+      "useful_commit_cycles": 0,
+      "blocked_later_load_cycles": 0,
+      "blocked_store_cycles": 0,
+      "blocked_serialization_cycles": 0,
+      "other_zero_retire_cycles": 0,
+      "zero_retire_subcategory_sum": 0,
+      "active_cycle_exact_match": true,
+      "sb_nonempty_cycles": 0,
+      "sb_full_cycles": 0,
+      "refill_error_edge_cycles": 0,
+      "fatal_halt_cycles": 0
+    },
+    "platform_events": {
+      "sbi_ecall_count": 162,
+      "user_ecall_count": 1,
+      "mtip_count": 148,
+      "stip_count": 148,
+      "seip_count": 6,
+      "sync_trap_count": 2,
+      "trap_overhead_cycles": 1001756
+    },
+    "uart_mmio": {
+      "access_count": 54894
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 14824243,
+      "cycles_useful_retire_pct": 60.010353,
+      "cycles_zero_retire": 9878565,
+      "cycles_zero_retire_pct": 39.989642
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 2531548,
+      "sb_enqueues": 2530096,
+      "sb_tail_merges": 1452,
+      "merge_rate_pct": 0.057356,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 18880962,
+        "occ_0_pct": 76.432449,
+        "occ_1_cycles": 2093449,
+        "occ_1_pct": 8.474538,
+        "occ_2_cycles": 238026,
+        "occ_2_pct": 0.963558,
+        "occ_3_cycles": 805635,
+        "occ_3_pct": 3.261309,
+        "occ_4_cycles": 2684737,
+        "occ_4_pct": 10.868145
+      },
+      "full_buffer_stall_cycles": 2674707,
+      "raw_conflict_stall_cycles": 8285,
+      "arbitration_load_stall_cycles": 3580,
+      "visible_drain_stall_cycles": 13723,
+      "drain_requests": 2530096,
+      "drain_completions": 2530096,
+      "drain_hits": 2351445,
+      "drain_clean_misses": 13827,
+      "drain_dirty_misses": 164824,
+      "cycles_hidden_behind_useful_execution": 14824232,
+      "average_drain_latency_cycles": 10.763562
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 4353299,
+      "srb_active_pct": 17.622688,
+      "srb_installs": 178651,
+      "srb_clean_victims": 14122,
+      "srb_dirty_victims": 164529,
+      "srb_raw_load_stall_cycles": 1158409,
+      "srb_secondary_load_miss_stall_cycles": 15949
+    },
+    "bpu_telemetry": {
+      "branch_count": 2087934,
+      "branch_taken_count": 1028671,
+      "branch_correct_count": 1880592,
+      "branch_mispred_count": 207342,
+      "branch_accuracy_pct": 90.069514,
+      "jal_count": 459451,
+      "jal_correct_count": 397504,
+      "jalr_count": 373948,
+      "jalr_correct_count": 288334,
+      "ras_push_count": 238043,
+      "ras_pop_count": 238118,
+      "ras_correct_count": 177890,
+      "btb_hit_count": 1953944,
+      "btb_miss_count": 967389,
+      "false_hit_count": 0,
+      "bubbles_saved": 1572509
+    },
+    "l1d_fsm_latency_distributions": {
+      "clean_load_miss": {
+        "count": 23715,
+        "min_cycles": 19,
+        "avg_cycles": 21.504744,
+        "max_cycles": 27
+      },
+      "dirty_victim_eviction": {
+        "count": 80458,
+        "min_cycles": 10,
+        "avg_cycles": 24.506836,
+        "max_cycles": 94769
+      },
+      "dirty_victim_refill": {
+        "count": 80458,
+        "min_cycles": 17,
+        "avg_cycles": 17.000000,
+        "max_cycles": 17
+      },
+      "dirty_victim_total": {
+        "count": 86918,
+        "min_cycles": 19,
+        "avg_cycles": 26.215352,
+        "max_cycles": 27
+      },
+      "install_duration": {
+        "count": 111961,
+        "min_cycles": 1,
+        "avg_cycles": 1.000000,
+        "max_cycles": 1
+      },
+      "sb_drain_structural_collision": {
+        "count": 3578,
+        "min_cycles": 1,
+        "avg_cycles": 1.000559,
+        "max_cycles": 3
+      }
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 14824243,
+      "useful_commit_pct": 60.010353,
+      "store_buffer_stall_cycles": 2674707,
+      "store_buffer_stall_pct": 10.827542,
+      "sb_full_backpressure_cycles": 2674707,
+      "sb_full_backpressure_pct": 10.827542,
+      "raw_load_stall_cycles": 8285,
+      "raw_load_stall_pct": 0.033539,
+      "srb_raw_load_stall_cycles": 1158409,
+      "srb_raw_load_stall_pct": 4.689382,
+      "l1d_load_structural_arb_stall_cycles": 3580,
+      "l1d_load_structural_arb_stall_pct": 0.014492,
+      "srb_install_bubble_stall_cycles": 1549,
+      "srb_install_bubble_stall_pct": 0.006271,
+      "srb_secondary_load_miss_stall_cycles": 15949,
+      "srb_secondary_load_miss_stall_pct": 0.064564,
+      "arbitration_load_stall_cycles": 3580,
+      "arbitration_load_stall_pct": 0.014492,
+      "l1d_load_clean_miss_refill_stall_cycles": 314371,
+      "l1d_load_clean_miss_refill_stall_pct": 1.272612,
+      "l1d_load_dirty_evict_stall_cycles": 857192,
+      "l1d_load_dirty_evict_stall_pct": 3.470018,
+      "l1d_load_dirty_refill_stall_cycles": 1606527,
+      "l1d_load_dirty_refill_stall_pct": 6.503418,
+      "l1d_load_hit_latency_cycles": 27702,
+      "l1d_load_hit_latency_pct": 0.112141,
+      "visible_drain_stall_cycles": 13723,
+      "visible_drain_stall_pct": 0.055552,
+      "l1d_load_stall_cycles": 2805792,
+      "l1d_load_stall_pct": 11.358190,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 27702,
+        "clean_miss_refill_cycles": 314371,
+        "dirty_victim_evict_cycles": 857192,
+        "dirty_victim_refill_cycles": 1606527,
+        "dirty_victim_total_contribution_cycles": 2463719
+      },
+      "l1d_store_stall_cycles": 2674707,
+      "l1d_store_stall_pct": 10.827542,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 60269,
+      "amo_lr_sc_stall_pct": 0.243976,
+      "l1i_hit_fetch_stall_cycles": 88167,
+      "l1i_hit_fetch_stall_pct": 0.356911,
+      "l1i_miss_refill_cycles": 2320567,
+      "l1i_miss_refill_pct": 9.393940,
+      "l1i_total_stall_cycles": 2408734,
+      "l1i_total_stall_pct": 9.750851,
+      "branch_redirect_bubble_cycles": 346488,
+      "branch_redirect_bubble_pct": 1.402626,
+      "csr_serialization_flush_cycles": 21418,
+      "csr_serialization_flush_pct": 0.086703,
+      "trap_return_overhead_cycles": 1293,
+      "trap_return_overhead_pct": 0.005234,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 467,
+        "trap_vector_bubble_cycles": 442,
+        "mret_sret_redirect_bubble_cycles": 384
+      },
+      "ptw_tlb_stall_cycles": 4333,
+      "ptw_tlb_stall_pct": 0.017541,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 1618,
+        "dtlb_ptw_cycles": 2581,
+        "itlb_translation_latency_cycles": 134
+      },
+      "l1d_maintenance_cycles": 107654,
+      "l1d_maintenance_pct": 0.435797,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 94727,
+        "fence_i_cycles": 2071,
+        "pmp_maintenance_cycles": 10856
+      },
+      "mmio_stall_cycles": 82501,
+      "mmio_stall_pct": 0.333974,
+      "arbitration_contention_cycles": 10489,
+      "arbitration_contention_pct": 0.042461,
+      "refill_handoff_bubble_cycles": 153392,
+      "refill_handoff_bubble_pct": 0.620950,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 24702808,
+      "total_cycles": 24702809,
+      "disjoint_exact_match": false
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 1987062,
+      "dmem_load_requests": 2324896,
+      "dmem_store_requests": 2069648,
+      "l1d_refill_beats": 2324896,
+      "l1d_writeback_beats": 2008776,
+      "l1i_refill_beats": 1180736,
+      "ptw_memory_requests": 1475,
+      "total_ram_requests": 6383081,
+      "uart_mmio_requests": 54894,
+      "clint_mmio_requests": 149,
+      "plic_mmio_requests": 116,
+      "total_mmio_requests": 55159,
+      "instruction_traffic_pct": 31.130139,
+      "data_traffic_pct": 68.869861
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 2674707,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 2320567,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 346488,
+        "taken_control_flow_count": 1861433,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 2805792,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 107654,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 4333,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 2556845,
+      "raw_lsu_busy_cycles": 2897800,
+      "overlap_cycles": 236278
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 1987062,
+      "dmem_load_requests": 2324896,
+      "dmem_store_requests": 2069648,
+      "total_ram_requests": 6383081,
+      "uart_mmio_requests": 54894,
+      "clint_mmio_requests": 149,
+      "plic_mmio_requests": 116,
+      "total_mmio_requests": 55159
+    },
+    "instruction_mix": {
+      "alu_instructions": 6767338,
+      "load_instructions": 2525398,
+      "store_instructions": 2559364,
+      "amo_instructions": 21748,
+      "branch_conditional": 2087934,
+      "branch_taken": 1028034,
+      "branch_untaken": 1059900,
+      "branch_taken_pct": 49.236901,
+      "jal_unconditional": 459451,
+      "jalr_indirect": 373948,
+      "system_instructions": 29063
+    },
+    "store_buffer_full_characterization": {
+      "target_cycle_pool": 2674707,
+      "total_full_episodes": 149560,
+      "consecutive_full_cycles": {
+        "min": 1,
+        "avg": 17.883839,
+        "max": 25
+      },
+      "episode_duration_distribution": {
+        "episodes_1_to_4_cycles": 27862,
+        "episodes_5_to_10_cycles": 1189,
+        "episodes_11_to_20_cycles": 12231,
+        "episodes_21_to_50_cycles": 108278,
+        "episodes_51_to_100_cycles": 0,
+        "episodes_over_100_cycles": 0
+      },
+      "drain_throughput_while_full": {
+        "drain_completions_while_full": 122021,
+        "completions_per_full_cycle": 0.045620
+      },
+      "blocker_distribution_while_full": {
+        "blocked_by_l1d_fsm_busy_cycles": 0,
+        "blocked_by_l1d_fsm_busy_pct": 0.000000,
+        "blocked_by_srb_busy_cycles": 2525148,
+        "blocked_by_srb_busy_pct": 94.408397,
+        "blocked_by_dram_bus_contention_cycles": 0,
+        "blocked_by_dram_bus_contention_pct": 0.000000,
+        "drain_request_granted_active_cycles": 122021,
+        "drain_request_granted_active_pct": 4.562032
+      },
+      "store_production_vs_drain_rates": {
+        "total_stores_enqueued_or_merged": 2531548,
+        "total_drain_completions": 2530096,
+        "store_arrival_rate_per_cycle": 0.102480,
+        "drain_completion_rate_per_cycle": 0.102421
+      },
+      "coalescing_opportunities": {
+        "same_doubleword_match_cycles": 75,
+        "same_doubleword_match_pct": 0.002804,
+        "exact_address_match_cycles": 15,
+        "exact_address_match_pct": 0.000561
+      },
+      "shadow_fifo_depth_evaluation": {
+        "depth_4_baseline_stall_cycles": 2674707,
+        "depth_6_shadow_stall_cycles": 2403284,
+        "depth_6_avoided_cycles": 271423,
+        "depth_8_shadow_stall_cycles": 2159710,
+        "depth_8_avoided_cycles": 514997,
+        "depth_12_shadow_stall_cycles": 1674051,
+        "depth_12_avoided_cycles": 1000656
+      }
+    },
+    "l1i_next_line_prefetch_characterization": {
+      "target_cycle_pool": 2320567,
+      "demand_refills_total": 157208,
+      "sequential_transitions": {
+        "sequential_next_line_refills": 15720,
+        "sequential_next_line_pct": 9.999491,
+        "same_4k_page_eligible_candidates": 154962,
+        "same_4k_page_eligible_pct": 98.571320
+      },
+      "candidate_filtering": {
+        "already_cached_filtered": 27830,
+        "issued_candidates": 127132
+      },
+      "usefulness_and_accuracy": {
+        "useful_prefetches": 51092,
+        "useful_prefetch_pct": 40.188151,
+        "useless_prefetches": 75974,
+        "useless_prefetch_pct": 59.759935,
+        "redirects_before_use": 36208152
+      },
+      "lead_time_distribution": {
+        "min_lead_time_cycles": 17,
+        "avg_lead_time_cycles": 2265.116887,
+        "max_lead_time_cycles": 3930722,
+        "under_18_cycles_partial_hide": 651,
+        "18_to_50_cycles_fully_hidden": 12583,
+        "51_to_200_cycles_fully_hidden": 15058,
+        "over_200_cycles_fully_hidden": 22800
+      },
+      "bus_opportunity_and_removable_pool": {
+        "bus_idle_cycles": 14513286,
+        "bus_conflicts_with_l1d": 1257670,
+        "theoretical_cycles_hidden": 919005,
+        "pct_of_target_pool_hidden": 39.602606
+      }
+    },
+    "store_to_load_forwarding_characterization": {
+      "target_cycle_pool": {
+        "srb_raw_stall_cycles": 1158409,
+        "sb_raw_stall_cycles": 8285,
+        "total_raw_stall_cycles": 1166694
+      },
+      "sb_raw_classification": {
+        "exact_64bit_dword_match_cycles": 2762,
+        "single_entry_full_coverage_cycles": 6297,
+        "multi_entry_merged_coverage_cycles": 0,
+        "partial_overlap_cycles": 1988
+      },
+      "srb_raw_classification": {
+        "srb_store_payload_hit_cycles": 9512,
+        "srb_refill_line_wait_cycles": 1148897,
+        "srb_store_payload_pct": 0.821126,
+        "srb_refill_line_wait_pct": 99.178874
+      },
+      "load_width_distribution": {
+        "byte_loads": 5315,
+        "halfword_loads": 11,
+        "word_loads": 1357,
+        "dword_loads": 1160011
+      },
+      "removable_cycle_pools": {
+        "tier_1_simple_single_entry_cycles": 15809,
+        "tier_1_pct_of_raw_pool": 1.355025,
+        "tier_2_byte_mask_merge_cycles": 15809,
+        "tier_2_pct_of_raw_pool": 1.355025,
+        "tier_3_full_with_srb_line_cycles": 15809,
+        "tier_3_pct_of_raw_pool": 1.355025
+      }
+    }
+  },
+  "cpu_heavy_workload": {
+    "total_cycles": 29849,
+    "committed_instructions": 19461,
+    "ipc": 0.651982,
+    "cpi": 1.533786,
+    "privilege_mode_cycles": {
+      "m_mode": 0,
+      "s_mode": 19752,
+      "u_mode": 10097
+    },
+    "instruction_fetch_wait_cycles": 5279,
+    "load_store_stall_cycles": 3080,
+    "lsu_detail": {
+      "req_wait_cycles": 860,
+      "rsp_wait_cycles": 2199,
+      "amo_wait_cycles": 21
+    },
+    "branch_control_flow": {
+      "commits": 1948,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 3,
+      "walk_count_insn": 0,
+      "walk_count_load": 0,
+      "walk_count_store": 3,
+      "walk_count_amo": 0,
+      "total_ptw_cycles": 18,
+      "ptw_cycles_insn": 0,
+      "ptw_cycles_data": 18,
+      "page_table_memory_accesses": 9,
+      "translation_stall_cycles": 18
+    },
+    "tlb": {
+      "itlb_hits": 20039,
+      "itlb_misses": 0,
+      "itlb_refills": 0,
+      "itlb_hit_rate": 1.000000,
+      "dtlb_hits": 7143,
+      "dtlb_misses": 3,
+      "dtlb_refills": 3,
+      "dtlb_hit_rate": 0.999580
+    },
+    "l1i": {
+      "l1i_hits": 18386,
+      "l1i_misses": 339,
+      "l1i_refills": 312,
+      "l1i_refills_clean_installed": 312,
+      "l1i_refills_aborted": 13,
+      "l1i_refills_initiated_total": 325,
+      "l1i_early_restarts": 325,
+      "l1i_pre_critical_aborts": 0,
+      "l1i_streaming_hits": 0,
+      "l1i_hit_rate": 0.981896,
+      "l1i_nlp_hardware_telemetry": {
+        "candidate_events": 321,
+        "issued_events": 312,
+        "suppressed_page_events": 5,
+        "suppressed_pmp_events": 0,
+        "suppressed_resident_events": 65,
+        "suppressed_duplicate_events": 0,
+        "useful_hit_events": 83,
+        "streaming_hit_events": 1127,
+        "preempted_events": 14,
+        "dormant_abandon_events": 24,
+        "discard_redirect_events": 194,
+        "discard_maint_events": 0,
+        "discard_error_events": 0,
+        "promote_events": 83,
+        "hidden_cycles_total": 1494
+      }
+    },
+    "l1d": {
+      "l1d_hits": 3870,
+      "l1d_misses": 153,
+      "l1d_refills": 153,
+      "l1d_evictions": 51,
+      "l1d_load_hits": 2120,
+      "l1d_load_misses": 73,
+      "l1d_store_hits": 1746,
+      "l1d_store_misses": 80,
+      "l1d_er_events": 0,
+      "l1d_er_saved_cycles_total": 0,
+      "l1d_hit_rate": 0.961969,
+      "l1d_load_hit_rate": 0.966712,
+      "l1d_store_hit_rate": 0.956188
+    },
+    "l1d_er_trailing_refill_diagnostics": {
+      "accounting_note": "overlapping diagnostic; excluded from disjoint_cycle_partition",
+      "active_cycles": 0,
+      "active_pct": 0.000000,
+      "useful_commit_cycles": 0,
+      "blocked_later_load_cycles": 0,
+      "blocked_store_cycles": 0,
+      "blocked_serialization_cycles": 0,
+      "other_zero_retire_cycles": 0,
+      "zero_retire_subcategory_sum": 0,
+      "active_cycle_exact_match": true,
+      "sb_nonempty_cycles": 0,
+      "sb_full_cycles": 0,
+      "refill_error_edge_cycles": 0,
+      "fatal_halt_cycles": 0
+    },
+    "platform_events": {
+      "sbi_ecall_count": 0,
+      "user_ecall_count": 1,
+      "mtip_count": 0,
+      "stip_count": 0,
+      "seip_count": 2,
+      "sync_trap_count": 1,
+      "trap_overhead_cycles": 18086
+    },
+    "uart_mmio": {
+      "access_count": 40
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 19461,
+      "cycles_useful_retire_pct": 65.198164,
+      "cycles_zero_retire": 10388,
+      "cycles_zero_retire_pct": 34.801836
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 1799,
+      "sb_enqueues": 1792,
+      "sb_tail_merges": 7,
+      "merge_rate_pct": 0.389105,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 26313,
+        "occ_0_pct": 88.153707,
+        "occ_1_cycles": 1661,
+        "occ_1_pct": 5.564676,
+        "occ_2_cycles": 89,
+        "occ_2_pct": 0.298167,
+        "occ_3_cycles": 489,
+        "occ_3_pct": 1.638246,
+        "occ_4_cycles": 1297,
+        "occ_4_pct": 4.345204
+      },
+      "full_buffer_stall_cycles": 1317,
+      "raw_conflict_stall_cycles": 5,
+      "arbitration_load_stall_cycles": 2,
+      "visible_drain_stall_cycles": 25,
+      "drain_requests": 1792,
+      "drain_completions": 1792,
+      "drain_hits": 1714,
+      "drain_clean_misses": 51,
+      "drain_dirty_misses": 27,
+      "cycles_hidden_behind_useful_execution": 19461,
+      "average_drain_latency_cycles": 17.656808
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 1542,
+      "srb_active_pct": 5.166002,
+      "srb_installs": 78,
+      "srb_clean_victims": 51,
+      "srb_dirty_victims": 27,
+      "srb_raw_load_stall_cycles": 0,
+      "srb_secondary_load_miss_stall_cycles": 12
+    },
+    "bpu_telemetry": {
+      "branch_count": 2053,
+      "branch_taken_count": 1417,
+      "branch_correct_count": 1897,
+      "branch_mispred_count": 156,
+      "branch_accuracy_pct": 92.401364,
+      "jal_count": 195,
+      "jal_correct_count": 85,
+      "jalr_count": 336,
+      "jalr_correct_count": 177,
+      "ras_push_count": 226,
+      "ras_pop_count": 232,
+      "ras_correct_count": 112,
+      "btb_hit_count": 1614,
+      "btb_miss_count": 970,
+      "false_hit_count": 0,
+      "bubbles_saved": 1545
+    },
+    "l1d_fsm_latency_distributions": {
+      "clean_load_miss": {
+        "count": 48,
+        "min_cycles": 19,
+        "avg_cycles": 20.000000,
+        "max_cycles": 27
+      },
+      "dirty_victim_eviction": {
+        "count": 17,
+        "min_cycles": 10,
+        "avg_cycles": 16.176471,
+        "max_cycles": 94769
+      },
+      "dirty_victim_refill": {
+        "count": 17,
+        "min_cycles": 17,
+        "avg_cycles": 17.000000,
+        "max_cycles": 17
+      },
+      "dirty_victim_total": {
+        "count": 25,
+        "min_cycles": 19,
+        "avg_cycles": 24.120000,
+        "max_cycles": 27
+      },
+      "install_duration": {
+        "count": 75,
+        "min_cycles": 1,
+        "avg_cycles": 1.000000,
+        "max_cycles": 1
+      },
+      "sb_drain_structural_collision": {
+        "count": 2,
+        "min_cycles": 1,
+        "avg_cycles": 1.000000,
+        "max_cycles": 3
+      }
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 19461,
+      "useful_commit_pct": 65.198164,
+      "store_buffer_stall_cycles": 1317,
+      "store_buffer_stall_pct": 4.412208,
+      "sb_full_backpressure_cycles": 1317,
+      "sb_full_backpressure_pct": 4.412208,
+      "raw_load_stall_cycles": 5,
+      "raw_load_stall_pct": 0.016751,
+      "srb_raw_load_stall_cycles": 0,
+      "srb_raw_load_stall_pct": 0.000000,
+      "l1d_load_structural_arb_stall_cycles": 2,
+      "l1d_load_structural_arb_stall_pct": 0.006700,
+      "srb_install_bubble_stall_cycles": 1,
+      "srb_install_bubble_stall_pct": 0.003350,
+      "srb_secondary_load_miss_stall_cycles": 12,
+      "srb_secondary_load_miss_stall_pct": 0.040202,
+      "arbitration_load_stall_cycles": 2,
+      "arbitration_load_stall_pct": 0.006700,
+      "l1d_load_clean_miss_refill_stall_cycles": 804,
+      "l1d_load_clean_miss_refill_stall_pct": 2.693558,
+      "l1d_load_dirty_evict_stall_cycles": 223,
+      "l1d_load_dirty_evict_stall_pct": 0.747094,
+      "l1d_load_dirty_refill_stall_cycles": 536,
+      "l1d_load_dirty_refill_stall_pct": 1.795705,
+      "l1d_load_hit_latency_cycles": 15,
+      "l1d_load_hit_latency_pct": 0.050253,
+      "visible_drain_stall_cycles": 25,
+      "visible_drain_stall_pct": 0.083755,
+      "l1d_load_stall_cycles": 1578,
+      "l1d_load_stall_pct": 5.286609,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 15,
+        "clean_miss_refill_cycles": 804,
+        "dirty_victim_evict_cycles": 223,
+        "dirty_victim_refill_cycles": 536,
+        "dirty_victim_total_contribution_cycles": 759
+      },
+      "l1d_store_stall_cycles": 1317,
+      "l1d_store_stall_pct": 4.412208,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 94,
+      "amo_lr_sc_stall_pct": 0.314918,
+      "l1i_hit_fetch_stall_cycles": 143,
+      "l1i_hit_fetch_stall_pct": 0.479078,
+      "l1i_miss_refill_cycles": 4858,
+      "l1i_miss_refill_pct": 16.275252,
+      "l1i_total_stall_cycles": 5001,
+      "l1i_total_stall_pct": 16.754330,
+      "branch_redirect_bubble_cycles": 413,
+      "branch_redirect_bubble_pct": 1.383631,
+      "csr_serialization_flush_cycles": 57,
+      "csr_serialization_flush_pct": 0.190961,
+      "trap_return_overhead_cycles": 12,
+      "trap_return_overhead_pct": 0.040202,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 4,
+        "trap_vector_bubble_cycles": 4,
+        "mret_sret_redirect_bubble_cycles": 4
+      },
+      "ptw_tlb_stall_cycles": 18,
+      "ptw_tlb_stall_pct": 0.060304,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 0,
+        "dtlb_ptw_cycles": 18,
+        "itlb_translation_latency_cycles": 0
+      },
+      "l1d_maintenance_cycles": 1460,
+      "l1d_maintenance_pct": 4.891286,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 1460,
+        "fence_i_cycles": 0,
+        "pmp_maintenance_cycles": 0
+      },
+      "mmio_stall_cycles": 61,
+      "mmio_stall_pct": 0.204362,
+      "arbitration_contention_cycles": 9,
+      "arbitration_contention_pct": 0.030152,
+      "refill_handoff_bubble_cycles": 323,
+      "refill_handoff_bubble_pct": 1.082113,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 29849,
+      "total_cycles": 29849,
+      "disjoint_exact_match": true
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 4037,
+      "dmem_load_requests": 1224,
+      "dmem_store_requests": 1520,
+      "l1d_refill_beats": 1224,
+      "l1d_writeback_beats": 408,
+      "l1i_refill_beats": 2496,
+      "ptw_memory_requests": 9,
+      "total_ram_requests": 6790,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 0,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 46,
+      "instruction_traffic_pct": 59.455081,
+      "data_traffic_pct": 40.544919
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 1317,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 4858,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 413,
+        "taken_control_flow_count": 1948,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 1578,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 1460,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 18,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 5279,
+      "raw_lsu_busy_cycles": 3080,
+      "overlap_cycles": 421
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 4037,
+      "dmem_load_requests": 1224,
+      "dmem_store_requests": 1520,
+      "total_ram_requests": 6790,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 0,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 46
+    },
+    "instruction_mix": {
+      "alu_instructions": 12700,
+      "load_instructions": 2195,
+      "store_instructions": 1830,
+      "amo_instructions": 51,
+      "branch_conditional": 2053,
+      "branch_taken": 1417,
+      "branch_untaken": 636,
+      "branch_taken_pct": 69.020945,
+      "jal_unconditional": 195,
+      "jalr_indirect": 336,
+      "system_instructions": 101
+    },
+    "store_buffer_full_characterization": {
+      "target_cycle_pool": 1317,
+      "total_full_episodes": 100,
+      "consecutive_full_cycles": {
+        "min": 1,
+        "avg": 13.170000,
+        "max": 25
+      },
+      "episode_duration_distribution": {
+        "episodes_1_to_4_cycles": 34,
+        "episodes_5_to_10_cycles": 0,
+        "episodes_11_to_20_cycles": 41,
+        "episodes_21_to_50_cycles": 25,
+        "episodes_51_to_100_cycles": 0,
+        "episodes_over_100_cycles": 0
+      },
+      "drain_throughput_while_full": {
+        "drain_completions_while_full": 66,
+        "completions_per_full_cycle": 0.050114
+      },
+      "blocker_distribution_while_full": {
+        "blocked_by_l1d_fsm_busy_cycles": 0,
+        "blocked_by_l1d_fsm_busy_pct": 0.000000,
+        "blocked_by_srb_busy_cycles": 1217,
+        "blocked_by_srb_busy_pct": 92.406986,
+        "blocked_by_dram_bus_contention_cycles": 0,
+        "blocked_by_dram_bus_contention_pct": 0.000000,
+        "drain_request_granted_active_cycles": 66,
+        "drain_request_granted_active_pct": 5.011390
+      },
+      "store_production_vs_drain_rates": {
+        "total_stores_enqueued_or_merged": 1799,
+        "total_drain_completions": 1792,
+        "store_arrival_rate_per_cycle": 0.060270,
+        "drain_completion_rate_per_cycle": 0.060036
+      },
+      "coalescing_opportunities": {
+        "same_doubleword_match_cycles": 0,
+        "same_doubleword_match_pct": 0.000000,
+        "exact_address_match_cycles": 0,
+        "exact_address_match_pct": 0.000000
+      },
+      "shadow_fifo_depth_evaluation": {
+        "depth_4_baseline_stall_cycles": 1317,
+        "depth_6_shadow_stall_cycles": 1151,
+        "depth_6_avoided_cycles": 166,
+        "depth_8_shadow_stall_cycles": 1019,
+        "depth_8_avoided_cycles": 298,
+        "depth_12_shadow_stall_cycles": 755,
+        "depth_12_avoided_cycles": 562
+      }
+    },
+    "l1i_next_line_prefetch_characterization": {
+      "target_cycle_pool": 4858,
+      "demand_refills_total": 325,
+      "sequential_transitions": {
+        "sequential_next_line_refills": 28,
+        "sequential_next_line_pct": 8.615385,
+        "same_4k_page_eligible_candidates": 323,
+        "same_4k_page_eligible_pct": 99.384615
+      },
+      "candidate_filtering": {
+        "already_cached_filtered": 54,
+        "issued_candidates": 269
+      },
+      "usefulness_and_accuracy": {
+        "useful_prefetches": 90,
+        "useful_prefetch_pct": 33.457249,
+        "useless_prefetches": 178,
+        "useless_prefetch_pct": 66.171004,
+        "redirects_before_use": 179670
+      },
+      "lead_time_distribution": {
+        "min_lead_time_cycles": 17,
+        "avg_lead_time_cycles": 1258.944444,
+        "max_lead_time_cycles": 3930722,
+        "under_18_cycles_partial_hide": 2,
+        "18_to_50_cycles_fully_hidden": 27,
+        "51_to_200_cycles_fully_hidden": 22,
+        "over_200_cycles_fully_hidden": 39
+      },
+      "bus_opportunity_and_removable_pool": {
+        "bus_idle_cycles": 19800,
+        "bus_conflicts_with_l1d": 2600,
+        "theoretical_cycles_hidden": 1618,
+        "pct_of_target_pool_hidden": 33.305887
+      }
+    },
+    "store_to_load_forwarding_characterization": {
+      "target_cycle_pool": {
+        "srb_raw_stall_cycles": 0,
+        "sb_raw_stall_cycles": 5,
+        "total_raw_stall_cycles": 5
+      },
+      "sb_raw_classification": {
+        "exact_64bit_dword_match_cycles": 1,
+        "single_entry_full_coverage_cycles": 3,
+        "multi_entry_merged_coverage_cycles": 0,
+        "partial_overlap_cycles": 2
+      },
+      "srb_raw_classification": {
+        "srb_store_payload_hit_cycles": 0,
+        "srb_refill_line_wait_cycles": 0,
+        "srb_store_payload_pct": 0.000000,
+        "srb_refill_line_wait_pct": 0.000000
+      },
+      "load_width_distribution": {
+        "byte_loads": 0,
+        "halfword_loads": 0,
+        "word_loads": 2,
+        "dword_loads": 3
+      },
+      "removable_cycle_pools": {
+        "tier_1_simple_single_entry_cycles": 3,
+        "tier_1_pct_of_raw_pool": 60.000000,
+        "tier_2_byte_mask_merge_cycles": 3,
+        "tier_2_pct_of_raw_pool": 60.000000,
+        "tier_3_full_with_srb_line_cycles": 3,
+        "tier_3_pct_of_raw_pool": 60.000000
+      }
+    }
+  },
+  "memory_heavy_workload": {
+    "total_cycles": 16646,
+    "committed_instructions": 13742,
+    "ipc": 0.825544,
+    "cpi": 1.211323,
+    "privilege_mode_cycles": {
+      "m_mode": 0,
+      "s_mode": 9143,
+      "u_mode": 7503
+    },
+    "instruction_fetch_wait_cycles": 1845,
+    "load_store_stall_cycles": 192,
+    "lsu_detail": {
+      "req_wait_cycles": 100,
+      "rsp_wait_cycles": 77,
+      "amo_wait_cycles": 15
+    },
+    "branch_control_flow": {
+      "commits": 1408,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 0,
+      "walk_count_insn": 0,
+      "walk_count_load": 0,
+      "walk_count_store": 0,
+      "walk_count_amo": 0,
+      "total_ptw_cycles": 0,
+      "ptw_cycles_insn": 0,
+      "ptw_cycles_data": 0,
+      "page_table_memory_accesses": 0,
+      "translation_stall_cycles": 0
+    },
+    "tlb": {
+      "itlb_hits": 14019,
+      "itlb_misses": 0,
+      "itlb_refills": 0,
+      "itlb_hit_rate": 1.000000,
+      "dtlb_hits": 5133,
+      "dtlb_misses": 0,
+      "dtlb_refills": 0,
+      "dtlb_hit_rate": 1.000000
+    },
+    "l1i": {
+      "l1i_hits": 12837,
+      "l1i_misses": 120,
+      "l1i_refills": 113,
+      "l1i_refills_clean_installed": 113,
+      "l1i_refills_aborted": 1,
+      "l1i_refills_initiated_total": 114,
+      "l1i_early_restarts": 114,
+      "l1i_pre_critical_aborts": 0,
+      "l1i_streaming_hits": 0,
+      "l1i_hit_rate": 0.990739,
+      "l1i_nlp_hardware_telemetry": {
+        "candidate_events": 87,
+        "issued_events": 86,
+        "suppressed_page_events": 0,
+        "suppressed_pmp_events": 0,
+        "suppressed_resident_events": 47,
+        "suppressed_duplicate_events": 0,
+        "useful_hit_events": 21,
+        "streaming_hit_events": 982,
+        "preempted_events": 9,
+        "dormant_abandon_events": 8,
+        "discard_redirect_events": 46,
+        "discard_maint_events": 0,
+        "discard_error_events": 0,
+        "promote_events": 21,
+        "hidden_cycles_total": 378
+      }
+    },
+    "l1d": {
+      "l1d_hits": 4301,
+      "l1d_misses": 9,
+      "l1d_refills": 9,
+      "l1d_evictions": 3,
+      "l1d_load_hits": 2731,
+      "l1d_load_misses": 6,
+      "l1d_store_hits": 1567,
+      "l1d_store_misses": 3,
+      "l1d_er_events": 0,
+      "l1d_er_saved_cycles_total": 0,
+      "l1d_hit_rate": 0.997912,
+      "l1d_load_hit_rate": 0.997808,
+      "l1d_store_hit_rate": 0.998089
+    },
+    "l1d_er_trailing_refill_diagnostics": {
+      "accounting_note": "overlapping diagnostic; excluded from disjoint_cycle_partition",
+      "active_cycles": 0,
+      "active_pct": 0.000000,
+      "useful_commit_cycles": 0,
+      "blocked_later_load_cycles": 0,
+      "blocked_store_cycles": 0,
+      "blocked_serialization_cycles": 0,
+      "other_zero_retire_cycles": 0,
+      "zero_retire_subcategory_sum": 0,
+      "active_cycle_exact_match": true,
+      "sb_nonempty_cycles": 0,
+      "sb_full_cycles": 0,
+      "refill_error_edge_cycles": 0,
+      "fatal_halt_cycles": 0
+    },
+    "platform_events": {
+      "sbi_ecall_count": 0,
+      "user_ecall_count": 1,
+      "mtip_count": 0,
+      "stip_count": 0,
+      "seip_count": 2,
+      "sync_trap_count": 0,
+      "trap_overhead_cycles": 7907
+    },
+    "uart_mmio": {
+      "access_count": 40
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 13742,
+      "cycles_useful_retire_pct": 82.554367,
+      "cycles_zero_retire": 2904,
+      "cycles_zero_retire_pct": 17.445633
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 1548,
+      "sb_enqueues": 1544,
+      "sb_tail_merges": 4,
+      "merge_rate_pct": 0.258398,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 14926,
+        "occ_0_pct": 89.667187,
+        "occ_1_cycles": 1696,
+        "occ_1_pct": 10.188634,
+        "occ_2_cycles": 14,
+        "occ_2_pct": 0.084104,
+        "occ_3_cycles": 8,
+        "occ_3_pct": 0.048060,
+        "occ_4_cycles": 2,
+        "occ_4_pct": 0.012015
+      },
+      "full_buffer_stall_cycles": 31,
+      "raw_conflict_stall_cycles": 514,
+      "arbitration_load_stall_cycles": 0,
+      "visible_drain_stall_cycles": 9,
+      "drain_requests": 1544,
+      "drain_completions": 1544,
+      "drain_hits": 1541,
+      "drain_clean_misses": 1,
+      "drain_dirty_misses": 2,
+      "cycles_hidden_behind_useful_execution": 13742,
+      "average_drain_latency_cycles": 11.781088
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 67,
+      "srb_active_pct": 0.402499,
+      "srb_installs": 3,
+      "srb_clean_victims": 1,
+      "srb_dirty_victims": 2,
+      "srb_raw_load_stall_cycles": 0,
+      "srb_secondary_load_miss_stall_cycles": 0
+    },
+    "bpu_telemetry": {
+      "branch_count": 1450,
+      "branch_taken_count": 981,
+      "branch_correct_count": 1378,
+      "branch_mispred_count": 72,
+      "branch_accuracy_pct": 95.034483,
+      "jal_count": 145,
+      "jal_correct_count": 123,
+      "jalr_count": 282,
+      "jalr_correct_count": 214,
+      "ras_push_count": 183,
+      "ras_pop_count": 187,
+      "ras_correct_count": 134,
+      "btb_hit_count": 1378,
+      "btb_miss_count": 499,
+      "false_hit_count": 0,
+      "bubbles_saved": 1272
+    },
+    "l1d_fsm_latency_distributions": {
+      "clean_load_miss": {
+        "count": 2,
+        "min_cycles": 19,
+        "avg_cycles": 23.000000,
+        "max_cycles": 27
+      },
+      "dirty_victim_eviction": {
+        "count": 1,
+        "min_cycles": 10,
+        "avg_cycles": 3877.000000,
+        "max_cycles": 94769
+      },
+      "dirty_victim_refill": {
+        "count": 1,
+        "min_cycles": 17,
+        "avg_cycles": 17.000000,
+        "max_cycles": 17
+      },
+      "dirty_victim_total": {
+        "count": 4,
+        "min_cycles": 19,
+        "avg_cycles": 19.000000,
+        "max_cycles": 27
+      },
+      "install_duration": {
+        "count": 6,
+        "min_cycles": 1,
+        "avg_cycles": 1.000000,
+        "max_cycles": 1
+      },
+      "sb_drain_structural_collision": {
+        "count": 0,
+        "min_cycles": 0,
+        "avg_cycles": 0.000000,
+        "max_cycles": 3
+      }
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 13742,
+      "useful_commit_pct": 82.554367,
+      "store_buffer_stall_cycles": 31,
+      "store_buffer_stall_pct": 0.186231,
+      "sb_full_backpressure_cycles": 31,
+      "sb_full_backpressure_pct": 0.186231,
+      "raw_load_stall_cycles": 514,
+      "raw_load_stall_pct": 3.087829,
+      "srb_raw_load_stall_cycles": 0,
+      "srb_raw_load_stall_pct": 0.000000,
+      "l1d_load_structural_arb_stall_cycles": 0,
+      "l1d_load_structural_arb_stall_pct": 0.000000,
+      "srb_install_bubble_stall_cycles": 0,
+      "srb_install_bubble_stall_pct": 0.000000,
+      "srb_secondary_load_miss_stall_cycles": 0,
+      "srb_secondary_load_miss_stall_pct": 0.000000,
+      "arbitration_load_stall_cycles": 0,
+      "arbitration_load_stall_pct": 0.000000,
+      "l1d_load_clean_miss_refill_stall_cycles": 20,
+      "l1d_load_clean_miss_refill_stall_pct": 0.120149,
+      "l1d_load_dirty_evict_stall_cycles": 13,
+      "l1d_load_dirty_evict_stall_pct": 0.078097,
+      "l1d_load_dirty_refill_stall_cycles": 89,
+      "l1d_load_dirty_refill_stall_pct": 0.534663,
+      "l1d_load_hit_latency_cycles": 15,
+      "l1d_load_hit_latency_pct": 0.090112,
+      "visible_drain_stall_cycles": 9,
+      "visible_drain_stall_pct": 0.054067,
+      "l1d_load_stall_cycles": 137,
+      "l1d_load_stall_pct": 0.823021,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 15,
+        "clean_miss_refill_cycles": 20,
+        "dirty_victim_evict_cycles": 13,
+        "dirty_victim_refill_cycles": 89,
+        "dirty_victim_total_contribution_cycles": 102
+      },
+      "l1d_store_stall_cycles": 31,
+      "l1d_store_stall_pct": 0.186231,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 30,
+      "amo_lr_sc_stall_pct": 0.180223,
+      "l1i_hit_fetch_stall_cycles": 72,
+      "l1i_hit_fetch_stall_pct": 0.432536,
+      "l1i_miss_refill_cycles": 1722,
+      "l1i_miss_refill_pct": 10.344828,
+      "l1i_total_stall_cycles": 1794,
+      "l1i_total_stall_pct": 10.777364,
+      "branch_redirect_bubble_cycles": 161,
+      "branch_redirect_bubble_pct": 0.967199,
+      "csr_serialization_flush_cycles": 44,
+      "csr_serialization_flush_pct": 0.264328,
+      "trap_return_overhead_cycles": 9,
+      "trap_return_overhead_pct": 0.054067,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 3,
+        "trap_vector_bubble_cycles": 3,
+        "mret_sret_redirect_bubble_cycles": 3
+      },
+      "ptw_tlb_stall_cycles": 0,
+      "ptw_tlb_stall_pct": 0.000000,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 0,
+        "dtlb_ptw_cycles": 0,
+        "itlb_translation_latency_cycles": 0
+      },
+      "l1d_maintenance_cycles": 0,
+      "l1d_maintenance_pct": 0.000000,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 0,
+        "fence_i_cycles": 0,
+        "pmp_maintenance_cycles": 0
+      },
+      "mmio_stall_cycles": 61,
+      "mmio_stall_pct": 0.366454,
+      "arbitration_contention_cycles": 0,
+      "arbitration_contention_pct": 0.000000,
+      "refill_handoff_bubble_cycles": 114,
+      "refill_handoff_bubble_pct": 0.684849,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 16646,
+      "total_cycles": 16646,
+      "disjoint_exact_match": true
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 1360,
+      "dmem_load_requests": 72,
+      "dmem_store_requests": 24,
+      "l1d_refill_beats": 72,
+      "l1d_writeback_beats": 24,
+      "l1i_refill_beats": 904,
+      "ptw_memory_requests": 0,
+      "total_ram_requests": 1456,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 0,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 46,
+      "instruction_traffic_pct": 93.406593,
+      "data_traffic_pct": 6.593407
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 31,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 1722,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 161,
+        "taken_control_flow_count": 1408,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 137,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 0,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 0,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 1845,
+      "raw_lsu_busy_cycles": 192,
+      "overlap_cycles": 123
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 1360,
+      "dmem_load_requests": 72,
+      "dmem_store_requests": 24,
+      "total_ram_requests": 1456,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 0,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 46
+    },
+    "instruction_mix": {
+      "alu_instructions": 7428,
+      "load_instructions": 2741,
+      "store_instructions": 1579,
+      "amo_instructions": 40,
+      "branch_conditional": 1450,
+      "branch_taken": 981,
+      "branch_untaken": 469,
+      "branch_taken_pct": 67.655172,
+      "jal_unconditional": 145,
+      "jalr_indirect": 282,
+      "system_instructions": 77
+    },
+    "store_buffer_full_characterization": {
+      "target_cycle_pool": 31,
+      "total_full_episodes": 31,
+      "consecutive_full_cycles": {
+        "min": 1,
+        "avg": 1.000000,
+        "max": 25
+      },
+      "episode_duration_distribution": {
+        "episodes_1_to_4_cycles": 31,
+        "episodes_5_to_10_cycles": 0,
+        "episodes_11_to_20_cycles": 0,
+        "episodes_21_to_50_cycles": 0,
+        "episodes_51_to_100_cycles": 0,
+        "episodes_over_100_cycles": 0
+      },
+      "drain_throughput_while_full": {
+        "drain_completions_while_full": 0,
+        "completions_per_full_cycle": 0.000000
+      },
+      "blocker_distribution_while_full": {
+        "blocked_by_l1d_fsm_busy_cycles": 0,
+        "blocked_by_l1d_fsm_busy_pct": 0.000000,
+        "blocked_by_srb_busy_cycles": 0,
+        "blocked_by_srb_busy_pct": 0.000000,
+        "blocked_by_dram_bus_contention_cycles": 0,
+        "blocked_by_dram_bus_contention_pct": 0.000000,
+        "drain_request_granted_active_cycles": 0,
+        "drain_request_granted_active_pct": 0.000000
+      },
+      "store_production_vs_drain_rates": {
+        "total_stores_enqueued_or_merged": 1548,
+        "total_drain_completions": 1544,
+        "store_arrival_rate_per_cycle": 0.092995,
+        "drain_completion_rate_per_cycle": 0.092755
+      },
+      "coalescing_opportunities": {
+        "same_doubleword_match_cycles": 0,
+        "same_doubleword_match_pct": 0.000000,
+        "exact_address_match_cycles": 0,
+        "exact_address_match_pct": 0.000000
+      },
+      "shadow_fifo_depth_evaluation": {
+        "depth_4_baseline_stall_cycles": 31,
+        "depth_6_shadow_stall_cycles": 0,
+        "depth_6_avoided_cycles": 31,
+        "depth_8_shadow_stall_cycles": 0,
+        "depth_8_avoided_cycles": 31,
+        "depth_12_shadow_stall_cycles": 0,
+        "depth_12_avoided_cycles": 31
+      }
+    },
+    "l1i_next_line_prefetch_characterization": {
+      "target_cycle_pool": 1722,
+      "demand_refills_total": 114,
+      "sequential_transitions": {
+        "sequential_next_line_refills": 6,
+        "sequential_next_line_pct": 5.263158,
+        "same_4k_page_eligible_candidates": 114,
+        "same_4k_page_eligible_pct": 100.000000
+      },
+      "candidate_filtering": {
+        "already_cached_filtered": 38,
+        "issued_candidates": 76
+      },
+      "usefulness_and_accuracy": {
+        "useful_prefetches": 19,
+        "useful_prefetch_pct": 25.000000,
+        "useless_prefetches": 50,
+        "useless_prefetch_pct": 65.789474,
+        "redirects_before_use": 16602
+      },
+      "lead_time_distribution": {
+        "min_lead_time_cycles": 17,
+        "avg_lead_time_cycles": 2615.000000,
+        "max_lead_time_cycles": 3930722,
+        "under_18_cycles_partial_hide": 0,
+        "18_to_50_cycles_fully_hidden": 5,
+        "51_to_200_cycles_fully_hidden": 4,
+        "over_200_cycles_fully_hidden": 10
+      },
+      "bus_opportunity_and_removable_pool": {
+        "bus_idle_cycles": 13973,
+        "bus_conflicts_with_l1d": 912,
+        "theoretical_cycles_hidden": 342,
+        "pct_of_target_pool_hidden": 19.860627
+      }
+    },
+    "store_to_load_forwarding_characterization": {
+      "target_cycle_pool": {
+        "srb_raw_stall_cycles": 0,
+        "sb_raw_stall_cycles": 514,
+        "total_raw_stall_cycles": 514
+      },
+      "sb_raw_classification": {
+        "exact_64bit_dword_match_cycles": 512,
+        "single_entry_full_coverage_cycles": 514,
+        "multi_entry_merged_coverage_cycles": 0,
+        "partial_overlap_cycles": 0
+      },
+      "srb_raw_classification": {
+        "srb_store_payload_hit_cycles": 0,
+        "srb_refill_line_wait_cycles": 0,
+        "srb_store_payload_pct": 0.000000,
+        "srb_refill_line_wait_pct": 0.000000
+      },
+      "load_width_distribution": {
+        "byte_loads": 0,
+        "halfword_loads": 0,
+        "word_loads": 2,
+        "dword_loads": 512
+      },
+      "removable_cycle_pools": {
+        "tier_1_simple_single_entry_cycles": 514,
+        "tier_1_pct_of_raw_pool": 100.000000,
+        "tier_2_byte_mask_merge_cycles": 514,
+        "tier_2_pct_of_raw_pool": 100.000000,
+        "tier_3_full_with_srb_line_cycles": 514,
+        "tier_3_pct_of_raw_pool": 100.000000
+      }
+    }
+  }
+}
+
+--- STDERR ---
+[PERF_TB] Firmware: 2152 bytes
+[PERF_TB] Kernel:   13182048 bytes at 0x8020_0000
+[PERF_TB] DTB:      1675 bytes at 0x8200_0000
+[PERF_TB] DRAM:     256 MiB
+[PERF_TB] Max cycl: 220000000
+[PERF_TB] L1D-ER:   disabled (A/B baseline)
+[PERF_HEARTBEAT] cycle=5000000 commits=3391891 ipc=0.6784 pc=0xffffffff804201d8 sbi=10 mtip=0 stip=0 seip=0 ptw_walks=155 ptw_cycles=892 itlb_h=3301675 dtlb_h=2525748 l1i_h=3309118 l1i_m=4256 l1i_refill=58991 l1d_h=1056668 l1d_m=70683 lsu_stall=0
+[PERF_HEARTBEAT] cycle=10000000 commits=5096762 ipc=0.5097 pc=0xffffffff800ccb84 sbi=16 mtip=5 stip=5 seip=0 ptw_walks=218 ptw_cycles=1208 itlb_h=5030661 dtlb_h=6279843 l1i_h=4972416 l1i_m=13747 l1i_refill=192115 l1d_h=1576763 l1d_m=192417 lsu_stall=0
+[PERF_HEARTBEAT] cycle=15000000 commits=8643903 ipc=0.5763 pc=0xffffffff80072f1c sbi=65 mtip=51 stip=51 seip=0 ptw_walks=411 ptw_cycles=2231 itlb_h=8699579 dtlb_h=7884614 l1i_h=8356169 l1i_m=64431 l1i_refill=906156 l1d_h=2641773 l1d_m=216101 lsu_stall=0
+[PERF_HEARTBEAT] cycle=20000000 commits=11984991 ipc=0.5992 pc=0xffffffff8022823c sbi=115 mtip=101 stip=101 seip=0 ptw_walks=464 ptw_cycles=2531 itlb_h=12178670 dtlb_h=9493781 l1i_h=11511601 l1i_m=126949 l1i_refill=1790523 l1d_h=3682585 l1d_m=241033 lsu_stall=0
+
+[PERF_TB] Completed at cycle=24810766 commits=14902391

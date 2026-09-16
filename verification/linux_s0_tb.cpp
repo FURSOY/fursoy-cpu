@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
         dut.rst_i = 0;
 
         bool ip = false, dp = false;
-        uint32_t ii = 0;
+        uint64_t ii = 0;
         uint64_t dd = 0;
         uint64_t cycles = 0, commits = 0;
 
@@ -151,6 +151,9 @@ int main(int argc, char** argv) {
         bool seen_virt_pc = false;
         bool seen_earlycon = false;
         bool seen_init_banner = false;
+        bool seen_userspace_begin = false;
+        bool seen_userspace_pass = false;
+        bool seen_userspace_fail = false;
         uint64_t cycle_handoff = 0;
         uint64_t cycle_satp = 0;
         uint64_t cycle_virt = 0;
@@ -173,7 +176,7 @@ int main(int argc, char** argv) {
             dut.clk_i = 0;
             dut.imem_req_ready_i = 1;
             dut.imem_rsp_valid_i = ip;
-            dut.imem_rsp_insn_i = ii;
+            dut.imem_rsp_data_i = ii;
             dut.imem_rsp_error_i = 0;
 
             dut.ram_req_ready_i = 1;
@@ -189,7 +192,7 @@ int main(int argc, char** argv) {
             bool dreq = dut.ram_req_valid_o && dut.ram_req_ready_i;
 
             bool nip = ip, ndp = false;
-            uint32_t nii = ii;
+            uint64_t nii = ii;
             uint64_t ndd = 0;
 
             if (ifire) nip = false;
@@ -197,8 +200,8 @@ int main(int argc, char** argv) {
 
             if (ireq) {
                 uint64_t addr = dut.imem_req_addr_o;
-                if (addr >= RAM_BASE && addr + 4 <= RAM_BASE + RAM_SIZE) {
-                    nii = uint32_t(read_mem(ram, addr, 2));
+                if (addr >= RAM_BASE && addr + 8 <= RAM_BASE + RAM_SIZE) {
+                    nii = read_mem(ram, addr, 3);
                     nip = true;
                 }
             }
@@ -250,6 +253,15 @@ int main(int argc, char** argv) {
                     uart_output.find("Userspace active") != std::string::npos) {
                     seen_init_banner = true;
                 }
+                if (uart_output.find("FURSOY_USERSPACE_BEGIN") != std::string::npos) {
+                    seen_userspace_begin = true;
+                }
+                if (uart_output.find("FURSOY_USERSPACE_PASS") != std::string::npos) {
+                    seen_userspace_pass = true;
+                }
+                if (uart_output.find("FURSOY_USERSPACE_FAIL") != std::string::npos) {
+                    seen_userspace_fail = true;
+                }
             }
 
             // Milestone and architectural state inspection
@@ -281,10 +293,14 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // Stop condition: userspace reached!
-            if (seen_init_banner) {
-                static int post_init_cycles = 0;
-                if (++post_init_cycles > 5000) break;
+            // Stop condition: userspace test finished!
+            if (seen_userspace_pass) {
+                static int pass_drain = 0;
+                if (++pass_drain > 10000) break;
+            }
+            if (seen_userspace_fail) {
+                static int fail_drain = 0;
+                if (++fail_drain > 10000) break;
             }
 
             // Stop condition: kernel panic or halt
@@ -390,8 +406,19 @@ int main(int argc, char** argv) {
 
         // Output structured JSON report
         std::cerr << "--- JSON REPORT ---\n";
+        std::string status = "fail";
+        if (seen_userspace_pass && !seen_userspace_fail) {
+            status = "pass";
+        } else if (seen_userspace_fail) {
+            status = "userspace_fail";
+        } else if (seen_init_banner) {
+            status = "init_reached";
+        } else if (seen_earlycon) {
+            status = "earlycon_pass";
+        }
+
         std::cout << "{\n"
-                  << "  \"status\": \"" << (seen_init_banner ? "pass" : (seen_earlycon ? "earlycon_pass" : "fail")) << "\",\n"
+                  << "  \"status\": \"" << status << "\",\n"
                   << "  \"cycles\": " << cycles << ",\n"
                   << "  \"commits\": " << commits << ",\n"
                   << "  \"seen_reset\": " << (seen_reset ? "true" : "false") << ",\n"
@@ -400,6 +427,9 @@ int main(int argc, char** argv) {
                   << "  \"seen_virt_pc\": " << (seen_virt_pc ? "true" : "false") << ",\n"
                   << "  \"seen_earlycon\": " << (seen_earlycon ? "true" : "false") << ",\n"
                   << "  \"seen_init_banner\": " << (seen_init_banner ? "true" : "false") << ",\n"
+                  << "  \"seen_userspace_begin\": " << (seen_userspace_begin ? "true" : "false") << ",\n"
+                  << "  \"seen_userspace_pass\": " << (seen_userspace_pass ? "true" : "false") << ",\n"
+                  << "  \"seen_userspace_fail\": " << (seen_userspace_fail ? "true" : "false") << ",\n"
                   << "  \"cycle_handoff\": " << cycle_handoff << ",\n"
                   << "  \"cycle_satp\": " << cycle_satp << ",\n"
                   << "  \"cycle_virt\": " << cycle_virt << ",\n"

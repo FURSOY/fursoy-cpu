@@ -8,7 +8,7 @@ B = R / "build/rv64a_s0"
 T = R / "verification/rv64a_s0_tb.cpp"
 O = R / "results/rv64a-s0.json"
 S = [
-    R / "rtl/core/fursoy_s0_fetch.sv",
+    R / "rtl/core/fursoy_s0_l1i.sv",
     R / "rtl/core/fursoy_s0_int_alu.sv",
     R / "rtl/core/fursoy_s0_control.sv",
     R / "rtl/core/fursoy_s0_lsu_decode.sv",
@@ -16,6 +16,8 @@ S = [
     R / "rtl/core/fursoy_s0_csr.sv",
     R / "rtl/core/fursoy_s0_pmp_check.sv",
     R / "rtl/core/fursoy_s0_pmp.sv",
+    R / "rtl/core/fursoy_s0_tlb.sv",
+    R / "rtl/core/fursoy_s0_l1d.sv",
     R / "rtl/core/fursoy_s0_mmu.sv",
     R / "rtl/core/fursoy_s0_core.sv"
 ]

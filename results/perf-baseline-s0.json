@@ -1,0 +1,911 @@
+{
+  "status": "pass",
+  "scope": "pre-optimization performance baseline (Fursoy Slice-0)",
+  "observed_at_utc": "2026-09-09T16:01:28.660004+00:00",
+  "provenance": {
+    "git_commit": "c7b137aa1114abc96b25cf45533fe789c3197085",
+    "linux_version": "6.6.50",
+    "kernel_image_sha256": "9b65c21bac516c3c408c0cb62895a9fdab897404dbf7dc2cd687c5fba819176c",
+    "defconfig_sha256": "819f7cbdedd9518d142ce2e1051ec71b84361390940fa7856e8eecd7ef268228",
+    "firmware_elf_sha256": "24ec78912ed85dd059c2bb72cdce8b2413e572b011b4b1a3f51eca04cc5ea2ae",
+    "dtb_sha256": "1d15e5cce799fefea5aac2f6afae9daba474c83282bdf11e0084ae9fea2a67f7",
+    "workload_init_sha256": "d85d01b034a935e559f2735f2bec5c9823c2345c21bdb429782b05026cae72f4",
+    "verilator_version": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+    "toolchain_version": "riscv64-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+  },
+  "console_output_tail": "ct\": 0.235786,\n      \"trap_return_overhead_cycles\": 9,\n      \"trap_return_overhead_pct\": 0.048229,\n      \"trap_return_detail\": {\n        \"trap_entry_drain_cycles\": 3,\n        \"trap_vector_bubble_cycles\": 3,\n        \"mret_sret_redirect_bubble_cycles\": 3\n      },\n      \"ptw_tlb_stall_cycles\": 0,\n      \"ptw_tlb_stall_pct\": 0.000000,\n      \"ptw_tlb_detail\": {\n        \"itlb_ptw_cycles\": 0,\n        \"dtlb_ptw_cycles\": 0,\n        \"itlb_translation_latency_cycles\": 0\n      },\n      \"l1d_maintenance_cycles\": 0,\n      \"l1d_maintenance_pct\": 0.000000,\n      \"l1d_maintenance_detail\": {\n        \"sfence_vma_cycles\": 0,\n        \"fence_i_cycles\": 0,\n        \"pmp_maintenance_cycles\": 0\n      },\n      \"mmio_stall_cycles\": 61,\n      \"mmio_stall_pct\": 0.326885,\n      \"arbitration_contention_cycles\": 0,\n      \"arbitration_contention_pct\": 0.000000,\n      \"refill_handoff_bubble_cycles\": 0,\n      \"refill_handoff_bubble_pct\": 0.000000,\n      \"residual_unclassified_cycles\": 0,\n      \"residual_unclassified_pct\": 0.000000,\n      \"disjoint_sum_cycles\": 18661,\n      \"total_cycles\": 18661,\n      \"disjoint_exact_match\": true\n    },\n    \"dram_traffic_summary\": {\n      \"imem_fetch_requests\": 1368,\n      \"dmem_load_requests\": 144,\n      \"dmem_store_requests\": 72,\n      \"l1d_refill_beats\": 144,\n      \"l1d_writeback_beats\": 72,\n      \"l1i_refill_beats\": 1368,\n      \"ptw_memory_requests\": 0,\n      \"total_ram_requests\": 1584,\n      \"uart_mmio_requests\": 40,\n      \"clint_mmio_requests\": 0,\n      \"plic_mmio_requests\": 6,\n      \"total_mmio_requests\": 46,\n      \"instruction_traffic_pct\": 86.363636,\n      \"data_traffic_pct\": 13.636364\n    },\n    \"ranked_optimization_candidates\": {\n      \"rank_1_store_path_improvement\": {\n        \"directly_addressable_cycle_pool\": 269,\n        \"dirty_eviction_plus_refill_pool\": 156,\n        \"description\": \"Store stall optimization via write buffer, write merging, or write-no-allocate evaluation\"\n      },\n      \"rank_2_l1i_refill_prefetch\": {\n        \"directly_addressable_cycle_pool\": 2736,\n        \"description\": \"Next-line prefetch or streaming refill to mitigate DRAM refill latency\"\n      },\n      \"rank_3_btb_branch_prediction\": {\n        \"directly_addressable_cycle_pool\": 1408,\n        \"taken_control_flow_count\": 1408,\n        \"description\": \"Predicting branch target in Stage F to eliminate 1-cycle redirect bubble\"\n      },\n      \"rank_4_l1d_load_path\": {\n        \"directly_addressable_cycle_pool\": 191,\n        \"description\": \"Load stall optimization via hit pipelining and early restart\"\n      },\n      \"rank_5_maintenance_flush_opt\": {\n        \"directly_addressable_cycle_pool\": 0,\n        \"description\": \"Selective range-based SFENCE.VMA and selective FENCE.I flush\"\n      },\n      \"rank_6_ptw_translation_opt\": {\n        \"directly_addressable_cycle_pool\": 0,\n        \"description\": \"Negligible bottleneck with 99.99% TLB hit rates\"\n      }\n    },\n    \"overlap_explanation\": {\n      \"description\": \"Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.\",\n      \"raw_fetch_wait_cycles\": 2736,\n      \"raw_lsu_busy_cycles\": 472,\n      \"overlap_cycles\": 0\n    },\n    \"memory_transactions\": {\n      \"imem_fetch_requests\": 1368,\n      \"dmem_load_requests\": 144,\n      \"dmem_store_requests\": 72,\n      \"total_ram_requests\": 1584,\n      \"uart_mmio_requests\": 40,\n      \"clint_mmio_requests\": 0,\n      \"plic_mmio_requests\": 6,\n      \"total_mmio_requests\": 46\n    },\n    \"instruction_mix\": {\n      \"alu_instructions\": 7428,\n      \"load_instructions\": 2741,\n      \"store_instructions\": 1579,\n      \"amo_instructions\": 40,\n      \"branch_conditional\": 1450,\n      \"branch_taken\": 981,\n      \"branch_untaken\": 469,\n      \"branch_taken_pct\": 67.655172,\n      \"jal_unconditional\": 145,\n      \"jalr_indirect\": 282,\n      \"system_instructions\": 77\n    }\n  }\n}\n",
+  "benchmark_results": {
+    "status": "pass",
+    "scope": "pre-optimization performance baseline (Fursoy Slice-0)",
+    "seen_reset": true,
+    "seen_handoff": true,
+    "seen_satp_sv39": true,
+    "seen_init_banner": true,
+    "seen_cpu_workload": true,
+    "seen_mem_workload": true,
+    "seen_benchmarks_complete": true,
+    "cycle_handoff": 660,
+    "cycle_init_banner": 28118705,
+    "cycle_bench_complete": 28246202,
+    "full_execution": {
+      "total_cycles": 28248203,
+      "committed_instructions": 14950490,
+      "ipc": 0.529255,
+      "cpi": 1.88945,
+      "privilege_mode_cycles": {
+        "m_mode": 120661,
+        "s_mode": 28108438,
+        "u_mode": 19104
+      },
+      "instruction_fetch_wait_cycles": 3380437,
+      "load_store_stall_cycles": 7482448,
+      "lsu_detail": {
+        "req_wait_cycles": 2699898,
+        "rsp_wait_cycles": 4771564,
+        "amo_wait_cycles": 10986
+      },
+      "branch_control_flow": {
+        "commits": 1875071,
+        "penalty_cycles": 0
+      },
+      "mmu_ptw": {
+        "walk_count_total": 587,
+        "walk_count_insn": 92,
+        "walk_count_load": 360,
+        "walk_count_store": 133,
+        "walk_count_amo": 2,
+        "total_ptw_cycles": 3681,
+        "ptw_cycles_insn": 1103,
+        "ptw_cycles_data": 2578,
+        "page_table_memory_accesses": 1472,
+        "translation_stall_cycles": 3681
+      },
+      "tlb": {
+        "itlb_hits": 16662308,
+        "itlb_misses": 94,
+        "itlb_refills": 94,
+        "itlb_hit_rate": 0.999994,
+        "dtlb_hits": 12706184,
+        "dtlb_misses": 495,
+        "dtlb_refills": 495,
+        "dtlb_hit_rate": 0.999961
+      },
+      "l1i": {
+        "l1i_hits": 16609456,
+        "l1i_misses": 241131,
+        "l1i_refills": 211248,
+        "l1i_hit_rate": 0.98569
+      },
+      "l1d": {
+        "l1d_hits": 4806577,
+        "l1d_misses": 292928,
+        "l1d_refills": 292928,
+        "l1d_evictions": 252055,
+        "l1d_load_hits": 2420517,
+        "l1d_load_misses": 112678,
+        "l1d_store_hits": 2385861,
+        "l1d_store_misses": 180250,
+        "l1d_hit_rate": 0.942558,
+        "l1d_load_hit_rate": 0.955519,
+        "l1d_store_hit_rate": 0.929758
+      },
+      "platform_events": {
+        "sbi_ecall_count": 185,
+        "user_ecall_count": 6,
+        "mtip_count": 171,
+        "stip_count": 171,
+        "seip_count": 21,
+        "sync_trap_count": 3,
+        "trap_overhead_cycles": 1417422
+      },
+      "uart_mmio": {
+        "access_count": 55355
+      },
+      "retirement_taxonomy": {
+        "cycles_useful_retire": 14950490,
+        "cycles_useful_retire_pct": 52.925455,
+        "cycles_zero_retire": 13297713,
+        "cycles_zero_retire_pct": 47.074545
+      },
+      "disjoint_cycle_partition": {
+        "useful_commit_cycles": 14950490,
+        "useful_commit_pct": 52.925455,
+        "l1d_load_stall_cycles": 2839557,
+        "l1d_load_stall_pct": 10.052169,
+        "l1d_load_detail": {
+          "hit_path_latency_cycles": 138641,
+          "clean_miss_refill_cycles": 458442,
+          "dirty_victim_evict_cycles": 776241,
+          "dirty_victim_refill_cycles": 1466233,
+          "dirty_victim_total_contribution_cycles": 2242474
+        },
+        "l1d_store_stall_cycles": 4753916,
+        "l1d_store_stall_pct": 16.829092,
+        "l1d_store_detail": {
+          "hit_path_latency_cycles": 207196,
+          "clean_miss_refill_cycles": 261270,
+          "dirty_evict_cycles": 1483425,
+          "dirty_refill_cycles": 2802025,
+          "dirty_eviction_plus_refill_cycles": 4285450
+        },
+        "amo_lr_sc_stall_cycles": 54413,
+        "amo_lr_sc_stall_pct": 0.192625,
+        "l1i_hit_fetch_stall_cycles": 209578,
+        "l1i_hit_fetch_stall_pct": 0.741916,
+        "l1i_miss_refill_cycles": 3343277,
+        "l1i_miss_refill_pct": 11.835362,
+        "l1i_total_stall_cycles": 3552855,
+        "l1i_total_stall_pct": 12.577278,
+        "branch_redirect_bubble_cycles": 1875056,
+        "branch_redirect_bubble_pct": 6.637789,
+        "csr_serialization_flush_cycles": 22562,
+        "csr_serialization_flush_pct": 0.079871,
+        "trap_return_overhead_cycles": 1550,
+        "trap_return_overhead_pct": 0.005487,
+        "trap_return_detail": {
+          "trap_entry_drain_cycles": 557,
+          "trap_vector_bubble_cycles": 532,
+          "mret_sret_redirect_bubble_cycles": 461
+        },
+        "ptw_tlb_stall_cycles": 3772,
+        "ptw_tlb_stall_pct": 0.013353,
+        "ptw_tlb_detail": {
+          "itlb_ptw_cycles": 1103,
+          "dtlb_ptw_cycles": 2578,
+          "itlb_translation_latency_cycles": 91
+        },
+        "l1d_maintenance_cycles": 110824,
+        "l1d_maintenance_pct": 0.392322,
+        "l1d_maintenance_detail": {
+          "sfence_vma_cycles": 97289,
+          "fence_i_cycles": 2016,
+          "pmp_maintenance_cycles": 11519
+        },
+        "mmio_stall_cycles": 83182,
+        "mmio_stall_pct": 0.294468,
+        "arbitration_contention_cycles": 0,
+        "arbitration_contention_pct": 0.0,
+        "refill_handoff_bubble_cycles": 26,
+        "refill_handoff_bubble_pct": 9.2e-05,
+        "residual_unclassified_cycles": 0,
+        "residual_unclassified_pct": 0.0,
+        "disjoint_sum_cycles": 28248203,
+        "total_cycles": 28248203,
+        "disjoint_exact_match": true
+      },
+      "dram_traffic_summary": {
+        "imem_fetch_requests": 1690218,
+        "dmem_load_requests": 2343424,
+        "dmem_store_requests": 2079304,
+        "l1d_refill_beats": 2343424,
+        "l1d_writeback_beats": 2016440,
+        "l1i_refill_beats": 1689984,
+        "ptw_memory_requests": 1472,
+        "total_ram_requests": 6114418,
+        "uart_mmio_requests": 55355,
+        "clint_mmio_requests": 173,
+        "plic_mmio_requests": 160,
+        "total_mmio_requests": 55688,
+        "instruction_traffic_pct": 27.643154,
+        "data_traffic_pct": 72.356846
+      },
+      "ranked_optimization_candidates": {
+        "rank_1_store_path_improvement": {
+          "directly_addressable_cycle_pool": 4753916,
+          "dirty_eviction_plus_refill_pool": 4285450,
+          "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+        },
+        "rank_2_l1i_refill_prefetch": {
+          "directly_addressable_cycle_pool": 3343277,
+          "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+        },
+        "rank_3_btb_branch_prediction": {
+          "directly_addressable_cycle_pool": 1875056,
+          "taken_control_flow_count": 1875071,
+          "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+        },
+        "rank_4_l1d_load_path": {
+          "directly_addressable_cycle_pool": 2839557,
+          "description": "Load stall optimization via hit pipelining and early restart"
+        },
+        "rank_5_maintenance_flush_opt": {
+          "directly_addressable_cycle_pool": 110824,
+          "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+        },
+        "rank_6_ptw_translation_opt": {
+          "directly_addressable_cycle_pool": 3772,
+          "description": "Negligible bottleneck with 99.99% TLB hit rates"
+        }
+      },
+      "overlap_explanation": {
+        "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+        "raw_fetch_wait_cycles": 3380437,
+        "raw_lsu_busy_cycles": 7482448,
+        "overlap_cycles": 37160
+      },
+      "memory_transactions": {
+        "imem_fetch_requests": 1690218,
+        "dmem_load_requests": 2343424,
+        "dmem_store_requests": 2079304,
+        "total_ram_requests": 6114418,
+        "uart_mmio_requests": 55355,
+        "clint_mmio_requests": 173,
+        "plic_mmio_requests": 160,
+        "total_mmio_requests": 55688
+      },
+      "instruction_mix": {
+        "alu_instructions": 6823769,
+        "load_instructions": 2555066,
+        "store_instructions": 2578037,
+        "amo_instructions": 22036,
+        "branch_conditional": 2100727,
+        "branch_taken": 1034832,
+        "branch_untaken": 1065895,
+        "branch_taken_pct": 49.260661,
+        "jal_unconditional": 461922,
+        "jalr_indirect": 378317,
+        "system_instructions": 30616
+      }
+    },
+    "boot_phase": {
+      "total_cycles": 28118045,
+      "committed_instructions": 14869789,
+      "ipc": 0.528834,
+      "cpi": 1.890951,
+      "privilege_mode_cycles": {
+        "m_mode": 119345,
+        "s_mode": 27998646,
+        "u_mode": 54
+      },
+      "instruction_fetch_wait_cycles": 3352352,
+      "load_store_stall_cycles": 7473082,
+      "lsu_detail": {
+        "req_wait_cycles": 2696216,
+        "rsp_wait_cycles": 4766002,
+        "amo_wait_cycles": 10864
+      },
+      "branch_control_flow": {
+        "commits": 1866185,
+        "penalty_cycles": 0
+      },
+      "mmu_ptw": {
+        "walk_count_total": 583,
+        "walk_count_insn": 92,
+        "walk_count_load": 360,
+        "walk_count_store": 129,
+        "walk_count_amo": 2,
+        "total_ptw_cycles": 3657,
+        "ptw_cycles_insn": 1103,
+        "ptw_cycles_data": 2554,
+        "page_table_memory_accesses": 1460,
+        "translation_stall_cycles": 3657
+      },
+      "tlb": {
+        "itlb_hits": 16572618,
+        "itlb_misses": 94,
+        "itlb_refills": 94,
+        "itlb_hit_rate": 0.999994,
+        "dtlb_hits": 12670673,
+        "dtlb_misses": 491,
+        "dtlb_refills": 491,
+        "dtlb_hit_rate": 0.999961
+      },
+      "l1i": {
+        "l1i_hits": 16521343,
+        "l1i_misses": 239202,
+        "l1i_refills": 209494,
+        "l1i_hit_rate": 0.985728
+      },
+      "l1d": {
+        "l1d_hits": 4780217,
+        "l1d_misses": 292586,
+        "l1d_refills": 292586,
+        "l1d_evictions": 251943,
+        "l1d_load_hits": 2403647,
+        "l1d_load_misses": 112462,
+        "l1d_store_hits": 2376393,
+        "l1d_store_misses": 180124,
+        "l1d_hit_rate": 0.942323,
+        "l1d_load_hit_rate": 0.955303,
+        "l1d_store_hit_rate": 0.929543
+      },
+      "platform_events": {
+        "sbi_ecall_count": 184,
+        "user_ecall_count": 1,
+        "mtip_count": 170,
+        "stip_count": 170,
+        "seip_count": 6,
+        "sync_trap_count": 2,
+        "trap_overhead_cycles": 1327762
+      },
+      "uart_mmio": {
+        "access_count": 54948
+      },
+      "retirement_taxonomy": {
+        "cycles_useful_retire": 14869789,
+        "cycles_useful_retire_pct": 52.883438,
+        "cycles_zero_retire": 13248255,
+        "cycles_zero_retire_pct": 47.116558
+      },
+      "disjoint_cycle_partition": {
+        "useful_commit_cycles": 14869789,
+        "useful_commit_pct": 52.883438,
+        "l1d_load_stall_cycles": 2834842,
+        "l1d_load_stall_pct": 10.081931,
+        "l1d_load_detail": {
+          "hit_path_latency_cycles": 138304,
+          "clean_miss_refill_cycles": 455832,
+          "dirty_victim_evict_cycles": 775629,
+          "dirty_victim_refill_cycles": 1465077,
+          "dirty_victim_total_contribution_cycles": 2240706
+        },
+        "l1d_store_stall_cycles": 4750912,
+        "l1d_store_stall_pct": 16.89631,
+        "l1d_store_detail": {
+          "hit_path_latency_cycles": 206742,
+          "clean_miss_refill_cycles": 259812,
+          "dirty_evict_cycles": 1483047,
+          "dirty_refill_cycles": 2801311,
+          "dirty_eviction_plus_refill_cycles": 4284358
+        },
+        "amo_lr_sc_stall_cycles": 54097,
+        "amo_lr_sc_stall_pct": 0.192392,
+        "l1i_hit_fetch_stall_cycles": 207827,
+        "l1i_hit_fetch_stall_pct": 0.739123,
+        "l1i_miss_refill_cycles": 3315277,
+        "l1i_miss_refill_pct": 11.790567,
+        "l1i_total_stall_cycles": 3523104,
+        "l1i_total_stall_pct": 12.52969,
+        "branch_redirect_bubble_cycles": 1866170,
+        "branch_redirect_bubble_pct": 6.636912,
+        "csr_serialization_flush_cycles": 22164,
+        "csr_serialization_flush_pct": 0.078825,
+        "trap_return_overhead_cycles": 1478,
+        "trap_return_overhead_pct": 0.005256,
+        "trap_return_detail": {
+          "trap_entry_drain_cycles": 533,
+          "trap_vector_bubble_cycles": 508,
+          "mret_sret_redirect_bubble_cycles": 437
+        },
+        "ptw_tlb_stall_cycles": 3748,
+        "ptw_tlb_stall_pct": 0.01333,
+        "ptw_tlb_detail": {
+          "itlb_ptw_cycles": 1103,
+          "dtlb_ptw_cycles": 2554,
+          "itlb_translation_latency_cycles": 91
+        },
+        "l1d_maintenance_cycles": 109111,
+        "l1d_maintenance_pct": 0.388046,
+        "l1d_maintenance_detail": {
+          "sfence_vma_cycles": 95710,
+          "fence_i_cycles": 2011,
+          "pmp_maintenance_cycles": 11390
+        },
+        "mmio_stall_cycles": 82604,
+        "mmio_stall_pct": 0.293776,
+        "arbitration_contention_cycles": 0,
+        "arbitration_contention_pct": 0.0,
+        "refill_handoff_bubble_cycles": 25,
+        "refill_handoff_bubble_pct": 8.9e-05,
+        "residual_unclassified_cycles": 0,
+        "residual_unclassified_pct": 0.0,
+        "disjoint_sum_cycles": 28118044,
+        "total_cycles": 28118045,
+        "disjoint_exact_match": false
+      },
+      "dram_traffic_summary": {
+        "imem_fetch_requests": 1676176,
+        "dmem_load_requests": 2340688,
+        "dmem_store_requests": 2077200,
+        "l1d_refill_beats": 2340688,
+        "l1d_writeback_beats": 2015544,
+        "l1i_refill_beats": 1675952,
+        "ptw_memory_requests": 1460,
+        "total_ram_requests": 6095524,
+        "uart_mmio_requests": 54948,
+        "clint_mmio_requests": 171,
+        "plic_mmio_requests": 116,
+        "total_mmio_requests": 55235,
+        "instruction_traffic_pct": 27.498473,
+        "data_traffic_pct": 72.501527
+      },
+      "ranked_optimization_candidates": {
+        "rank_1_store_path_improvement": {
+          "directly_addressable_cycle_pool": 4750912,
+          "dirty_eviction_plus_refill_pool": 4284358,
+          "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+        },
+        "rank_2_l1i_refill_prefetch": {
+          "directly_addressable_cycle_pool": 3315277,
+          "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+        },
+        "rank_3_btb_branch_prediction": {
+          "directly_addressable_cycle_pool": 1866170,
+          "taken_control_flow_count": 1866185,
+          "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+        },
+        "rank_4_l1d_load_path": {
+          "directly_addressable_cycle_pool": 2834842,
+          "description": "Load stall optimization via hit pipelining and early restart"
+        },
+        "rank_5_maintenance_flush_opt": {
+          "directly_addressable_cycle_pool": 109111,
+          "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+        },
+        "rank_6_ptw_translation_opt": {
+          "directly_addressable_cycle_pool": 3748,
+          "description": "Negligible bottleneck with 99.99% TLB hit rates"
+        }
+      },
+      "overlap_explanation": {
+        "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+        "raw_fetch_wait_cycles": 3352352,
+        "raw_lsu_busy_cycles": 7473082,
+        "overlap_cycles": 37075
+      },
+      "memory_transactions": {
+        "imem_fetch_requests": 1676176,
+        "dmem_load_requests": 2340688,
+        "dmem_store_requests": 2077200,
+        "total_ram_requests": 6095524,
+        "uart_mmio_requests": 54948,
+        "clint_mmio_requests": 171,
+        "plic_mmio_requests": 116,
+        "total_mmio_requests": 55235
+      },
+      "instruction_mix": {
+        "alu_instructions": 6783921,
+        "load_instructions": 2537933,
+        "store_instructions": 2568313,
+        "amo_instructions": 21738,
+        "branch_conditional": 2091601,
+        "branch_taken": 1029835,
+        "branch_untaken": 1061766,
+        "branch_taken_pct": 49.236685,
+        "jal_unconditional": 460599,
+        "jalr_indirect": 375751,
+        "system_instructions": 29934
+      }
+    },
+    "cpu_heavy_workload": {
+      "total_cycles": 33369,
+      "committed_instructions": 19461,
+      "ipc": 0.583206,
+      "cpi": 1.71466,
+      "privilege_mode_cycles": {
+        "m_mode": 0,
+        "s_mode": 22232,
+        "u_mode": 11137
+      },
+      "instruction_fetch_wait_cycles": 6608,
+      "load_store_stall_cycles": 4652,
+      "lsu_detail": {
+        "req_wait_cycles": 1502,
+        "rsp_wait_cycles": 3129,
+        "amo_wait_cycles": 21
+      },
+      "branch_control_flow": {
+        "commits": 1948,
+        "penalty_cycles": 0
+      },
+      "mmu_ptw": {
+        "walk_count_total": 3,
+        "walk_count_insn": 0,
+        "walk_count_load": 0,
+        "walk_count_store": 3,
+        "walk_count_amo": 0,
+        "total_ptw_cycles": 18,
+        "ptw_cycles_insn": 0,
+        "ptw_cycles_data": 18,
+        "page_table_memory_accesses": 9,
+        "translation_stall_cycles": 18
+      },
+      "tlb": {
+        "itlb_hits": 21480,
+        "itlb_misses": 0,
+        "itlb_refills": 0,
+        "itlb_hit_rate": 1.0,
+        "dtlb_hits": 7362,
+        "dtlb_misses": 3,
+        "dtlb_refills": 3,
+        "dtlb_hit_rate": 0.999593
+      },
+      "l1i": {
+        "l1i_hits": 21035,
+        "l1i_misses": 445,
+        "l1i_refills": 413,
+        "l1i_hit_rate": 0.979283
+      },
+      "l1d": {
+        "l1d_hits": 3885,
+        "l1d_misses": 145,
+        "l1d_refills": 145,
+        "l1d_evictions": 48,
+        "l1d_load_hits": 2128,
+        "l1d_load_misses": 65,
+        "l1d_store_hits": 1753,
+        "l1d_store_misses": 80,
+        "l1d_hit_rate": 0.96402,
+        "l1d_load_hit_rate": 0.97036,
+        "l1d_store_hit_rate": 0.956356
+      },
+      "platform_events": {
+        "sbi_ecall_count": 0,
+        "user_ecall_count": 1,
+        "mtip_count": 0,
+        "stip_count": 0,
+        "seip_count": 2,
+        "sync_trap_count": 1,
+        "trap_overhead_cycles": 20635
+      },
+      "uart_mmio": {
+        "access_count": 40
+      },
+      "retirement_taxonomy": {
+        "cycles_useful_retire": 19461,
+        "cycles_useful_retire_pct": 58.320597,
+        "cycles_zero_retire": 13908,
+        "cycles_zero_retire_pct": 41.679403
+      },
+      "disjoint_cycle_partition": {
+        "useful_commit_cycles": 19461,
+        "useful_commit_pct": 58.320597,
+        "l1d_load_stall_cycles": 1401,
+        "l1d_load_stall_pct": 4.198508,
+        "l1d_load_detail": {
+          "hit_path_latency_cycles": 79,
+          "clean_miss_refill_cycles": 828,
+          "dirty_victim_evict_cycles": 171,
+          "dirty_victim_refill_cycles": 323,
+          "dirty_victim_total_contribution_cycles": 494
+        },
+        "l1d_store_stall_cycles": 1732,
+        "l1d_store_stall_pct": 5.190446,
+        "l1d_store_detail": {
+          "hit_path_latency_cycles": 112,
+          "clean_miss_refill_cycles": 918,
+          "dirty_evict_cycles": 243,
+          "dirty_refill_cycles": 459,
+          "dirty_eviction_plus_refill_cycles": 702
+        },
+        "amo_lr_sc_stall_cycles": 95,
+        "amo_lr_sc_stall_pct": 0.284695,
+        "l1i_hit_fetch_stall_cycles": 412,
+        "l1i_hit_fetch_stall_pct": 1.234679,
+        "l1i_miss_refill_cycles": 6592,
+        "l1i_miss_refill_pct": 19.754862,
+        "l1i_total_stall_cycles": 7004,
+        "l1i_total_stall_pct": 20.989541,
+        "branch_redirect_bubble_cycles": 1948,
+        "branch_redirect_bubble_pct": 5.837754,
+        "csr_serialization_flush_cycles": 58,
+        "csr_serialization_flush_pct": 0.173814,
+        "trap_return_overhead_cycles": 12,
+        "trap_return_overhead_pct": 0.035962,
+        "trap_return_detail": {
+          "trap_entry_drain_cycles": 4,
+          "trap_vector_bubble_cycles": 4,
+          "mret_sret_redirect_bubble_cycles": 4
+        },
+        "ptw_tlb_stall_cycles": 18,
+        "ptw_tlb_stall_pct": 0.053942,
+        "ptw_tlb_detail": {
+          "itlb_ptw_cycles": 0,
+          "dtlb_ptw_cycles": 18,
+          "itlb_translation_latency_cycles": 0
+        },
+        "l1d_maintenance_cycles": 1579,
+        "l1d_maintenance_pct": 4.731937,
+        "l1d_maintenance_detail": {
+          "sfence_vma_cycles": 1579,
+          "fence_i_cycles": 0,
+          "pmp_maintenance_cycles": 0
+        },
+        "mmio_stall_cycles": 61,
+        "mmio_stall_pct": 0.182804,
+        "arbitration_contention_cycles": 0,
+        "arbitration_contention_pct": 0.0,
+        "refill_handoff_bubble_cycles": 0,
+        "refill_handoff_bubble_pct": 0.0,
+        "residual_unclassified_cycles": 0,
+        "residual_unclassified_pct": 0.0,
+        "disjoint_sum_cycles": 33369,
+        "total_cycles": 33369,
+        "disjoint_exact_match": true
+      },
+      "dram_traffic_summary": {
+        "imem_fetch_requests": 3304,
+        "dmem_load_requests": 1160,
+        "dmem_store_requests": 1592,
+        "l1d_refill_beats": 1160,
+        "l1d_writeback_beats": 384,
+        "l1i_refill_beats": 3304,
+        "ptw_memory_requests": 9,
+        "total_ram_requests": 6065,
+        "uart_mmio_requests": 40,
+        "clint_mmio_requests": 0,
+        "plic_mmio_requests": 6,
+        "total_mmio_requests": 46,
+        "instruction_traffic_pct": 54.476505,
+        "data_traffic_pct": 45.523495
+      },
+      "ranked_optimization_candidates": {
+        "rank_1_store_path_improvement": {
+          "directly_addressable_cycle_pool": 1732,
+          "dirty_eviction_plus_refill_pool": 702,
+          "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+        },
+        "rank_2_l1i_refill_prefetch": {
+          "directly_addressable_cycle_pool": 6592,
+          "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+        },
+        "rank_3_btb_branch_prediction": {
+          "directly_addressable_cycle_pool": 1948,
+          "taken_control_flow_count": 1948,
+          "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+        },
+        "rank_4_l1d_load_path": {
+          "directly_addressable_cycle_pool": 1401,
+          "description": "Load stall optimization via hit pipelining and early restart"
+        },
+        "rank_5_maintenance_flush_opt": {
+          "directly_addressable_cycle_pool": 1579,
+          "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+        },
+        "rank_6_ptw_translation_opt": {
+          "directly_addressable_cycle_pool": 18,
+          "description": "Negligible bottleneck with 99.99% TLB hit rates"
+        }
+      },
+      "overlap_explanation": {
+        "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+        "raw_fetch_wait_cycles": 6608,
+        "raw_lsu_busy_cycles": 4652,
+        "overlap_cycles": 16
+      },
+      "memory_transactions": {
+        "imem_fetch_requests": 3304,
+        "dmem_load_requests": 1160,
+        "dmem_store_requests": 1592,
+        "total_ram_requests": 6065,
+        "uart_mmio_requests": 40,
+        "clint_mmio_requests": 0,
+        "plic_mmio_requests": 6,
+        "total_mmio_requests": 46
+      },
+      "instruction_mix": {
+        "alu_instructions": 12700,
+        "load_instructions": 2195,
+        "store_instructions": 1830,
+        "amo_instructions": 51,
+        "branch_conditional": 2053,
+        "branch_taken": 1417,
+        "branch_untaken": 636,
+        "branch_taken_pct": 69.020945,
+        "jal_unconditional": 195,
+        "jalr_indirect": 336,
+        "system_instructions": 101
+      }
+    },
+    "memory_heavy_workload": {
+      "total_cycles": 18661,
+      "committed_instructions": 13742,
+      "ipc": 0.736402,
+      "cpi": 1.357954,
+      "privilege_mode_cycles": {
+        "m_mode": 0,
+        "s_mode": 10800,
+        "u_mode": 7861
+      },
+      "instruction_fetch_wait_cycles": 2736,
+      "load_store_stall_cycles": 472,
+      "lsu_detail": {
+        "req_wait_cycles": 208,
+        "rsp_wait_cycles": 249,
+        "amo_wait_cycles": 15
+      },
+      "branch_control_flow": {
+        "commits": 1408,
+        "penalty_cycles": 0
+      },
+      "mmu_ptw": {
+        "walk_count_total": 0,
+        "walk_count_insn": 0,
+        "walk_count_load": 0,
+        "walk_count_store": 0,
+        "walk_count_amo": 0,
+        "total_ptw_cycles": 0,
+        "ptw_cycles_insn": 0,
+        "ptw_cycles_data": 0,
+        "page_table_memory_accesses": 0,
+        "translation_stall_cycles": 0
+      },
+      "tlb": {
+        "itlb_hits": 15203,
+        "itlb_misses": 0,
+        "itlb_refills": 0,
+        "itlb_hit_rate": 1.0,
+        "dtlb_hits": 4911,
+        "dtlb_misses": 0,
+        "dtlb_refills": 0,
+        "dtlb_hit_rate": 1.0
+      },
+      "l1i": {
+        "l1i_hits": 15010,
+        "l1i_misses": 193,
+        "l1i_refills": 171,
+        "l1i_hit_rate": 0.987305
+      },
+      "l1d": {
+        "l1d_hits": 4296,
+        "l1d_misses": 18,
+        "l1d_refills": 18,
+        "l1d_evictions": 9,
+        "l1d_load_hits": 2729,
+        "l1d_load_misses": 8,
+        "l1d_store_hits": 1564,
+        "l1d_store_misses": 10,
+        "l1d_hit_rate": 0.995828,
+        "l1d_load_hit_rate": 0.997077,
+        "l1d_store_hit_rate": 0.993647
+      },
+      "platform_events": {
+        "sbi_ecall_count": 0,
+        "user_ecall_count": 1,
+        "mtip_count": 0,
+        "stip_count": 0,
+        "seip_count": 2,
+        "sync_trap_count": 0,
+        "trap_overhead_cycles": 9279
+      },
+      "uart_mmio": {
+        "access_count": 40
+      },
+      "retirement_taxonomy": {
+        "cycles_useful_retire": 13742,
+        "cycles_useful_retire_pct": 73.640212,
+        "cycles_zero_retire": 4919,
+        "cycles_zero_retire_pct": 26.359788
+      },
+      "disjoint_cycle_partition": {
+        "useful_commit_cycles": 13742,
+        "useful_commit_pct": 73.640212,
+        "l1d_load_stall_cycles": 191,
+        "l1d_load_stall_pct": 1.023525,
+        "l1d_load_detail": {
+          "hit_path_latency_cycles": 23,
+          "clean_miss_refill_cycles": 90,
+          "dirty_victim_evict_cycles": 27,
+          "dirty_victim_refill_cycles": 51,
+          "dirty_victim_total_contribution_cycles": 78
+        },
+        "l1d_store_stall_cycles": 269,
+        "l1d_store_stall_pct": 1.441509,
+        "l1d_store_detail": {
+          "hit_path_latency_cycles": 41,
+          "clean_miss_refill_cycles": 72,
+          "dirty_evict_cycles": 54,
+          "dirty_refill_cycles": 102,
+          "dirty_eviction_plus_refill_cycles": 156
+        },
+        "amo_lr_sc_stall_cycles": 30,
+        "amo_lr_sc_stall_pct": 0.160763,
+        "l1i_hit_fetch_stall_cycles": 171,
+        "l1i_hit_fetch_stall_pct": 0.91635,
+        "l1i_miss_refill_cycles": 2736,
+        "l1i_miss_refill_pct": 14.661594,
+        "l1i_total_stall_cycles": 2907,
+        "l1i_total_stall_pct": 15.577943,
+        "branch_redirect_bubble_cycles": 1408,
+        "branch_redirect_bubble_pct": 7.545148,
+        "csr_serialization_flush_cycles": 44,
+        "csr_serialization_flush_pct": 0.235786,
+        "trap_return_overhead_cycles": 9,
+        "trap_return_overhead_pct": 0.048229,
+        "trap_return_detail": {
+          "trap_entry_drain_cycles": 3,
+          "trap_vector_bubble_cycles": 3,
+          "mret_sret_redirect_bubble_cycles": 3
+        },
+        "ptw_tlb_stall_cycles": 0,
+        "ptw_tlb_stall_pct": 0.0,
+        "ptw_tlb_detail": {
+          "itlb_ptw_cycles": 0,
+          "dtlb_ptw_cycles": 0,
+          "itlb_translation_latency_cycles": 0
+        },
+        "l1d_maintenance_cycles": 0,
+        "l1d_maintenance_pct": 0.0,
+        "l1d_maintenance_detail": {
+          "sfence_vma_cycles": 0,
+          "fence_i_cycles": 0,
+          "pmp_maintenance_cycles": 0
+        },
+        "mmio_stall_cycles": 61,
+        "mmio_stall_pct": 0.326885,
+        "arbitration_contention_cycles": 0,
+        "arbitration_contention_pct": 0.0,
+        "refill_handoff_bubble_cycles": 0,
+        "refill_handoff_bubble_pct": 0.0,
+        "residual_unclassified_cycles": 0,
+        "residual_unclassified_pct": 0.0,
+        "disjoint_sum_cycles": 18661,
+        "total_cycles": 18661,
+        "disjoint_exact_match": true
+      },
+      "dram_traffic_summary": {
+        "imem_fetch_requests": 1368,
+        "dmem_load_requests": 144,
+        "dmem_store_requests": 72,
+        "l1d_refill_beats": 144,
+        "l1d_writeback_beats": 72,
+        "l1i_refill_beats": 1368,
+        "ptw_memory_requests": 0,
+        "total_ram_requests": 1584,
+        "uart_mmio_requests": 40,
+        "clint_mmio_requests": 0,
+        "plic_mmio_requests": 6,
+        "total_mmio_requests": 46,
+        "instruction_traffic_pct": 86.363636,
+        "data_traffic_pct": 13.636364
+      },
+      "ranked_optimization_candidates": {
+        "rank_1_store_path_improvement": {
+          "directly_addressable_cycle_pool": 269,
+          "dirty_eviction_plus_refill_pool": 156,
+          "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+        },
+        "rank_2_l1i_refill_prefetch": {
+          "directly_addressable_cycle_pool": 2736,
+          "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+        },
+        "rank_3_btb_branch_prediction": {
+          "directly_addressable_cycle_pool": 1408,
+          "taken_control_flow_count": 1408,
+          "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+        },
+        "rank_4_l1d_load_path": {
+          "directly_addressable_cycle_pool": 191,
+          "description": "Load stall optimization via hit pipelining and early restart"
+        },
+        "rank_5_maintenance_flush_opt": {
+          "directly_addressable_cycle_pool": 0,
+          "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+        },
+        "rank_6_ptw_translation_opt": {
+          "directly_addressable_cycle_pool": 0,
+          "description": "Negligible bottleneck with 99.99% TLB hit rates"
+        }
+      },
+      "overlap_explanation": {
+        "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+        "raw_fetch_wait_cycles": 2736,
+        "raw_lsu_busy_cycles": 472,
+        "overlap_cycles": 0
+      },
+      "memory_transactions": {
+        "imem_fetch_requests": 1368,
+        "dmem_load_requests": 144,
+        "dmem_store_requests": 72,
+        "total_ram_requests": 1584,
+        "uart_mmio_requests": 40,
+        "clint_mmio_requests": 0,
+        "plic_mmio_requests": 6,
+        "total_mmio_requests": 46
+      },
+      "instruction_mix": {
+        "alu_instructions": 7428,
+        "load_instructions": 2741,
+        "store_instructions": 1579,
+        "amo_instructions": 40,
+        "branch_conditional": 1450,
+        "branch_taken": 981,
+        "branch_untaken": 469,
+        "branch_taken_pct": 67.655172,
+        "jal_unconditional": 145,
+        "jalr_indirect": 282,
+        "system_instructions": 77
+      }
+    }
+  }
+}

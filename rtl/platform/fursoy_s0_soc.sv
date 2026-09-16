@@ -10,7 +10,7 @@ module fursoy_s0_soc #(
     input logic clk_i, input logic rst_i,
     output logic imem_req_valid_o, input logic imem_req_ready_i,
     output logic [63:0] imem_req_addr_o, input logic imem_rsp_valid_i,
-    output logic imem_rsp_ready_o, input logic [31:0] imem_rsp_insn_i,
+    output logic imem_rsp_ready_o, input logic [63:0] imem_rsp_data_i,
     input logic imem_rsp_error_i,
     output logic ram_req_valid_o, input logic ram_req_ready_i,
     output logic ram_req_store_o, output logic ram_req_ptw_o, output logic [63:0] ram_req_addr_o,
@@ -30,15 +30,18 @@ module fursoy_s0_soc #(
     output logic [63:0] csr_mstatus_o, output logic [63:0] csr_mie_o,
     output logic [63:0] csr_mtvec_o, output logic [63:0] csr_mscratch_o,
     output logic [63:0] csr_mepc_o, output logic [63:0] csr_mcause_o,
-    output logic [63:0] csr_mtval_o, output logic [63:0] csr_mip_o
+    output logic [63:0] csr_mtval_o, output logic [63:0] csr_mip_o,
+    output logic fatal_halt_o
 );
     localparam logic [63:0] CLINT_END_ADDR = CLINT_BASE_ADDR + 64'h1_0000;
     localparam logic [63:0] PLIC_END_ADDR  = PLIC_BASE_ADDR  + 64'h40_0000;
     localparam logic [63:0] UART_END_ADDR  = UART_BASE_ADDR  + 64'h1000;
     typedef enum logic [2:0] {RSP_NONE, RSP_RAM, RSP_CLINT, RSP_PLIC, RSP_UART, RSP_ERROR} rsp_owner_t;
     rsp_owner_t rsp_owner_q;
-    logic core_req_valid, core_req_ready, core_req_store, core_req_ptw, core_req_error;
-    logic [63:0] core_req_addr, core_req_store_data;
+    logic        core_req_valid /* verilator public_flat_rd */;
+    logic [63:0] core_req_addr  /* verilator public_flat_rd */;
+    logic core_req_ready, core_req_store, core_req_ptw, core_req_error;
+    logic [63:0] core_req_store_data;
     logic [2:0] core_req_size;
     logic core_rsp_valid, core_rsp_ready, core_rsp_error;
     logic [63:0] core_rsp_data;
@@ -182,7 +185,7 @@ module fursoy_s0_soc #(
     /* verilator lint_off PINCONNECTEMPTY */
     fursoy_s0_core #(.RESET_PC(RESET_PC), .RESET_MTVEC(RESET_MTVEC)) core (
         .clk_i, .rst_i, .imem_req_valid_o, .imem_req_ready_i, .imem_req_addr_o,
-        .imem_rsp_valid_i, .imem_rsp_ready_o, .imem_rsp_insn_i, .imem_rsp_error_i,
+        .imem_rsp_valid_i, .imem_rsp_ready_o, .imem_rsp_data_i, .imem_rsp_error_i,
         .dmem_req_valid_o(core_req_valid), .dmem_req_ready_i(core_req_ready),
         .dmem_req_store_o(core_req_store), .dmem_req_addr_o(core_req_addr),
         .dmem_req_ptw_o(core_req_ptw),
@@ -198,8 +201,9 @@ module fursoy_s0_soc #(
         .csr_mscratch_o, .csr_mepc_o, .csr_mcause_o, .csr_mtval_o, .csr_mip_o,
         .priv_mode_o(), .csr_medeleg_o(), .csr_mideleg_o(), .csr_sstatus_o(), .csr_stvec_o(),
         .csr_sie_o(), .csr_sip_o(),
-        .csr_sscratch_o(), .csr_sepc_o(), .csr_scause_o(), .csr_stval_o()
-        ,.csr_satp_o(), .csr_menvcfg_o(), .csr_senvcfg_o(), .csr_pmpcfg0_o(), .csr_pmpcfg2_o()
+         .csr_sscratch_o(), .csr_sepc_o(), .csr_scause_o(), .csr_stval_o()
+        ,.csr_satp_o(), .csr_menvcfg_o(), .csr_senvcfg_o(), .csr_pmpcfg0_o(), .csr_pmpcfg2_o(),
+        .fatal_halt_o
     );
     /* verilator lint_on PINCONNECTEMPTY */
 endmodule

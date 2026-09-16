@@ -126,9 +126,41 @@ int main(int argc,char**argv){
         d.scounteren_i=1;
         run(csr(2,5,0,0xc00),0,{1,0,0,1,0,123});                    // cycle with both CY=1 -> legal
 
-        // time CSR (0xc01) is deliberately deferred in Bare milestone
+        // time (0xc01) and instret (0xc02) counters: M-mode legal read, value correlation, and write-illegal
         d.priv_mode_i=3;
-        run(csr(2,5,0,0xc01),0,{1,1,0,0,0,0});                      // time CSR -> illegal
+        run(csr(2,5,0,0xc01),0,{1,0,0,1,0,123});                    // time read in M-mode -> legal, returns cycle_i
+        run(csr(1,0,0,0xc01),0,{1,1,0,0,0,0});                      // time write in M-mode -> illegal
+        run(csr(2,5,0,0xc02),0,{1,0,0,1,0,123});                    // instret read in M-mode -> legal, returns cycle_i
+        run(csr(1,0,0,0xc02),0,{1,1,0,0,0,0});                      // instret write in M-mode -> illegal
+
+        // Verify timer/cycle source correlation dynamically
+        d.cycle_i=456;
+        run(csr(2,5,0,0xc01),0,{1,0,0,1,0,456});                    // time returns updated counter source
+        run(csr(2,5,0,0xc02),0,{1,0,0,1,0,456});                    // instret returns updated counter source
+        d.cycle_i=123;
+
+        // S-mode counter gating for time (0xc01) and instret (0xc02)
+        d.priv_mode_i=1; d.mcounteren_i=0;
+        run(csr(2,5,0,0xc01),0,{1,1,0,0,0,0});                      // time with mcounteren.TM=0 -> illegal
+        run(csr(2,5,0,0xc02),0,{1,1,0,0,0,0});                      // instret with mcounteren.IR=0 -> illegal
+        d.mcounteren_i=2;                                           // bit 1 = TM
+        run(csr(2,5,0,0xc01),0,{1,0,0,1,0,123});                    // time with mcounteren.TM=1 -> legal
+        run(csr(2,5,0,0xc02),0,{1,1,0,0,0,0});                      // instret with mcounteren.IR=0 -> illegal
+        d.mcounteren_i=4;                                           // bit 2 = IR
+        run(csr(2,5,0,0xc01),0,{1,1,0,0,0,0});                      // time with mcounteren.TM=0 -> illegal
+        run(csr(2,5,0,0xc02),0,{1,0,0,1,0,123});                    // instret with mcounteren.IR=1 -> legal
+
+        // U-mode counter gating for time (0xc01) and instret (0xc02)
+        d.priv_mode_i=0;
+        d.mcounteren_i=2; d.scounteren_i=0;
+        run(csr(2,5,0,0xc01),0,{1,1,0,0,0,0});                      // time with scounteren.TM=0 -> illegal
+        d.scounteren_i=2;
+        run(csr(2,5,0,0xc01),0,{1,0,0,1,0,123});                    // time with both TM=1 -> legal
+        d.mcounteren_i=4; d.scounteren_i=0;
+        run(csr(2,5,0,0xc02),0,{1,1,0,0,0,0});                      // instret with scounteren.IR=0 -> illegal
+        d.scounteren_i=4;
+        run(csr(2,5,0,0xc02),0,{1,0,0,1,0,123});                    // instret with both IR=1 -> legal
+        d.mcounteren_i=0; d.scounteren_i=0; d.priv_mode_i=3;
 
         d.insn_valid_i=0;d.insn_i=csr(1,1,1,0x340);d.eval();++checks;
         if(d.csr_valid_o||d.csr_illegal_o||d.csr_write_o||d.rd_write_o)throw std::runtime_error("valid gate");

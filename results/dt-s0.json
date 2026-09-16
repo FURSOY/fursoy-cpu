@@ -1,7 +1,7 @@
 {
   "status": "pass",
   "scope": "canonical DTS/DTB structural verification (25 checks)",
-  "observed_at_utc": "2026-09-08T14:08:16.253025+00:00",
+  "observed_at_utc": "2026-09-15T20:15:01.044736+00:00",
   "source_sha256": {
     "software/dts/fursoy_s0.dts": "238fcea0ee8d1afa7b95c0b48b1766e50854a5802e02e8abed01b88b3e2b5951",
     "tools/run_dt_s0.py": "7012cb37db90534afab6b51af6ffa5b7830fbf7e4b78786981d7e7a090f73f98"

@@ -9,12 +9,14 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 RTL = [
-    ROOT / "rtl/core/fursoy_s0_fetch.sv",
+    ROOT / "rtl/core/fursoy_s0_l1i.sv",
     ROOT / "rtl/core/fursoy_s0_int_alu.sv",
     ROOT / "rtl/core/fursoy_s0_control.sv",
     ROOT / "rtl/core/fursoy_s0_lsu_decode.sv",
     ROOT / "rtl/core/fursoy_s0_lsu_port.sv",
     ROOT / "rtl/core/fursoy_s0_csr.sv",
+    ROOT / "rtl/core/fursoy_s0_tlb.sv",
+    ROOT / "rtl/core/fursoy_s0_l1d.sv",
     ROOT / "rtl/core/fursoy_s0_mmu.sv",
     ROOT / "rtl/core/fursoy_s0_core.sv",
 ]

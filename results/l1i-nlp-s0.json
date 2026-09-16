@@ -1,0 +1,24 @@
+{
+  "status": "pass",
+  "scope": "Slice-0 L1I-NLP v1 Next-Line Prefetcher Adversarial Suite (NLP-ADV-01..30)",
+  "observed_at_utc": "2026-09-16T19:59:56.006759+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s0_l1i.sv": "e9445027ae6e07cdd19aed59fa2fc991b16065de86a1546b00eb952ac19aabb6",
+    "rtl/core/fursoy_s0_int_alu.sv": "4bf05f9114c0e35c6c51020f126770127a28178d4eccd9798f8a8f5fa000e6d0",
+    "rtl/core/fursoy_s0_control.sv": "d40af0f5b27a76813fed8e8c6616ffb58495b7e57795fdc2ee180fef29a720d4",
+    "rtl/core/fursoy_s0_lsu_decode.sv": "dd65866fc5cb2128d54eee8a639053fa05087fdda3f00e86b190102dd796f200",
+    "rtl/core/fursoy_s0_lsu_port.sv": "64572b3bbc5ccbd08b615b99d47e1a02c4feee789064754466f6ae2f8f249bab",
+    "rtl/core/fursoy_s0_csr.sv": "f69cf047e6aa38039783729a7ff25aae80ea279bf0d9d7e598a232bbe35a29c1",
+    "rtl/core/fursoy_s0_pmp_check.sv": "b1419afbc4e7e2e11fdcc16c6900391bf7fe3daf2ce6e7143c148c8456332580",
+    "rtl/core/fursoy_s0_pmp.sv": "c87d597cf5dcf5219b22a2e9c193302ed7b9ee1d035acb7df26a262ef82fbd03",
+    "rtl/core/fursoy_s0_tlb.sv": "0cc9951c09a8d12e718e771502ca2720da05727987d8dc1b8cb1cb2d63b66ca0",
+    "rtl/core/fursoy_s0_l1d.sv": "e95996f8191fa8a3c7b6996e9104c1db79cf12f10709c0a6553cbd2e578f67fa",
+    "rtl/core/fursoy_s0_sb.sv": "301a9f99c86811ef6d915e675588f648673b4920e420ecf4b841825dd4a20d38",
+    "rtl/core/fursoy_s0_bpu.sv": "b50c309342b8191dd08dd91869e95e4d3031b0dc5f239dfc7113cd19a926553b",
+    "rtl/core/fursoy_s0_mmu.sv": "878c6d634c34235c56a166f97f1c482bc7d11f317bc77725e4a167b9b4104c08",
+    "rtl/core/fursoy_s0_core.sv": "d343b180ba63c4e18fcd93d0fb52d8e0e6963df8f5454ef09218b646e23571ce",
+    "verification/l1i_nlp_s0_tb.cpp": "ed79633b375cc0244e52283f96982eda67b03a124806a16ef9c09cf30e4fb2ef",
+    "tools/run_l1i_nlp_s0.py": "5e1fcff312232a714cd4005c75834f7e6d94145e135a7fbfab3332caeed249ad"
+  },
+  "stdout": "Starting L1I-NLP v1 Adversarial Verification Suite (NLP-ADV-01..30)...\nNLP-ADV-01 PASS: Sequential Useful Prefetch\nNLP-ADV-02 PASS: Useless Prefetch Discarded Without Corruption\nNLP-ADV-03 PASS: Last Line of 4 KiB Page Evaluated\nNLP-ADV-04 PASS: Cross-Page Candidate Suppressed\nNLP-ADV-05 PASS: PMP Sub-Page Non-Uniformity Suppression\nNLP-ADV-06 PASS: Candidate Already Resident in L1I Suppressed\nNLP-ADV-07 PASS: Duplicate Candidate Suppression\nNLP-ADV-08 PASS: Tight-Loop Trigger Flapping Suppressed\nNLP-ADV-09 PASS: Redirect Before Issue Purges Queue\nNLP-ADV-10 PASS: Redirect During Active Burst Aborts Cleanly\nNLP-ADV-11 PASS: Demand Hits Active Prefetch with Arrived Beat\nNLP-ADV-12 PASS: Demand Streaming Wait on Pending Beat\nNLP-ADV-13 PASS: Demand Miss Preempts Speculative Prefetch\nNLP-ADV-14 PASS: Immediate Demand After Prefetch Handshake\nNLP-ADV-15 PASS: Speculative Bus Error Non-Faulting & Dropped\nNLP-ADV-16 PASS: Authoritative Refill Delivers Precise Exception\nNLP-ADV-17 PASS: FENCE.I Purges Queued Prefetch\nNLP-ADV-18 PASS: FENCE.I Aborts Active Prefetch\nNLP-ADV-19 PASS: SFENCE.VMA / satp Write Invalidates Prefetch\nNLP-ADV-20 PASS: PMP Write Clears Prefetch Buffer\nNLP-ADV-21 PASS: PTW Collision Blocks Speculative Issue\nNLP-ADV-22 PASS: L1D Load Miss Takes Bus Priority\nNLP-ADV-23 PASS: SRB Eviction Takes Bus Priority\nNLP-ADV-24 PASS: Stage-E Backpressure Safely Holds PFB Hit\nNLP-ADV-25 PASS: Zero Duplicate Tags On Promotion\nNLP-ADV-26 PASS: Exactly-Once Telemetry Under Pipeline Stall\nNLP-ADV-27 PASS: Sustained Sequential Stream Chaining (Dual-Trigger)\nNLP-ADV-28 PASS: Branch-Heavy Workload Handled Without Lockup\nNLP-ADV-29 PASS: Dormant Partial PFB with Missing Beat (Zero Deadlock)\nNLP-ADV-30 PASS: Non-Zero Wait-State Memory Preemption Handled Cleanly\n\n======================================================\nALL 30 L1I-NLP ADVERSARIAL SCENARIOS PASSED!\n======================================================"
+}

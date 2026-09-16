@@ -491,6 +491,70 @@ int main(int argc,char **argv){
             ++scenarios;
         }
 
+        // P3-1: MMU cancellation & stale translation discard across context/satp change
+        {
+            s.reset();
+            uint64_t va = 0x0000000080002000ULL;
+            uint64_t pa_old = 0x20002000ULL;
+            uint64_t pa_new = 0x30002000ULL;
+            uint64_t root1 = 0x100;
+            uint64_t root2 = 0x200;
+
+            install(s, va, 0, pa_old >> 12, VRWXAD, root1);
+            install(s, va, 0, pa_new >> 12, VRWXAD, root2);
+
+            s.d.satp_i = satp(root1);
+            s.d.itrans_req_addr_i = va;
+            s.d.itrans_req_valid_i = 1;
+
+            // Step until instruction PTW is active and requested on memory bus
+            bool ptw_fired = false;
+            for (int i = 0; i < 20 && !ptw_fired; i++) {
+                auto x = s.step();
+                if (x.pd_req_fire && x.pd_ptw) ptw_fired = true;
+            }
+            check(ptw_fired, "P3-1: instruction PTW request fired");
+            check(s.d.itrans_busy_o, "P3-1: itrans_busy asserted during walk");
+
+            // While old PTW response is in-flight/pending, perform serializing satp change & redirect
+            s.d.satp_i = satp(root2);
+            s.d.redirect_i = 1;
+            s.d.itrans_req_valid_i = 0; // fetch redirected away
+            s.step();
+            s.d.redirect_i = 0;
+
+            // MMU must not assert itlb_refill_event_o (must NOT install stale translation)
+            check(!s.d.itlb_refill_event_o, "P3-1: stale ITLB refill event occurred on redirect");
+
+            // Allow the old PTW response to return to MMU and drain
+            for (int i = 0; i < 10 && !s.d.idle_o; i++) {
+                s.step();
+                check(!s.d.itlb_refill_event_o, "P3-1: stale ITLB refill event occurred during drain");
+            }
+            check(s.d.idle_o, "P3-1: MMU returned to IDLE cleanly after draining old PTW response");
+
+            // Now verify that ITLB does NOT hold the stale translation
+            // Check lookup under new satp (root2)
+            s.d.itrans_req_addr_i = va;
+            s.d.itrans_req_valid_i = 1;
+            s.d.eval();
+            check(!s.d.itlb_hit_event_o, "P3-1: stale translation was found in ITLB!");
+
+            // Run new walk to completion under root2
+            bool new_completed = false;
+            for (int i = 0; i < 30 && !new_completed; i++) {
+                s.step();
+                if (s.d.itrans_valid_o && !s.d.itrans_busy_o) {
+                    new_completed = true;
+                    break;
+                }
+            }
+            check(new_completed, "P3-1: translation under new satp completed");
+            check(s.d.itrans_pa_o == pa_new, "P3-1: translation produced pa_new (not stale pa_old)");
+            check(!s.d.itrans_page_fault_o, "P3-1: translation valid without page fault");
+            ++scenarios;
+        }
+
         std::cout<<"{\"status\":\"pass\",\"scenarios\":"<<scenarios<<"}\n";return 0;
     } catch(const std::exception &e) { std::cerr<<"SV39_MMU_S0_MISMATCH scenario="<<scenarios+1<<" reason="<<e.what()<<"\n";return 1; }
 }

@@ -1,0 +1,1530 @@
+[    0.000000] Linux version 6.6.50 (fsoye@FURSOY) (riscv64-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #19 Tue Sep  8 21:09:17 +03 2026
+[    0.000000] Machine model: Fursoy Slice-0 RISC-V Server Platform
+[    0.000000] SBI specification v2.0 detected
+[    0.000000] SBI implementation ID=0xf00501 Version=0x1
+[    0.000000] SBI TIME extension detected
+[    0.000000] SBI SRST extension detected
+[    0.000000] earlycon: uart8250 at MMIO32 0x0000000010000000 (options '')
+[    0.000000] printk: bootconsole [uart8250] enabled
+[    0.000000] printk: debug: skip boot console de-registration.
+[    0.000000] OF: reserved mem: 0x0000000080000000..0x00000000801fffff (2048 KiB) nomap non-reusable firmware_sbi@80000000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080000000-0x000000008fffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080000000-0x00000000801fffff]
+[    0.000000]   node   0: [mem 0x0000000080200000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080000000-0x000000008fffffff]
+[    0.000000] riscv: base ISA extensions aim
+[    0.000000] riscv: ELF capabilities aim
+[    0.000000] pcpu-alloc: s0 r0 d32768 u32768 alloc=1*32768
+[    0.000000] pcpu-alloc: [0] 0 
+[    0.000000] Kernel command line: console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x10000000 root=/dev/ram0 rw console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x10000000 keep_bootcon loglevel=8 root=/dev/ram0 rw init=/init initcall_debug
+[    0.000000] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 64640
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] Memory: 241736K/262144K available (2316K kernel code, 4624K rwdata, 2048K rodata, 2104K init, 219K bss, 20408K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-1, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] plic: plic@c000000: mapped 31 interrupts with 1 handlers for 2 contexts.
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x24e6a1710, max_idle_ns: 440795202120 ns
+[    0.000052] sched_clock: 64 bits at 10MHz, resolution 100ns, wraps every 4398046511100ns
+[    0.006393] Calibrating delay loop (skipped), value calculated using timer frequency.. 20.00 BogoMIPS (lpj=100000)
+[    0.009127] pid_max: default: 32768 minimum: 301
+[    0.013207] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.015749] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.100088] calling  compat_mode_detect+0x0/0x94 @ 1
+[    0.102752] riscv: ELF compat mode unsupported
+[    0.103172] initcall compat_mode_detect+0x0/0x94 returned 0 after 0 usecs
+[    0.106509] calling  asids_init+0x0/0x1ac @ 1
+[    0.108926] ASID allocator disabled (0 bits)
+[    0.110761] initcall asids_init+0x0/0x1ac returned 0 after 10000 usecs
+[    0.113689] calling  spawn_ksoftirqd+0x0/0x5c @ 1
+[    0.125059] initcall spawn_ksoftirqd+0x0/0x5c returned 0 after 10000 usecs
+[    0.128350] calling  init_signal_sysctls+0x0/0x48 @ 1
+[    0.130610] initcall init_signal_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.133754] calling  init_umh_sysctls+0x0/0x48 @ 1
+[    0.136224] initcall init_umh_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.138496] calling  irq_work_init_threads+0x0/0x1c @ 1
+[    0.140662] initcall irq_work_init_threads+0x0/0x1c returned 0 after 0 usecs
+[    0.143786] calling  init_zero_pfn+0x0/0xc8 @ 1
+[    0.146096] initcall init_zero_pfn+0x0/0xc8 returned 0 after 0 usecs
+[    0.148520] calling  init_fs_inode_sysctls+0x0/0x48 @ 1
+[    0.151299] initcall init_fs_inode_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.154764] calling  init_fs_locks_sysctls+0x0/0x48 @ 1
+[    0.157755] initcall init_fs_locks_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.160650] calling  init_fs_sysctls+0x0/0x48 @ 1
+[    0.163339] initcall init_fs_sysctls+0x0/0x48 returned 0 after 0 usecs
+[    0.184951] devtmpfs: initialized
+[    0.233055] calling  init_mmap_min_addr+0x0/0x28 @ 1
+[    0.235249] initcall init_mmap_min_addr+0x0/0x28 returned 0 after 0 usecs
+[    0.238611] calling  wq_sysfs_init+0x0/0x88 @ 1
+[    0.245738] initcall wq_sysfs_init+0x0/0x88 returned 0 after 10000 usecs
+[    0.248250] calling  ksysfs_init+0x0/0xd8 @ 1
+[    0.251411] initcall ksysfs_init+0x0/0xd8 returned 0 after 0 usecs
+[    0.254542] calling  init_jiffies_clocksource+0x0/0x38 @ 1
+[    0.256801] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.259066] initcall init_jiffies_clocksource+0x0/0x38 returned 0 after 0 usecs
+[    0.261580] calling  futex_init+0x0/0xd4 @ 1
+[    0.264316] futex hash table entries: 256 (order: 0, 6144 bytes, linear)
+[    0.266587] initcall futex_init+0x0/0xd4 returned 0 after 0 usecs
+[    0.269039] calling  fsnotify_init+0x0/0x70 @ 1
+[    0.271510] initcall fsnotify_init+0x0/0x70 returned 0 after 0 usecs
+[    0.274959] calling  filelock_init+0x0/0x94 @ 1
+[    0.278048] initcall filelock_init+0x0/0x94 returned 0 after 0 usecs
+[    0.280848] calling  init_script_binfmt+0x0/0x38 @ 1
+[    0.283246] initcall init_script_binfmt+0x0/0x38 returned 0 after 0 usecs
+[    0.287365] calling  init_elf_binfmt+0x0/0x38 @ 1
+[    0.289977] initcall init_elf_binfmt+0x0/0x38 returned 0 after 0 usecs
+[    0.292695] calling  init_compat_elf_binfmt+0x0/0x38 @ 1
+[    0.295162] initcall init_compat_elf_binfmt+0x0/0x38 returned 0 after 0 usecs
+[    0.298805] calling  free_raw_capacity+0x0/0x44 @ 1
+[    0.300751] initcall free_raw_capacity+0x0/0x44 returned 0 after 0 usecs
+[    0.304136] calling  irq_sysfs_init+0x0/0x160 @ 1
+[    0.311829] initcall irq_sysfs_init+0x0/0x160 returned 0 after 10000 usecs
+[    0.314490] calling  dma_atomic_pool_init+0x0/0xf8 @ 1
+[    0.318871] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+[    0.322250] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    0.324327] initcall dma_atomic_pool_init+0x0/0xf8 returned 0 after 10000 usecs
+[    0.326918] calling  bdi_class_init+0x0/0x30 @ 1
+[    0.331475] initcall bdi_class_init+0x0/0x30 returned 0 after 0 usecs
+[    0.334163] calling  mm_sysfs_init+0x0/0x50 @ 1
+[    0.336682] initcall mm_sysfs_init+0x0/0x50 returned 0 after 0 usecs
+[    0.339180] calling  init_per_zone_wmark_min+0x0/0x3c @ 1
+[    0.342711] initcall init_per_zone_wmark_min+0x0/0x3c returned 0 after 0 usecs
+[    0.346150] calling  tty_class_init+0x0/0x30 @ 1
+[    0.349756] initcall tty_class_init+0x0/0x30 returned 0 after 0 usecs
+[    0.353013] calling  devlink_class_init+0x0/0x6c @ 1
+[    0.356749] initcall devlink_class_init+0x0/0x6c returned 0 after 0 usecs
+[    0.359369] calling  software_node_init+0x0/0x54 @ 1
+[    0.362658] initcall software_node_init+0x0/0x54 returned 0 after 10000 usecs
+[    0.366665] calling  riscv_cpuinfo_init+0x0/0x70 @ 1
+[    0.369187] initcall riscv_cpuinfo_init+0x0/0x70 returned 0 after 0 usecs
+[    0.371877] calling  check_unaligned_access_boot_cpu+0x0/0x28 @ 1
+[    0.374782] initcall check_unaligned_access_boot_cpu+0x0/0x28 returned 0 after 0 usecs
+[    0.377352] calling  vdso_init+0x0/0x44 @ 1
+[    0.379692] initcall vdso_init+0x0/0x44 returned 0 after 0 usecs
+[    0.382210] calling  serial_base_init+0x0/0xa4 @ 1
+[    0.391675] initcall serial_base_init+0x0/0xa4 returned 0 after 0 usecs
+[    0.395454] calling  init_hwprobe_vdso_data+0x0/0xf0 @ 1
+[    0.398117] initcall init_hwprobe_vdso_data+0x0/0xf0 returned 0 after 0 usecs
+[    0.401392] calling  of_platform_default_populate_init+0x0/0x118 @ 1
+[    0.430295] initcall of_platform_default_populate_init+0x0/0x118 returned 0 after 30000 usecs
+[    0.434661] calling  topology_init+0x0/0x64 @ 1
+[    0.441924] initcall topology_init+0x0/0x64 returned 0 after 10000 usecs
+[    0.444869] calling  uid_cache_init+0x0/0xa8 @ 1
+[    0.446784] initcall uid_cache_init+0x0/0xa8 returned 0 after 0 usecs
+[    0.449697] calling  param_sysfs_init+0x0/0x70 @ 1
+[    0.452280] initcall param_sysfs_init+0x0/0x70 returned 0 after 0 usecs
+[    0.454654] calling  user_namespace_sysctl_init+0x0/0xe8 @ 1
+[    0.459366] initcall user_namespace_sysctl_init+0x0/0xe8 returned 0 after 0 usecs
+[    0.462704] calling  oom_init+0x0/0x78 @ 1
+[    0.473642] initcall oom_init+0x0/0x78 returned 0 after 10000 usecs
+[    0.476390] calling  default_bdi_init+0x0/0x50 @ 1
+[    0.492443] initcall default_bdi_init+0x0/0x50 returned 0 after 10000 usecs
+[    0.496089] calling  percpu_enable_async+0x0/0x28 @ 1
+[    0.498372] initcall percpu_enable_async+0x0/0x28 returned 0 after 0 usecs
+[    0.500875] calling  kcompactd_init+0x0/0xa4 @ 1
+[    0.512108] initcall kcompactd_init+0x0/0xa4 returned 0 after 10000 usecs
+[    0.515782] calling  init_reserve_notifier+0x0/0x1c @ 1
+[    0.518381] initcall init_reserve_notifier+0x0/0x1c returned 0 after 0 usecs
+[    0.521009] calling  init_admin_reserve+0x0/0x3c @ 1
+[    0.522963] initcall init_admin_reserve+0x0/0x3c returned 0 after 0 usecs
+[    0.525254] calling  init_user_reserve+0x0/0x3c @ 1
+[    0.527937] initcall init_user_reserve+0x0/0x3c returned 0 after 0 usecs
+[    0.530297] calling  io_wq_init+0x0/0x5c @ 1
+[    0.532090] initcall io_wq_init+0x0/0x5c returned 0 after 0 usecs
+[    0.534211] calling  misc_init+0x0/0xe4 @ 1
+[    0.538919] initcall misc_init+0x0/0xe4 returned 0 after 10000 usecs
+[    0.541480] calling  register_cpu_capacity_sysctl+0x0/0x58 @ 1
+[    0.543929] initcall register_cpu_capacity_sysctl+0x0/0x58 returned 0 after 0 usecs
+[    0.546439] calling  serio_init+0x0/0x58 @ 1
+[    0.552430] initcall serio_init+0x0/0x58 returned 0 after 0 usecs
+[    0.555623] calling  hwmon_init+0x0/0x54 @ 1
+[    0.560090] initcall hwmon_init+0x0/0x54 returned 0 after 10000 usecs
+[    0.562753] calling  vsprintf_init_hashval+0x0/0x34 @ 1
+[    0.565117] initcall vsprintf_init_hashval+0x0/0x34 returned 0 after 0 usecs
+[    0.569734] calling  iomem_init_inode+0x0/0xd0 @ 1
+[    0.574633] initcall iomem_init_inode+0x0/0xd0 returned 0 after 0 usecs
+[    0.577755] calling  clocksource_done_booting+0x0/0x78 @ 1
+[    0.580826] clocksource: Switched to clocksource riscv_clocksource
+[    0.582463] initcall clocksource_done_booting+0x0/0x78 returned 0 after 1735 usecs
+[    0.585093] calling  secretmem_init+0x0/0x6c @ 1
+[    0.589458] initcall secretmem_init+0x0/0x6c returned 0 after 2101 usecs
+[    0.593522] calling  init_fs_stat_sysctls+0x0/0x48 @ 1
+[    0.596419] initcall init_fs_stat_sysctls+0x0/0x48 returned 0 after 449 usecs
+[    0.599260] calling  init_fs_exec_sysctls+0x0/0x48 @ 1
+[    0.602726] initcall init_fs_exec_sysctls+0x0/0x48 returned 0 after 331 usecs
+[    0.605673] calling  init_pipe_fs+0x0/0xa0 @ 1
+[    0.610698] initcall init_pipe_fs+0x0/0xa0 returned 0 after 2808 usecs
+[    0.614869] calling  init_fs_namei_sysctls+0x0/0x48 @ 1
+[    0.618122] initcall init_fs_namei_sysctls+0x0/0x48 returned 0 after 671 usecs
+[    0.621755] calling  init_fs_dcache_sysctls+0x0/0x48 @ 1
+[    0.624656] initcall init_fs_dcache_sysctls+0x0/0x48 returned 0 after 332 usecs
+[    0.627544] calling  init_fs_namespace_sysctls+0x0/0x48 @ 1
+[    0.630276] initcall init_fs_namespace_sysctls+0x0/0x48 returned 0 after 283 usecs
+[    0.634087] calling  inotify_user_setup+0x0/0x114 @ 1
+[    0.637415] initcall inotify_user_setup+0x0/0x114 returned 0 after 770 usecs
+[    0.640383] calling  eventpoll_init+0x0/0x130 @ 1
+[    0.644361] initcall eventpoll_init+0x0/0x130 returned 0 after 733 usecs
+[    0.647337] calling  anon_inode_init+0x0/0x8c @ 1
+[    0.652705] initcall anon_inode_init+0x0/0x8c returned 0 after 3006 usecs
+[    0.655885] calling  proc_locks_init+0x0/0x4c @ 1
+[    0.658544] initcall proc_locks_init+0x0/0x4c returned 0 after 305 usecs
+[    0.662229] calling  init_fs_coredump_sysctls+0x0/0x48 @ 1
+[    0.665490] initcall init_fs_coredump_sysctls+0x0/0x48 returned 0 after 529 usecs
+[    0.669039] calling  proc_cmdline_init+0x0/0x6c @ 1
+[    0.672756] initcall proc_cmdline_init+0x0/0x6c returned 0 after 313 usecs
+[    0.675801] calling  proc_consoles_init+0x0/0x4c @ 1
+[    0.678489] initcall proc_consoles_init+0x0/0x4c returned 0 after 281 usecs
+[    0.682217] calling  proc_cpuinfo_init+0x0/0x44 @ 1
+[    0.685368] initcall proc_cpuinfo_init+0x0/0x44 returned 0 after 503 usecs
+[    0.688439] calling  proc_devices_init+0x0/0x5c @ 1
+[    0.690498] initcall proc_devices_init+0x0/0x5c returned 0 after 272 usecs
+[    0.693663] calling  proc_interrupts_init+0x0/0x4c @ 1
+[    0.695905] initcall proc_interrupts_init+0x0/0x4c returned 0 after 309 usecs
+[    0.698267] calling  proc_loadavg_init+0x0/0x58 @ 1
+[    0.700342] initcall proc_loadavg_init+0x0/0x58 returned 0 after 280 usecs
+[    0.703497] calling  proc_meminfo_init+0x0/0x58 @ 1
+[    0.705705] initcall proc_meminfo_init+0x0/0x58 returned 0 after 308 usecs
+[    0.708049] calling  proc_stat_init+0x0/0x44 @ 1
+[    0.710057] initcall proc_stat_init+0x0/0x44 returned 0 after 285 usecs
+[    0.713670] calling  proc_uptime_init+0x0/0x58 @ 1
+[    0.715978] initcall proc_uptime_init+0x0/0x58 returned 0 after 306 usecs
+[    0.718279] calling  proc_version_init+0x0/0x58 @ 1
+[    0.720375] initcall proc_version_init+0x0/0x58 returned 0 after 283 usecs
+[    0.723536] calling  proc_softirqs_init+0x0/0x58 @ 1
+[    0.725748] initcall proc_softirqs_init+0x0/0x58 returned 0 after 301 usecs
+[    0.728121] calling  proc_kmsg_init+0x0/0x44 @ 1
+[    0.730154] initcall proc_kmsg_init+0x0/0x44 returned 0 after 267 usecs
+[    0.733275] calling  proc_page_init+0x0/0x64 @ 1
+[    0.735581] initcall proc_page_init+0x0/0x64 returned 0 after 456 usecs
+[    0.737922] calling  init_ramfs_fs+0x0/0x30 @ 1
+[    0.739766] initcall init_ramfs_fs+0x0/0x30 returned 0 after 85 usecs
+[    0.742789] calling  chr_dev_init+0x0/0xec @ 1
+[    0.819930] initcall chr_dev_init+0x0/0xec returned 0 after 75139 usecs
+[    0.823390] calling  hwrng_modinit+0x0/0xd8 @ 1
+[    0.833066] initcall hwrng_modinit+0x0/0xd8 returned 0 after 7656 usecs
+[    0.835697] calling  firmware_class_init+0x0/0x44 @ 1
+[    0.837803] initcall firmware_class_init+0x0/0x44 returned 0 after 41 usecs
+[    0.840259] calling  populate_rootfs+0x0/0x6c @ 1
+[    0.843777] initcall populate_rootfs+0x0/0x6c returned 0 after 410 usecs
+[    0.847824] calling  register_kernel_offset_dumper+0x0/0x1c @ 1
+[    0.850343] initcall register_kernel_offset_dumper+0x0/0x1c returned 0 after 12 usecs
+[    0.854048] calling  proc_execdomains_init+0x0/0x48 @ 1
+[    0.856971] initcall proc_execdomains_init+0x0/0x48 returned 0 after 323 usecs
+[    0.859971] calling  register_warn_debugfs+0x0/0x1c @ 1
+[    0.863258] initcall register_warn_debugfs+0x0/0x1c returned 0 after 12 usecs
+[    0.866240] calling  ioresources_init+0x0/0x84 @ 1
+[    0.869132] initcall ioresources_init+0x0/0x84 returned 0 after 449 usecs
+[    0.873448] calling  timekeeping_init_ops+0x0/0x34 @ 1
+[    0.875749] initcall timekeeping_init_ops+0x0/0x34 returned 0 after 34 usecs
+[    0.878140] calling  init_clocksource_sysfs+0x0/0x48 @ 1
+[    0.888574] initcall init_clocksource_sysfs+0x0/0x48 returned 0 after 8353 usecs
+[    0.892215] calling  init_timer_list_procfs+0x0/0x58 @ 1
+[    0.894821] initcall init_timer_list_procfs+0x0/0x58 returned 0 after 350 usecs
+[    0.897424] calling  alarmtimer_init+0x0/0x88 @ 1
+[    0.902600] initcall alarmtimer_init+0x0/0x88 returned 0 after 3185 usecs
+[    0.905306] calling  init_posix_timers+0x0/0x4c @ 1
+[    0.907736] initcall init_posix_timers+0x0/0x4c returned 0 after 415 usecs
+[    0.910277] calling  clockevents_init_sysfs+0x0/0x9c @ 1
+[    0.920224] initcall clockevents_init_sysfs+0x0/0x9c returned 0 after 6956 usecs
+[    0.923928] calling  sched_clock_syscore_init+0x0/0x34 @ 1
+[    0.926185] initcall sched_clock_syscore_init+0x0/0x34 returned 0 after 30 usecs
+[    0.928662] calling  kallsyms_init+0x0/0x44 @ 1
+[    0.931616] initcall kallsyms_init+0x0/0x44 returned 0 after 1007 usecs
+[    0.934830] calling  seccomp_sysctl_init+0x0/0x48 @ 1
+[    0.937672] initcall seccomp_sysctl_init+0x0/0x48 returned 0 after 586 usecs
+[    0.940223] calling  utsname_sysctl_init+0x0/0x40 @ 1
+[    0.943888] initcall utsname_sysctl_init+0x0/0x40 returned 0 after 758 usecs
+[    0.946554] calling  kswapd_init+0x0/0x38 @ 1
+[    0.994621] initcall kswapd_init+0x0/0x38 returned 0 after 46108 usecs
+[    0.997445] calling  workingset_init+0x0/0x150 @ 1
+[    0.999586] workingset: timestamp_bits=62 max_order=16 bucket_order=0
+[    1.002155] initcall workingset_init+0x0/0x150 returned 0 after 2575 usecs
+[    1.004931] calling  proc_vmalloc_init+0x0/0x4c @ 1
+[    1.007419] initcall proc_vmalloc_init+0x0/0x4c returned 0 after 327 usecs
+[    1.010121] calling  fcntl_init+0x0/0x4c @ 1
+[    1.013407] initcall fcntl_init+0x0/0x4c returned 0 after 255 usecs
+[    1.016182] calling  proc_filesystems_init+0x0/0x48 @ 1
+[    1.018905] initcall proc_filesystems_init+0x0/0x48 returned 0 after 344 usecs
+[    1.022685] calling  start_dirtytime_writeback+0x0/0x54 @ 1
+[    1.025393] initcall start_dirtytime_writeback+0x0/0x54 returned 0 after 104 usecs
+[    1.028291] calling  dnotify_init+0x0/0xd4 @ 1
+[    1.032058] initcall dnotify_init+0x0/0xd4 returned 0 after 1472 usecs
+[    1.035162] calling  aio_setup+0x0/0xd0 @ 1
+[    1.040086] initcall aio_setup+0x0/0xd0 returned 0 after 2646 usecs
+[    1.044538] calling  init_devpts_fs+0x0/0x60 @ 1
+[    1.047210] initcall init_devpts_fs+0x0/0x60 returned 0 after 668 usecs
+[    1.049519] calling  io_uring_init+0x0/0xa8 @ 1
+[    1.054061] initcall io_uring_init+0x0/0xa8 returned 0 after 1988 usecs
+[    1.056586] calling  blake2s_mod_init+0x0/0x1c @ 1
+[    1.058443] initcall blake2s_mod_init+0x0/0x1c returned 0 after 12 usecs
+[    1.060644] calling  simple_pm_bus_driver_init+0x0/0x34 @ 1
+[    1.068669] probe of soc returned 0 after 4032 usecs
+[    1.073052] initcall simple_pm_bus_driver_init+0x0/0x34 returned 0 after 9503 usecs
+[    1.075770] calling  of_fixed_factor_clk_driver_init+0x0/0x34 @ 1
+[    1.080237] initcall of_fixed_factor_clk_driver_init+0x0/0x34 returned 0 after 2322 usecs
+[    1.083878] calling  of_fixed_clk_driver_init+0x0/0x34 @ 1
+[    1.088416] initcall of_fixed_clk_driver_init+0x0/0x34 returned 0 after 2420 usecs
+[    1.091900] calling  gpio_clk_driver_init+0x0/0x34 @ 1
+[    1.096450] initcall gpio_clk_driver_init+0x0/0x34 returned 0 after 2411 usecs
+[    1.099071] calling  n_null_init+0x0/0x38 @ 1
+[    1.101694] initcall n_null_init+0x0/0x38 returned 0 after 20 usecs
+[    1.104659] calling  pty_init+0x0/0x27c @ 1
+[    1.122720] initcall pty_init+0x0/0x27c returned 0 after 16083 usecs
+[    1.125211] calling  serial8250_init+0x0/0x1e0 @ 1
+[    1.127138] Serial: 8250/16550 driver, 1 ports, IRQ sharing disabled
+[    1.139545] probe of serial8250:0 returned 0 after 1927 usecs
+[    1.147638] probe of serial8250:0.0 returned 0 after 1976 usecs
+[    1.163975] probe of serial8250 returned 0 after 2156 usecs
+[    1.167561] initcall serial8250_init+0x0/0x1e0 returned 0 after 40409 usecs
+[    1.170192] calling  of_platform_serial_driver_init+0x0/0x34 @ 1
+[    1.191712] printk: console [ttyS0] disabled
+[    1.207133] probe of 10000000.serial:0 returned 0 after 2010 usecs
+[    1.215998] probe of 10000000.serial:0.0 returned 0 after 2054 usecs
+[    1.219146] 10000000.serial: ttyS0 at MMIO 0x10000000 (irq = 2, base_baud = 625000) is a 16550A
+[    1.223189] printk: console [ttyS0] enabled
+[    1.223189] printk: console [ttyS0] enabled
+[    1.242181] probe of 10000000.serial returned 0 after 66734 usecs
+[    1.242181] probe of 10000000.serial returned 0 after 66734 usecs
+[    1.247161] initcall of_platform_serial_driver_init+0x0/0x34 returned 0 after 73926 usecs
+[    1.247161] initcall of_platform_serial_driver_init+0x0/0x34 returned 0 after 73926 usecs
+[    1.252607] calling  random_sysctls_init+0x0/0x48 @ 1
+[    1.252607] calling  random_sysctls_init+0x0/0x48 @ 1
+[    1.256822] initcall random_sysctls_init+0x0/0x48 returned 0 after 1006 usecs
+[    1.256822] initcall random_sysctls_init+0x0/0x48 returned 0 after 1006 usecs
+[    1.260700] calling  topology_sysfs_init+0x0/0x4c @ 1
+[    1.260700] calling  topology_sysfs_init+0x0/0x4c @ 1
+[    1.267467] initcall topology_sysfs_init+0x0/0x4c returned 0 after 2844 usecs
+[    1.267467] initcall topology_sysfs_init+0x0/0x4c returned 0 after 2844 usecs
+[    1.272290] calling  cacheinfo_sysfs_init+0x0/0x4c @ 1
+[    1.272290] calling  cacheinfo_sysfs_init+0x0/0x4c @ 1
+[    1.275631] initcall cacheinfo_sysfs_init+0x0/0x4c returned -2 after 90 usecs
+[    1.275631] initcall cacheinfo_sysfs_init+0x0/0x4c returned -2 after 90 usecs
+[    1.279402] calling  serport_init+0x0/0x54 @ 1
+[    1.279402] calling  serport_init+0x0/0x54 @ 1
+[    1.283126] initcall serport_init+0x0/0x54 returned 0 after 25 usecs
+[    1.283126] initcall serport_init+0x0/0x54 returned 0 after 25 usecs
+[    1.287963] calling  kernel_do_mounts_initrd_sysctls_init+0x0/0x48 @ 1
+[    1.287963] calling  kernel_do_mounts_initrd_sysctls_init+0x0/0x48 @ 1
+[    1.292900] initcall kernel_do_mounts_initrd_sysctls_init+0x0/0x48 returned 0 after 345 usecs
+[    1.292900] initcall kernel_do_mounts_initrd_sysctls_init+0x0/0x48 returned 0 after 345 usecs
+[    1.298041] calling  kernel_panic_sysfs_init+0x0/0x40 @ 1
+[    1.298041] calling  kernel_panic_sysfs_init+0x0/0x40 @ 1
+[    1.303089] initcall kernel_panic_sysfs_init+0x0/0x40 returned 0 after 434 usecs
+[    1.303089] initcall kernel_panic_sysfs_init+0x0/0x40 returned 0 after 434 usecs
+[    1.307520] calling  kernel_panic_sysctls_init+0x0/0x48 @ 1
+[    1.307520] calling  kernel_panic_sysctls_init+0x0/0x48 @ 1
+[    1.312216] initcall kernel_panic_sysctls_init+0x0/0x48 returned 0 after 361 usecs
+[    1.312216] initcall kernel_panic_sysctls_init+0x0/0x48 returned 0 after 361 usecs
+[    1.316821] calling  kernel_exit_sysfs_init+0x0/0x40 @ 1
+[    1.316821] calling  kernel_exit_sysfs_init+0x0/0x40 @ 1
+[    1.320732] initcall kernel_exit_sysfs_init+0x0/0x40 returned 0 after 423 usecs
+[    1.320732] initcall kernel_exit_sysfs_init+0x0/0x40 returned 0 after 423 usecs
+[    1.325951] calling  kernel_exit_sysctls_init+0x0/0x48 @ 1
+[    1.325951] calling  kernel_exit_sysctls_init+0x0/0x48 @ 1
+[    1.330006] initcall kernel_exit_sysctls_init+0x0/0x48 returned 0 after 354 usecs
+[    1.330006] initcall kernel_exit_sysctls_init+0x0/0x48 returned 0 after 354 usecs
+[    1.335244] calling  param_sysfs_builtin_init+0x0/0x41c @ 1
+[    1.335244] calling  param_sysfs_builtin_init+0x0/0x41c @ 1
+[    1.427164] initcall param_sysfs_builtin_init+0x0/0x41c returned 0 after 88744 usecs
+[    1.427164] initcall param_sysfs_builtin_init+0x0/0x41c returned 0 after 88744 usecs
+[    1.432042] calling  reboot_ksysfs_init+0x0/0xa4 @ 1
+[    1.432042] calling  reboot_ksysfs_init+0x0/0xa4 @ 1
+[    1.436301] initcall reboot_ksysfs_init+0x0/0xa4 returned 0 after 1230 usecs
+[    1.436301] initcall reboot_ksysfs_init+0x0/0xa4 returned 0 after 1230 usecs
+[    1.440069] calling  sched_core_sysctl_init+0x0/0x48 @ 1
+[    1.440069] calling  sched_core_sysctl_init+0x0/0x48 @ 1
+[    1.444084] initcall sched_core_sysctl_init+0x0/0x48 returned 0 after 218 usecs
+[    1.444084] initcall sched_core_sysctl_init+0x0/0x48 returned 0 after 218 usecs
+[    1.447906] calling  sched_fair_sysctl_init+0x0/0x48 @ 1
+[    1.447906] calling  sched_fair_sysctl_init+0x0/0x48 @ 1
+[    1.451904] initcall sched_fair_sysctl_init+0x0/0x48 returned 0 after 350 usecs
+[    1.451904] initcall sched_fair_sysctl_init+0x0/0x48 returned 0 after 350 usecs
+[    1.456379] calling  sched_dl_sysctl_init+0x0/0x48 @ 1
+[    1.456379] calling  sched_dl_sysctl_init+0x0/0x48 @ 1
+[    1.460010] initcall sched_dl_sysctl_init+0x0/0x48 returned 0 after 486 usecs
+[    1.460010] initcall sched_dl_sysctl_init+0x0/0x48 returned 0 after 486 usecs
+[    1.464591] calling  sched_rt_sysctl_init+0x0/0x48 @ 1
+[    1.464591] calling  sched_rt_sysctl_init+0x0/0x48 @ 1
+[    1.468300] initcall sched_rt_sysctl_init+0x0/0x48 returned 0 after 694 usecs
+[    1.468300] initcall sched_rt_sysctl_init+0x0/0x48 returned 0 after 694 usecs
+[    1.472887] calling  printk_late_init+0x0/0x184 @ 1
+[    1.472887] calling  printk_late_init+0x0/0x184 @ 1
+[    1.477028] initcall printk_late_init+0x0/0x184 returned 0 after 1146 usecs
+[    1.477028] initcall printk_late_init+0x0/0x184 returned 0 after 1146 usecs
+[    1.481480] calling  check_early_ioremap_leak+0x0/0x70 @ 1
+[    1.481480] calling  check_early_ioremap_leak+0x0/0x70 @ 1
+[    1.485221] initcall check_early_ioremap_leak+0x0/0x70 returned 0 after 22 usecs
+[    1.485221] initcall check_early_ioremap_leak+0x0/0x70 returned 0 after 22 usecs
+[    1.489250] calling  sync_state_resume_initcall+0x0/0x28 @ 1
+[    1.489250] calling  sync_state_resume_initcall+0x0/0x28 @ 1
+[    1.493322] initcall sync_state_resume_initcall+0x0/0x28 returned 0 after 41 usecs
+[    1.493322] initcall sync_state_resume_initcall+0x0/0x28 returned 0 after 41 usecs
+[    1.497317] calling  deferred_probe_initcall+0x0/0xb4 @ 1
+[    1.497317] calling  deferred_probe_initcall+0x0/0xb4 @ 1
+[    1.506203] initcall deferred_probe_initcall+0x0/0xb4 returned 0 after 5534 usecs
+[    1.506203] initcall deferred_probe_initcall+0x0/0xb4 returned 0 after 5534 usecs
+[    1.510692] calling  of_fdt_raw_init+0x0/0xc0 @ 1
+[    1.510692] calling  of_fdt_raw_init+0x0/0xc0 @ 1
+[    1.516561] initcall of_fdt_raw_init+0x0/0xc0 returned 0 after 1873 usecs
+[    1.516561] initcall of_fdt_raw_init+0x0/0xc0 returned 0 after 1873 usecs
+[    1.520578] calling  clk_disable_unused+0x0/0x13c @ 1
+[    1.520578] calling  clk_disable_unused+0x0/0x13c @ 1
+[    1.524388] clk: Disabling unused clocks
+[    1.524388] clk: Disabling unused clocks
+[    1.526335] initcall clk_disable_unused+0x0/0x13c returned 0 after 1961 usecs
+[    1.526335] initcall clk_disable_unused+0x0/0x13c returned 0 after 1961 usecs
+[    1.530603] calling  of_platform_sync_state_init+0x0/0x2c @ 1
+[    1.530603] calling  of_platform_sync_state_init+0x0/0x2c @ 1
+[    1.534912] initcall of_platform_sync_state_init+0x0/0x2c returned 0 after 41 usecs
+[    1.534912] initcall of_platform_sync_state_init+0x0/0x2c returned 0 after 41 usecs
+[    1.684175] Freeing unused kernel image (initmem) memory: 2104K
+[    1.684175] Freeing unused kernel image (initmem) memory: 2104K
+[    1.688212] Run /init as init process
+[    1.688212] Run /init as init process
+[    1.689950]   with arguments:
+[    1.689950]   with arguments:
+[    1.692160]     /init
+[    1.692160]     /init
+[    1.693524]   with environment:
+[    1.693524]   with environment:
+[    1.694881]     HOME=/
+[    1.694881]     HOME=/
+[    1.696131]     TERM=linux
+[    1.696131]     TERM=linux
+
+====================================================
+[INIT] Fursoy Slice-0 Linux Userspace active! PID 1
+[INIT] Execution reached /init in initramfs.
+====================================================
+[PERF] CPU_WORKLOAD_START
+[PERF] CPU_WORKLOAD_END
+[PERF] MEM_WORKLOAD_START
+[PERF] MEM_WORKLOAD_END
+[PERF] ALL_BENCHMARKS_COMPLETE
+--- PERF JSON REPORT ---
+{
+  "status": "pass",
+  "scope": "post-store-buffer performance profiling (Fursoy Slice-0)",
+  "seen_reset": true,
+  "seen_handoff": true,
+  "seen_satp_sv39": true,
+  "seen_init_banner": true,
+  "seen_cpu_workload": true,
+  "seen_mem_workload": true,
+  "seen_benchmarks_complete": true,
+  "cycle_handoff": 660,
+  "cycle_init_banner": 27188515,
+  "cycle_bench_complete": 27321197,
+  "full_execution": {
+    "total_cycles": 27323198,
+    "committed_instructions": 14946915,
+    "ipc": 0.547041,
+    "cpi": 1.828016,
+    "privilege_mode_cycles": {
+      "m_mode": 116776,
+      "s_mode": 27187000,
+      "u_mode": 19422
+    },
+    "instruction_fetch_wait_cycles": 3383521,
+    "load_store_stall_cycles": 2930584,
+    "lsu_detail": {
+      "req_wait_cycles": 1084184,
+      "rsp_wait_cycles": 1835407,
+      "amo_wait_cycles": 10993
+    },
+    "branch_control_flow": {
+      "commits": 1874788,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 585,
+      "walk_count_insn": 92,
+      "walk_count_load": 360,
+      "walk_count_store": 130,
+      "walk_count_amo": 3,
+      "total_ptw_cycles": 4179,
+      "ptw_cycles_insn": 1613,
+      "ptw_cycles_data": 2566,
+      "page_table_memory_accesses": 1466,
+      "translation_stall_cycles": 4179
+    },
+    "tlb": {
+      "itlb_hits": 16659136,
+      "itlb_misses": 94,
+      "itlb_refills": 94,
+      "itlb_hit_rate": 0.999994,
+      "dtlb_hits": 11837436,
+      "dtlb_misses": 493,
+      "dtlb_refills": 493,
+      "dtlb_hit_rate": 0.999958
+    },
+    "l1i": {
+      "l1i_hits": 16605347,
+      "l1i_misses": 241342,
+      "l1i_refills": 211400,
+      "l1i_hit_rate": 0.985674
+    },
+    "l1d": {
+      "l1d_hits": 4803639,
+      "l1d_misses": 292635,
+      "l1d_refills": 292635,
+      "l1d_evictions": 87142,
+      "l1d_load_hits": 2419515,
+      "l1d_load_misses": 112546,
+      "l1d_store_hits": 2383905,
+      "l1d_store_misses": 180089,
+      "l1d_hit_rate": 0.942579,
+      "l1d_load_hit_rate": 0.955552,
+      "l1d_store_hit_rate": 0.929762
+    },
+    "platform_events": {
+      "sbi_ecall_count": 182,
+      "user_ecall_count": 6,
+      "mtip_count": 168,
+      "stip_count": 168,
+      "seip_count": 21,
+      "sync_trap_count": 3,
+      "trap_overhead_cycles": 1361207
+    },
+    "uart_mmio": {
+      "access_count": 55367
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 14946915,
+      "cycles_useful_retire_pct": 54.704120,
+      "cycles_zero_retire": 12376283,
+      "cycles_zero_retire_pct": 45.295880
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 2549021,
+      "sb_enqueues": 2547720,
+      "sb_tail_merges": 1301,
+      "merge_rate_pct": 0.051039,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 21478743,
+        "occ_0_pct": 78.609916,
+        "occ_1_cycles": 2119422,
+        "occ_1_pct": 7.756859,
+        "occ_2_cycles": 237940,
+        "occ_2_pct": 0.870835,
+        "occ_3_cycles": 806144,
+        "occ_3_pct": 2.950401,
+        "occ_4_cycles": 2680949,
+        "occ_4_pct": 9.811988
+      },
+      "full_buffer_stall_cycles": 2667285,
+      "raw_conflict_stall_cycles": 8350,
+      "arbitration_load_stall_cycles": 2731900,
+      "visible_drain_stall_cycles": 13223,
+      "drain_requests": 2547747,
+      "drain_completions": 2547747,
+      "drain_hits": 2368531,
+      "drain_clean_misses": 13973,
+      "drain_dirty_misses": 165243,
+      "cycles_hidden_behind_useful_execution": 14946802,
+      "average_drain_latency_cycles": 11.724152
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 4366088,
+      "srb_active_pct": 15.979418,
+      "srb_installs": 179216,
+      "srb_clean_victims": 179216,
+      "srb_dirty_victims": 0,
+      "srb_raw_load_stall_cycles": 1113285,
+      "srb_secondary_load_miss_stall_cycles": 17233
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 14946915,
+      "useful_commit_pct": 54.704120,
+      "store_buffer_stall_cycles": 2667285,
+      "store_buffer_stall_pct": 9.761980,
+      "sb_full_backpressure_cycles": 2667285,
+      "sb_full_backpressure_pct": 9.761980,
+      "raw_load_stall_cycles": 8350,
+      "raw_load_stall_pct": 0.030560,
+      "srb_raw_load_stall_cycles": 1113285,
+      "srb_raw_load_stall_pct": 4.074505,
+      "arbitration_load_stall_cycles": 2731900,
+      "arbitration_load_stall_pct": 9.998464,
+      "srb_secondary_load_miss_stall_cycles": 17233,
+      "srb_secondary_load_miss_stall_pct": 0.063071,
+      "visible_drain_stall_cycles": 13223,
+      "visible_drain_stall_pct": 0.048395,
+      "l1d_load_stall_cycles": 111583,
+      "l1d_load_stall_pct": 0.408382,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 111583,
+        "clean_miss_refill_cycles": 0,
+        "dirty_victim_evict_cycles": 0,
+        "dirty_victim_refill_cycles": 0,
+        "dirty_victim_total_contribution_cycles": 0
+      },
+      "l1d_store_stall_cycles": 2667285,
+      "l1d_store_stall_pct": 9.761980,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 59490,
+      "amo_lr_sc_stall_pct": 0.217727,
+      "l1i_hit_fetch_stall_cycles": 209996,
+      "l1i_hit_fetch_stall_pct": 0.768563,
+      "l1i_miss_refill_cycles": 3328990,
+      "l1i_miss_refill_pct": 12.183750,
+      "l1i_total_stall_cycles": 3538986,
+      "l1i_total_stall_pct": 12.952313,
+      "branch_redirect_bubble_cycles": 1874770,
+      "branch_redirect_bubble_pct": 6.861459,
+      "csr_serialization_flush_cycles": 22503,
+      "csr_serialization_flush_pct": 0.082359,
+      "trap_return_overhead_cycles": 1535,
+      "trap_return_overhead_pct": 0.005618,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 548,
+        "trap_vector_bubble_cycles": 520,
+        "mret_sret_redirect_bubble_cycles": 467
+      },
+      "ptw_tlb_stall_cycles": 4270,
+      "ptw_tlb_stall_pct": 0.015628,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 1613,
+        "dtlb_ptw_cycles": 2566,
+        "itlb_translation_latency_cycles": 91
+      },
+      "l1d_maintenance_cycles": 109732,
+      "l1d_maintenance_pct": 0.401607,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 95858,
+        "fence_i_cycles": 2006,
+        "pmp_maintenance_cycles": 11868
+      },
+      "mmio_stall_cycles": 83197,
+      "mmio_stall_pct": 0.304492,
+      "arbitration_contention_cycles": 18874,
+      "arbitration_contention_pct": 0.069077,
+      "refill_handoff_bubble_cycles": 67,
+      "refill_handoff_bubble_pct": 0.000245,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 27323198,
+      "total_cycles": 27323198,
+      "disjoint_exact_match": true
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 1691760,
+      "dmem_load_requests": 2341080,
+      "dmem_store_requests": 2078280,
+      "l1d_refill_beats": 2341080,
+      "l1d_writeback_beats": 697136,
+      "l1i_refill_beats": 1691200,
+      "ptw_memory_requests": 1466,
+      "total_ram_requests": 6112586,
+      "uart_mmio_requests": 55367,
+      "clint_mmio_requests": 170,
+      "plic_mmio_requests": 160,
+      "total_mmio_requests": 55697,
+      "instruction_traffic_pct": 27.676666,
+      "data_traffic_pct": 72.323334
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 2667285,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 3328990,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 1874770,
+        "taken_control_flow_count": 1874788,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 111583,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 109732,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 4270,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 3383521,
+      "raw_lsu_busy_cycles": 2930584,
+      "overlap_cycles": 54531
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 1691760,
+      "dmem_load_requests": 2341080,
+      "dmem_store_requests": 2078280,
+      "total_ram_requests": 6112586,
+      "uart_mmio_requests": 55367,
+      "clint_mmio_requests": 170,
+      "plic_mmio_requests": 160,
+      "total_mmio_requests": 55697
+    },
+    "instruction_mix": {
+      "alu_instructions": 6822606,
+      "load_instructions": 2553922,
+      "store_instructions": 2577218,
+      "amo_instructions": 22086,
+      "branch_conditional": 2100559,
+      "branch_taken": 1034763,
+      "branch_untaken": 1065796,
+      "branch_taken_pct": 49.261316,
+      "jal_unconditional": 461848,
+      "jalr_indirect": 378177,
+      "system_instructions": 30499
+    }
+  },
+  "boot_phase": {
+    "total_cycles": 27187855,
+    "committed_instructions": 14865325,
+    "ipc": 0.546763,
+    "cpi": 1.828945,
+    "privilege_mode_cycles": {
+      "m_mode": 114788,
+      "s_mode": 27073013,
+      "u_mode": 54
+    },
+    "instruction_fetch_wait_cycles": 3352240,
+    "load_store_stall_cycles": 2922571,
+    "lsu_detail": {
+      "req_wait_cycles": 1081071,
+      "rsp_wait_cycles": 1830631,
+      "amo_wait_cycles": 10869
+    },
+    "branch_control_flow": {
+      "commits": 1865834,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 581,
+      "walk_count_insn": 92,
+      "walk_count_load": 360,
+      "walk_count_store": 126,
+      "walk_count_amo": 3,
+      "total_ptw_cycles": 4155,
+      "ptw_cycles_insn": 1613,
+      "ptw_cycles_data": 2542,
+      "page_table_memory_accesses": 1454,
+      "translation_stall_cycles": 4155
+    },
+    "tlb": {
+      "itlb_hits": 16568734,
+      "itlb_misses": 94,
+      "itlb_refills": 94,
+      "itlb_hit_rate": 0.999994,
+      "dtlb_hits": 11800799,
+      "dtlb_misses": 489,
+      "dtlb_refills": 489,
+      "dtlb_hit_rate": 0.999959
+    },
+    "l1i": {
+      "l1i_hits": 16516482,
+      "l1i_misses": 239211,
+      "l1i_refills": 209446,
+      "l1i_hit_rate": 0.985724
+    },
+    "l1d": {
+      "l1d_hits": 4776844,
+      "l1d_misses": 292221,
+      "l1d_refills": 292221,
+      "l1d_evictions": 87054,
+      "l1d_load_hits": 2402410,
+      "l1d_load_misses": 112271,
+      "l1d_store_hits": 2374238,
+      "l1d_store_misses": 179950,
+      "l1d_hit_rate": 0.942352,
+      "l1d_load_hit_rate": 0.955354,
+      "l1d_store_hit_rate": 0.929547
+    },
+    "platform_events": {
+      "sbi_ecall_count": 180,
+      "user_ecall_count": 1,
+      "mtip_count": 166,
+      "stip_count": 166,
+      "seip_count": 6,
+      "sync_trap_count": 2,
+      "trap_overhead_cycles": 1266250
+    },
+    "uart_mmio": {
+      "access_count": 54960
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 14865325,
+      "cycles_useful_retire_pct": 54.676344,
+      "cycles_zero_retire": 12322529,
+      "cycles_zero_retire_pct": 45.323653
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 2539391,
+      "sb_enqueues": 2538115,
+      "sb_tail_merges": 1276,
+      "merge_rate_pct": 0.050248,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 21357183,
+        "occ_0_pct": 78.554130,
+        "occ_1_cycles": 2108462,
+        "occ_1_pct": 7.755161,
+        "occ_2_cycles": 237612,
+        "occ_2_pct": 0.873964,
+        "occ_3_cycles": 805402,
+        "occ_3_pct": 2.962359,
+        "occ_4_cycles": 2679196,
+        "occ_4_pct": 9.854385
+      },
+      "full_buffer_stall_cycles": 2665313,
+      "raw_conflict_stall_cycles": 7815,
+      "arbitration_load_stall_cycles": 2726187,
+      "visible_drain_stall_cycles": 13141,
+      "drain_requests": 2538142,
+      "drain_completions": 2538142,
+      "drain_hits": 2359061,
+      "drain_clean_misses": 13889,
+      "drain_dirty_misses": 165192,
+      "cycles_hidden_behind_useful_execution": 14865314,
+      "average_drain_latency_cycles": 11.711693
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 4363393,
+      "srb_active_pct": 16.049052,
+      "srb_installs": 179081,
+      "srb_clean_victims": 179081,
+      "srb_dirty_victims": 0,
+      "srb_raw_load_stall_cycles": 1113261,
+      "srb_secondary_load_miss_stall_cycles": 17220
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 14865325,
+      "useful_commit_pct": 54.676344,
+      "store_buffer_stall_cycles": 2665313,
+      "store_buffer_stall_pct": 9.803322,
+      "sb_full_backpressure_cycles": 2665313,
+      "sb_full_backpressure_pct": 9.803322,
+      "raw_load_stall_cycles": 7815,
+      "raw_load_stall_pct": 0.028744,
+      "srb_raw_load_stall_cycles": 1113261,
+      "srb_raw_load_stall_pct": 4.094700,
+      "arbitration_load_stall_cycles": 2726187,
+      "arbitration_load_stall_pct": 10.027224,
+      "srb_secondary_load_miss_stall_cycles": 17220,
+      "srb_secondary_load_miss_stall_pct": 0.063337,
+      "visible_drain_stall_cycles": 13141,
+      "visible_drain_stall_pct": 0.048334,
+      "l1d_load_stall_cycles": 111312,
+      "l1d_load_stall_pct": 0.409418,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 111312,
+        "clean_miss_refill_cycles": 0,
+        "dirty_victim_evict_cycles": 0,
+        "dirty_victim_refill_cycles": 0,
+        "dirty_victim_total_contribution_cycles": 0
+      },
+      "l1d_store_stall_cycles": 2665313,
+      "l1d_store_stall_pct": 9.803322,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 59154,
+      "amo_lr_sc_stall_pct": 0.217575,
+      "l1i_hit_fetch_stall_cycles": 208049,
+      "l1i_hit_fetch_stall_pct": 0.765228,
+      "l1i_miss_refill_cycles": 3297990,
+      "l1i_miss_refill_pct": 12.130380,
+      "l1i_total_stall_cycles": 3506039,
+      "l1i_total_stall_pct": 12.895607,
+      "branch_redirect_bubble_cycles": 1865816,
+      "branch_redirect_bubble_pct": 6.862682,
+      "csr_serialization_flush_cycles": 22116,
+      "csr_serialization_flush_pct": 0.081345,
+      "trap_return_overhead_cycles": 1455,
+      "trap_return_overhead_pct": 0.005352,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 521,
+        "trap_vector_bubble_cycles": 493,
+        "mret_sret_redirect_bubble_cycles": 441
+      },
+      "ptw_tlb_stall_cycles": 4246,
+      "ptw_tlb_stall_pct": 0.015617,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 1613,
+        "dtlb_ptw_cycles": 2542,
+        "itlb_translation_latency_cycles": 91
+      },
+      "l1d_maintenance_cycles": 108013,
+      "l1d_maintenance_pct": 0.397284,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 94308,
+        "fence_i_cycles": 2001,
+        "pmp_maintenance_cycles": 11704
+      },
+      "mmio_stall_cycles": 82618,
+      "mmio_stall_pct": 0.303878,
+      "arbitration_contention_cycles": 18757,
+      "arbitration_contention_pct": 0.068990,
+      "refill_handoff_bubble_cycles": 66,
+      "refill_handoff_bubble_pct": 0.000243,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 27187854,
+      "total_cycles": 27187855,
+      "disjoint_exact_match": false
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 1676120,
+      "dmem_load_requests": 2337768,
+      "dmem_store_requests": 2075992,
+      "l1d_refill_beats": 2337768,
+      "l1d_writeback_beats": 696432,
+      "l1i_refill_beats": 1675568,
+      "ptw_memory_requests": 1454,
+      "total_ram_requests": 6091334,
+      "uart_mmio_requests": 54960,
+      "clint_mmio_requests": 167,
+      "plic_mmio_requests": 116,
+      "total_mmio_requests": 55243,
+      "instruction_traffic_pct": 27.516468,
+      "data_traffic_pct": 72.483532
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 2665313,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 3297990,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 1865816,
+        "taken_control_flow_count": 1865834,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 111312,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 108013,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 4246,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 3352240,
+      "raw_lsu_busy_cycles": 2922571,
+      "overlap_cycles": 54250
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 1676120,
+      "dmem_load_requests": 2337768,
+      "dmem_store_requests": 2075992,
+      "total_ram_requests": 6091334,
+      "uart_mmio_requests": 54960,
+      "clint_mmio_requests": 167,
+      "plic_mmio_requests": 116,
+      "total_mmio_requests": 55243
+    },
+    "instruction_mix": {
+      "alu_instructions": 6782512,
+      "load_instructions": 2536495,
+      "store_instructions": 2567258,
+      "amo_instructions": 21785,
+      "branch_conditional": 2091391,
+      "branch_taken": 1029741,
+      "branch_untaken": 1061650,
+      "branch_taken_pct": 49.237135,
+      "jal_unconditional": 460512,
+      "jalr_indirect": 375581,
+      "system_instructions": 29792
+    }
+  },
+  "cpu_heavy_workload": {
+    "total_cycles": 32875,
+    "committed_instructions": 19461,
+    "ipc": 0.591970,
+    "cpi": 1.689276,
+    "privilege_mode_cycles": {
+      "m_mode": 0,
+      "s_mode": 21738,
+      "u_mode": 11137
+    },
+    "instruction_fetch_wait_cycles": 6496,
+    "load_store_stall_cycles": 3022,
+    "lsu_detail": {
+      "req_wait_cycles": 815,
+      "rsp_wait_cycles": 2186,
+      "amo_wait_cycles": 21
+    },
+    "branch_control_flow": {
+      "commits": 1948,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 3,
+      "walk_count_insn": 0,
+      "walk_count_load": 0,
+      "walk_count_store": 3,
+      "walk_count_amo": 0,
+      "total_ptw_cycles": 18,
+      "ptw_cycles_insn": 0,
+      "ptw_cycles_data": 18,
+      "page_table_memory_accesses": 9,
+      "translation_stall_cycles": 18
+    },
+    "tlb": {
+      "itlb_hits": 21480,
+      "itlb_misses": 0,
+      "itlb_refills": 0,
+      "itlb_hit_rate": 1.000000,
+      "dtlb_hits": 6992,
+      "dtlb_misses": 3,
+      "dtlb_refills": 3,
+      "dtlb_hit_rate": 0.999571
+    },
+    "l1i": {
+      "l1i_hits": 21042,
+      "l1i_misses": 438,
+      "l1i_refills": 406,
+      "l1i_hit_rate": 0.979609
+    },
+    "l1d": {
+      "l1d_hits": 3876,
+      "l1d_misses": 148,
+      "l1d_refills": 148,
+      "l1d_evictions": 19,
+      "l1d_load_hits": 2126,
+      "l1d_load_misses": 67,
+      "l1d_store_hits": 1746,
+      "l1d_store_misses": 81,
+      "l1d_hit_rate": 0.963221,
+      "l1d_load_hit_rate": 0.969448,
+      "l1d_store_hit_rate": 0.955665
+    },
+    "platform_events": {
+      "sbi_ecall_count": 0,
+      "user_ecall_count": 1,
+      "mtip_count": 0,
+      "stip_count": 0,
+      "seip_count": 2,
+      "sync_trap_count": 1,
+      "trap_overhead_cycles": 20206
+    },
+    "uart_mmio": {
+      "access_count": 40
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 19461,
+      "cycles_useful_retire_pct": 59.196958,
+      "cycles_zero_retire": 13414,
+      "cycles_zero_retire_pct": 40.803042
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 1799,
+      "sb_enqueues": 1793,
+      "sb_tail_merges": 6,
+      "merge_rate_pct": 0.333519,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 29330,
+        "occ_0_pct": 89.216730,
+        "occ_1_cycles": 1612,
+        "occ_1_pct": 4.903422,
+        "occ_2_cycles": 87,
+        "occ_2_pct": 0.264639,
+        "occ_3_cycles": 504,
+        "occ_3_pct": 1.533080,
+        "occ_4_cycles": 1342,
+        "occ_4_pct": 4.082129
+      },
+      "full_buffer_stall_cycles": 1314,
+      "raw_conflict_stall_cycles": 5,
+      "arbitration_load_stall_cycles": 1366,
+      "visible_drain_stall_cycles": 24,
+      "drain_requests": 1793,
+      "drain_completions": 1793,
+      "drain_hits": 1714,
+      "drain_clean_misses": 49,
+      "drain_dirty_misses": 30,
+      "cycles_hidden_behind_useful_execution": 19461,
+      "average_drain_latency_cycles": 19.335192
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 1583,
+      "srb_active_pct": 4.815209,
+      "srb_installs": 79,
+      "srb_clean_victims": 79,
+      "srb_dirty_victims": 0,
+      "srb_raw_load_stall_cycles": 0,
+      "srb_secondary_load_miss_stall_cycles": 12
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 19461,
+      "useful_commit_pct": 59.196958,
+      "store_buffer_stall_cycles": 1314,
+      "store_buffer_stall_pct": 3.996958,
+      "sb_full_backpressure_cycles": 1314,
+      "sb_full_backpressure_pct": 3.996958,
+      "raw_load_stall_cycles": 5,
+      "raw_load_stall_pct": 0.015209,
+      "srb_raw_load_stall_cycles": 0,
+      "srb_raw_load_stall_pct": 0.000000,
+      "arbitration_load_stall_cycles": 1366,
+      "arbitration_load_stall_pct": 4.155133,
+      "srb_secondary_load_miss_stall_cycles": 12,
+      "srb_secondary_load_miss_stall_pct": 0.036502,
+      "visible_drain_stall_cycles": 24,
+      "visible_drain_stall_pct": 0.073004,
+      "l1d_load_stall_cycles": 67,
+      "l1d_load_stall_pct": 0.203802,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 67,
+        "clean_miss_refill_cycles": 0,
+        "dirty_victim_evict_cycles": 0,
+        "dirty_victim_refill_cycles": 0,
+        "dirty_victim_total_contribution_cycles": 0
+      },
+      "l1d_store_stall_cycles": 1314,
+      "l1d_store_stall_pct": 3.996958,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 94,
+      "amo_lr_sc_stall_pct": 0.285932,
+      "l1i_hit_fetch_stall_cycles": 405,
+      "l1i_hit_fetch_stall_pct": 1.231939,
+      "l1i_miss_refill_cycles": 6434,
+      "l1i_miss_refill_pct": 19.571103,
+      "l1i_total_stall_cycles": 6839,
+      "l1i_total_stall_pct": 20.803042,
+      "branch_redirect_bubble_cycles": 1948,
+      "branch_redirect_bubble_pct": 5.925475,
+      "csr_serialization_flush_cycles": 58,
+      "csr_serialization_flush_pct": 0.176426,
+      "trap_return_overhead_cycles": 12,
+      "trap_return_overhead_pct": 0.036502,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 4,
+        "trap_vector_bubble_cycles": 4,
+        "mret_sret_redirect_bubble_cycles": 4
+      },
+      "ptw_tlb_stall_cycles": 18,
+      "ptw_tlb_stall_pct": 0.054753,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 0,
+        "dtlb_ptw_cycles": 18,
+        "itlb_translation_latency_cycles": 0
+      },
+      "l1d_maintenance_cycles": 1550,
+      "l1d_maintenance_pct": 4.714829,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 1550,
+        "fence_i_cycles": 0,
+        "pmp_maintenance_cycles": 0
+      },
+      "mmio_stall_cycles": 61,
+      "mmio_stall_pct": 0.185551,
+      "arbitration_contention_cycles": 46,
+      "arbitration_contention_pct": 0.139924,
+      "refill_handoff_bubble_cycles": 0,
+      "refill_handoff_bubble_pct": 0.000000,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 32875,
+      "total_cycles": 32875,
+      "disjoint_exact_match": true
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 3248,
+      "dmem_load_requests": 1184,
+      "dmem_store_requests": 1576,
+      "l1d_refill_beats": 1184,
+      "l1d_writeback_beats": 152,
+      "l1i_refill_beats": 3248,
+      "ptw_memory_requests": 9,
+      "total_ram_requests": 6017,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 0,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 46,
+      "instruction_traffic_pct": 53.980389,
+      "data_traffic_pct": 46.019611
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 1314,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 6434,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 1948,
+        "taken_control_flow_count": 1948,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 67,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 1550,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 18,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 6496,
+      "raw_lsu_busy_cycles": 3022,
+      "overlap_cycles": 62
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 3248,
+      "dmem_load_requests": 1184,
+      "dmem_store_requests": 1576,
+      "total_ram_requests": 6017,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 0,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 46
+    },
+    "instruction_mix": {
+      "alu_instructions": 12700,
+      "load_instructions": 2195,
+      "store_instructions": 1830,
+      "amo_instructions": 51,
+      "branch_conditional": 2053,
+      "branch_taken": 1417,
+      "branch_untaken": 636,
+      "branch_taken_pct": 69.020945,
+      "jal_unconditional": 195,
+      "jalr_indirect": 336,
+      "system_instructions": 101
+    }
+  },
+  "memory_heavy_workload": {
+    "total_cycles": 25917,
+    "committed_instructions": 15902,
+    "ipc": 0.613574,
+    "cpi": 1.629795,
+    "privilege_mode_cycles": {
+      "m_mode": 665,
+      "s_mode": 17090,
+      "u_mode": 8162
+    },
+    "instruction_fetch_wait_cycles": 6080,
+    "load_store_stall_cycles": 1104,
+    "lsu_detail": {
+      "req_wait_cycles": 524,
+      "rsp_wait_cycles": 564,
+      "amo_wait_cycles": 16
+    },
+    "branch_control_flow": {
+      "commits": 1623,
+      "penalty_cycles": 0
+    },
+    "mmu_ptw": {
+      "walk_count_total": 0,
+      "walk_count_insn": 0,
+      "walk_count_load": 0,
+      "walk_count_store": 0,
+      "walk_count_amo": 0,
+      "total_ptw_cycles": 0,
+      "ptw_cycles_insn": 0,
+      "ptw_cycles_data": 0,
+      "page_table_memory_accesses": 0,
+      "translation_stall_cycles": 0
+    },
+    "tlb": {
+      "itlb_hits": 17351,
+      "itlb_misses": 0,
+      "itlb_refills": 0,
+      "itlb_hit_rate": 1.000000,
+      "dtlb_hits": 7028,
+      "dtlb_misses": 0,
+      "dtlb_refills": 0,
+      "dtlb_hit_rate": 1.000000
+    },
+    "l1i": {
+      "l1i_hits": 17183,
+      "l1i_misses": 410,
+      "l1i_refills": 380,
+      "l1i_hit_rate": 0.976695
+    },
+    "l1d": {
+      "l1d_hits": 5281,
+      "l1d_misses": 74,
+      "l1d_refills": 74,
+      "l1d_evictions": 9,
+      "l1d_load_hits": 3296,
+      "l1d_load_misses": 53,
+      "l1d_store_hits": 1981,
+      "l1d_store_misses": 21,
+      "l1d_hit_rate": 0.986181,
+      "l1d_load_hit_rate": 0.984174,
+      "l1d_store_hit_rate": 0.989510
+    },
+    "platform_events": {
+      "sbi_ecall_count": 1,
+      "user_ecall_count": 1,
+      "mtip_count": 1,
+      "stip_count": 1,
+      "seip_count": 2,
+      "sync_trap_count": 0,
+      "trap_overhead_cycles": 14576
+    },
+    "uart_mmio": {
+      "access_count": 40
+    },
+    "retirement_taxonomy": {
+      "cycles_useful_retire": 15902,
+      "cycles_useful_retire_pct": 61.357410,
+      "cycles_zero_retire": 10015,
+      "cycles_zero_retire_pct": 38.642590
+    },
+    "store_buffer_telemetry": {
+      "total_ordinary_stores": 1980,
+      "sb_enqueues": 1975,
+      "sb_tail_merges": 5,
+      "merge_rate_pct": 0.252525,
+      "max_occupancy": 4,
+      "occupancy_distribution": {
+        "occ_0_cycles": 23360,
+        "occ_0_pct": 90.133889,
+        "occ_1_cycles": 2222,
+        "occ_1_pct": 8.573523,
+        "occ_2_cycles": 97,
+        "occ_2_pct": 0.374272,
+        "occ_3_cycles": 77,
+        "occ_3_pct": 0.297102,
+        "occ_4_cycles": 161,
+        "occ_4_pct": 0.621214
+      },
+      "full_buffer_stall_cycles": 183,
+      "raw_conflict_stall_cycles": 516,
+      "arbitration_load_stall_cycles": 1019,
+      "visible_drain_stall_cycles": 10,
+      "drain_requests": 1975,
+      "drain_completions": 1975,
+      "drain_hits": 1954,
+      "drain_clean_misses": 14,
+      "drain_dirty_misses": 7,
+      "cycles_hidden_behind_useful_execution": 15902,
+      "average_drain_latency_cycles": 14.122532
+    },
+    "srb_telemetry": {
+      "srb_active_cycles": 413,
+      "srb_active_pct": 1.593549,
+      "srb_installs": 21,
+      "srb_clean_victims": 21,
+      "srb_dirty_victims": 0,
+      "srb_raw_load_stall_cycles": 12,
+      "srb_secondary_load_miss_stall_cycles": 0
+    },
+    "disjoint_cycle_partition": {
+      "useful_commit_cycles": 15902,
+      "useful_commit_pct": 61.357410,
+      "store_buffer_stall_cycles": 183,
+      "store_buffer_stall_pct": 0.706100,
+      "sb_full_backpressure_cycles": 183,
+      "sb_full_backpressure_pct": 0.706100,
+      "raw_load_stall_cycles": 516,
+      "raw_load_stall_pct": 1.990971,
+      "srb_raw_load_stall_cycles": 12,
+      "srb_raw_load_stall_pct": 0.046302,
+      "arbitration_load_stall_cycles": 1019,
+      "arbitration_load_stall_pct": 3.931782,
+      "srb_secondary_load_miss_stall_cycles": 0,
+      "srb_secondary_load_miss_stall_pct": 0.000000,
+      "visible_drain_stall_cycles": 10,
+      "visible_drain_stall_pct": 0.038585,
+      "l1d_load_stall_cycles": 52,
+      "l1d_load_stall_pct": 0.200641,
+      "l1d_load_detail": {
+        "hit_path_latency_cycles": 52,
+        "clean_miss_refill_cycles": 0,
+        "dirty_victim_evict_cycles": 0,
+        "dirty_victim_refill_cycles": 0,
+        "dirty_victim_total_contribution_cycles": 0
+      },
+      "l1d_store_stall_cycles": 183,
+      "l1d_store_stall_pct": 0.706100,
+      "l1d_store_detail": {
+        "hit_path_latency_cycles": 0,
+        "clean_miss_refill_cycles": 0,
+        "dirty_evict_cycles": 0,
+        "dirty_refill_cycles": 0,
+        "dirty_eviction_plus_refill_cycles": 0
+      },
+      "amo_lr_sc_stall_cycles": 32,
+      "amo_lr_sc_stall_pct": 0.123471,
+      "l1i_hit_fetch_stall_cycles": 378,
+      "l1i_hit_fetch_stall_pct": 1.458502,
+      "l1i_miss_refill_cycles": 6003,
+      "l1i_miss_refill_pct": 23.162403,
+      "l1i_total_stall_cycles": 6381,
+      "l1i_total_stall_pct": 24.620905,
+      "branch_redirect_bubble_cycles": 1623,
+      "branch_redirect_bubble_pct": 6.262299,
+      "csr_serialization_flush_cycles": 51,
+      "csr_serialization_flush_pct": 0.196782,
+      "trap_return_overhead_cycles": 17,
+      "trap_return_overhead_pct": 0.065594,
+      "trap_return_detail": {
+        "trap_entry_drain_cycles": 6,
+        "trap_vector_bubble_cycles": 6,
+        "mret_sret_redirect_bubble_cycles": 5
+      },
+      "ptw_tlb_stall_cycles": 0,
+      "ptw_tlb_stall_pct": 0.000000,
+      "ptw_tlb_detail": {
+        "itlb_ptw_cycles": 0,
+        "dtlb_ptw_cycles": 0,
+        "itlb_translation_latency_cycles": 0
+      },
+      "l1d_maintenance_cycles": 27,
+      "l1d_maintenance_pct": 0.104179,
+      "l1d_maintenance_detail": {
+        "sfence_vma_cycles": 0,
+        "fence_i_cycles": 0,
+        "pmp_maintenance_cycles": 27
+      },
+      "mmio_stall_cycles": 62,
+      "mmio_stall_pct": 0.239225,
+      "arbitration_contention_cycles": 30,
+      "arbitration_contention_pct": 0.115754,
+      "refill_handoff_bubble_cycles": 0,
+      "refill_handoff_bubble_pct": 0.000000,
+      "residual_unclassified_cycles": 0,
+      "residual_unclassified_pct": 0.000000,
+      "disjoint_sum_cycles": 25917,
+      "total_cycles": 25917,
+      "disjoint_exact_match": true
+    },
+    "dram_traffic_summary": {
+      "imem_fetch_requests": 3040,
+      "dmem_load_requests": 592,
+      "dmem_store_requests": 128,
+      "l1d_refill_beats": 592,
+      "l1d_writeback_beats": 72,
+      "l1i_refill_beats": 3040,
+      "ptw_memory_requests": 0,
+      "total_ram_requests": 3760,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 1,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 47,
+      "instruction_traffic_pct": 80.851064,
+      "data_traffic_pct": 19.148936
+    },
+    "ranked_optimization_candidates": {
+      "rank_1_store_path_improvement": {
+        "directly_addressable_cycle_pool": 183,
+        "dirty_eviction_plus_refill_pool": 0,
+        "description": "Store stall optimization via write buffer, write merging, or write-no-allocate evaluation"
+      },
+      "rank_2_l1i_refill_prefetch": {
+        "directly_addressable_cycle_pool": 6003,
+        "description": "Next-line prefetch or streaming refill to mitigate DRAM refill latency"
+      },
+      "rank_3_btb_branch_prediction": {
+        "directly_addressable_cycle_pool": 1623,
+        "taken_control_flow_count": 1623,
+        "description": "Predicting branch target in Stage F to eliminate 1-cycle redirect bubble"
+      },
+      "rank_4_l1d_load_path": {
+        "directly_addressable_cycle_pool": 52,
+        "description": "Load stall optimization via hit pipelining and early restart"
+      },
+      "rank_5_maintenance_flush_opt": {
+        "directly_addressable_cycle_pool": 27,
+        "description": "Selective range-based SFENCE.VMA and selective FENCE.I flush"
+      },
+      "rank_6_ptw_translation_opt": {
+        "directly_addressable_cycle_pool": 0,
+        "description": "Negligible bottleneck with 99.99% TLB hit rates"
+      }
+    },
+    "overlap_explanation": {
+      "description": "Raw fetch_wait_cycles and lsu_busy_cycles overlap because in Slice-0, fetch is held in REQUEST waiting for lsu_issue_ready while LSU transactions are inflight. Summing raw counters produces >100%. The disjoint_cycle_partition provides the exact non-overlapping distribution.",
+      "raw_fetch_wait_cycles": 6080,
+      "raw_lsu_busy_cycles": 1104,
+      "overlap_cycles": 77
+    },
+    "memory_transactions": {
+      "imem_fetch_requests": 3040,
+      "dmem_load_requests": 592,
+      "dmem_store_requests": 128,
+      "total_ram_requests": 3760,
+      "uart_mmio_requests": 40,
+      "clint_mmio_requests": 1,
+      "plic_mmio_requests": 6,
+      "total_mmio_requests": 47
+    },
+    "instruction_mix": {
+      "alu_instructions": 8188,
+      "load_instructions": 3352,
+      "store_instructions": 2012,
+      "amo_instructions": 42,
+      "branch_conditional": 1624,
+      "branch_taken": 1059,
+      "branch_untaken": 565,
+      "branch_taken_pct": 65.209360,
+      "jal_unconditional": 199,
+      "jalr_indirect": 365,
+      "system_instructions": 120
+    }
+  }
+}
+
+--- STDERR ---
+[PERF_TB] Firmware: 2152 bytes
+[PERF_TB] Kernel:   13182048 bytes at 0x8020_0000
+[PERF_TB] DTB:      1675 bytes at 0x8200_0000
+[PERF_TB] DRAM:     256 MiB
+[PERF_TB] Max cycl: 220000000
+[PERF_HEARTBEAT] cycle=5000000 commits=3159955 ipc=0.6320 pc=0xffffffff8022d8fc sbi=10 mtip=0 stip=0 seip=0 ptw_walks=154 ptw_cycles=888 itlb_h=3468073 dtlb_h=2247436 l1i_h=3609560 l1i_m=4775 l1i_refill=59275 l1d_h=967255 l1d_m=63286 lsu_stall=0
+[PERF_HEARTBEAT] cycle=10000000 commits=4728350 ipc=0.4728 pc=0xffffffff80226cc8 sbi=10 mtip=0 stip=0 seip=0 ptw_walks=181 ptw_cycles=1000 itlb_h=5227156 dtlb_h=6027326 l1i_h=5362184 l1i_m=11234 l1i_refill=139513 l1d_h=1469744 l1d_m=187655 lsu_stall=0
+[PERF_HEARTBEAT] cycle=15000000 commits=7806390 ipc=0.5204 pc=0xffffffff80073048 sbi=59 mtip=45 stip=45 seip=0 ptw_walks=389 ptw_cycles=2110 itlb_h=8670245 dtlb_h=7489431 l1i_h=8748873 l1i_m=79160 l1i_refill=1077660 l1d_h=2401839 l1d_m=211767 lsu_stall=0
+[PERF_HEARTBEAT] cycle=20000000 commits=10845327 ipc=0.5423 pc=0xffffffff801da57c sbi=108 mtip=95 stip=94 seip=0 ptw_walks=451 ptw_cycles=2462 itlb_h=12091014 dtlb_h=8880434 l1i_h=12107932 l1i_m=152823 l1i_refill=2110885 l1d_h=3320312 l1d_m=232397 lsu_stall=0
+[PERF_HEARTBEAT] cycle=25000000 commits=13915815 ipc=0.5566 pc=0xffffffff8005021c sbi=158 mtip=145 stip=145 seip=0 ptw_walks=477 ptw_cycles=2592 itlb_h=15541439 dtlb_h=10372015 l1i_h=15496996 l1i_m=226284 l1i_refill=3115453 l1d_h=4329182 l1d_m=252819 lsu_stall=0
+
+[PERF_TB] Completed at cycle=27323198 commits=14946915

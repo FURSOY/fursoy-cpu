@@ -78,7 +78,7 @@ struct CoreSim {
     std::unordered_map<uint64_t, uint64_t> dmem;
     bool fetch_pending = false;
     uint64_t rsp_pc = 0;
-    uint32_t rsp_insn = 0;
+    uint64_t rsp_data = 0;
     uint64_t cycles = 0;
     uint64_t commits = 0;
     bool dmem_rsp_pending = false;
@@ -92,6 +92,7 @@ struct CoreSim {
         dut.rst_i = 1;
         dut.imem_req_ready_i = 1;
         dut.imem_rsp_valid_i = 0;
+        dut.imem_rsp_data_i = 0;
         dut.imem_rsp_error_i = 0;
         dut.dmem_req_ready_i = 1;
         dut.dmem_req_error_i = 0;
@@ -119,7 +120,7 @@ struct CoreSim {
         dut.clk_i = 0;
         dut.imem_req_ready_i = 1;
         dut.imem_rsp_valid_i = fetch_pending;
-        dut.imem_rsp_insn_i = rsp_insn;
+        dut.imem_rsp_data_i = rsp_data;
         dut.imem_rsp_error_i = 0;
 
         dut.dmem_req_ready_i = 1;
@@ -166,12 +167,14 @@ struct CoreSim {
 
         bool next_pending = fetch_pending;
         uint64_t next_pc = rsp_pc;
-        uint32_t next_insn = rsp_insn;
+        uint64_t next_data = rsp_data;
 
         if (rsp_fire) next_pending = false;
         if (req_fire) {
             next_pc = dut.imem_req_addr_o;
-            next_insn = mem.count(next_pc) ? mem[next_pc] : 0x00000013;
+            uint64_t w0 = mem.count(next_pc) ? uint64_t(mem[next_pc]) : 0x00000013ULL;
+            uint64_t w1 = mem.count(next_pc + 4) ? uint64_t(mem[next_pc + 4]) : 0x00000013ULL;
+            next_data = (w1 << 32) | (w0 & 0xFFFFFFFFULL);
             next_pending = true;
         }
 
@@ -182,7 +185,7 @@ struct CoreSim {
         ++cycles;
         fetch_pending = next_pending;
         rsp_pc = next_pc;
-        rsp_insn = next_insn;
+        rsp_data = next_data;
         if (ev.commit) ++commits;
         dut.clk_i = 0;
         dut.eval();

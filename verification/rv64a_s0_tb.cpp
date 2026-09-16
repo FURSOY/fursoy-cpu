@@ -127,7 +127,7 @@ struct CoreSim {
     std::unordered_map<uint64_t, uint8_t> dmem_bytes;
     bool fetch_pending = false;
     uint64_t rsp_pc = 0;
-    uint32_t rsp_insn = 0;
+    uint64_t rsp_data = 0;
     uint64_t cycles = 0;
     uint64_t commits = 0;
     bool dmem_rsp_pending = false;
@@ -140,21 +140,55 @@ struct CoreSim {
     bool inject_dmem_rsp_error = false;
     bool defer_dmem_req_ready = false;
 
-    uint64_t read_dmem(uint64_t addr, unsigned size) {
-        uint64_t val = 0;
+    uint64_t read_raw_dmem(uint64_t addr, unsigned size) {
         unsigned bytes = 1 << size;
+        uint64_t val = 0;
         for (unsigned i = 0; i < bytes; ++i) {
-            if (dmem_bytes.count(addr + i)) {
-                val |= (uint64_t(dmem_bytes[addr + i]) << (8 * i));
-            }
+            uint64_t b = dmem_bytes.count(addr + i) ? dmem_bytes[addr + i] : 0;
+            val |= (b << (8 * i));
         }
         return val;
     }
 
-    void write_dmem(uint64_t addr, unsigned size, uint64_t data) {
+    uint64_t read_dmem(uint64_t addr, unsigned size) {
+        uint64_t aligned_pa = addr & ~7ULL;
+        uint32_t set = (aligned_pa >> 6) & 0x3f;
+        uint64_t tag = aligned_pa >> 12;
+        for (int w = 0; w < 4; w++) {
+            if (dut.rootp->fursoy_s0_core__DOT__l1d__DOT__valid_q[set][w] &&
+                dut.rootp->fursoy_s0_core__DOT__l1d__DOT__tag_q[set][w] == tag) {
+                uint64_t dword = dut.rootp->fursoy_s0_core__DOT__l1d__DOT__data_q[set][w][(aligned_pa >> 3) & 7];
+                unsigned shift = (addr & 7) * 8;
+                unsigned bytes = 1 << size;
+                uint64_t mask = (bytes == 8) ? ~0ULL : ((1ULL << (bytes * 8)) - 1ULL);
+                return (dword >> shift) & mask;
+            }
+        }
+        return read_raw_dmem(addr, size);
+    }
+
+    void write_raw_dmem(uint64_t addr, unsigned size, uint64_t data) {
         unsigned bytes = 1 << size;
         for (unsigned i = 0; i < bytes; ++i) {
             dmem_bytes[addr + i] = uint8_t((data >> (8 * i)) & 0xff);
+        }
+    }
+
+    void write_dmem(uint64_t addr, unsigned size, uint64_t data) {
+        write_raw_dmem(addr, size, data);
+        uint64_t aligned_pa = addr & ~7ULL;
+        uint32_t set = (aligned_pa >> 6) & 0x3f;
+        uint64_t tag = aligned_pa >> 12;
+        for (int w = 0; w < 4; w++) {
+            if (dut.rootp->fursoy_s0_core__DOT__l1d__DOT__valid_q[set][w] &&
+                dut.rootp->fursoy_s0_core__DOT__l1d__DOT__tag_q[set][w] == tag) {
+                uint64_t cur = dut.rootp->fursoy_s0_core__DOT__l1d__DOT__data_q[set][w][(aligned_pa >> 3) & 7];
+                for (unsigned i = 0; i < (1U << size); ++i) {
+                    unsigned shift = ((addr + i) & 7) * 8;
+                    cur = (cur & ~(0xffULL << shift)) | (uint64_t((data >> (8 * i)) & 0xff) << shift);
+                }
+                dut.rootp->fursoy_s0_core__DOT__l1d__DOT__data_q[set][w][(aligned_pa >> 3) & 7] = cur;
+            }
         }
     }
 
@@ -163,7 +197,7 @@ struct CoreSim {
         dut.rst_i = 1;
         dut.imem_req_ready_i = 1;
         dut.imem_rsp_valid_i = 0;
-        dut.imem_rsp_insn_i = 0;
+        dut.imem_rsp_data_i = 0;
         dut.imem_rsp_error_i = 0;
         dut.dmem_req_ready_i = 1;
         dut.dmem_req_error_i = 0;
@@ -197,7 +231,7 @@ struct CoreSim {
         dut.clk_i = 0;
         dut.imem_req_ready_i = 1;
         dut.imem_rsp_valid_i = fetch_pending;
-        dut.imem_rsp_insn_i = rsp_insn;
+        dut.imem_rsp_data_i = rsp_data;
         dut.imem_rsp_error_i = 0;
 
         dut.dmem_req_ready_i = defer_dmem_req_ready ? 0 : 1;
@@ -217,6 +251,22 @@ struct CoreSim {
         ev.rd_data = dut.commit_rd_data_o;
         ev.priv_mode = dut.priv_mode_o;
 
+        if (ev.commit) {
+            uint32_t op = ev.insn & 0x7f;
+            uint32_t funct5 = (ev.insn >> 27) & 0x1f;
+            if (op == 0x23) { // STORE
+                ++physical_stores;
+            } else if (op == 0x2f) { // AMO / LR / SC
+                if (funct5 == 0x03) { // SC
+                    if (ev.rd_data == 0) { // SC success
+                        ++physical_stores;
+                    }
+                } else if (funct5 != 0x02) { // AMO (not LR)
+                    ++physical_stores;
+                }
+            }
+        }
+
         bool rsp_fire = fetch_pending && dut.imem_rsp_ready_o;
         bool req_fire = dut.imem_req_valid_o && dut.imem_req_ready_i;
 
@@ -233,24 +283,25 @@ struct CoreSim {
                 ++ptw_requests;
             }
             if (dut.dmem_req_store_o) {
-                ++physical_stores;
                 last_dmem_store_addr = dut.dmem_req_addr_o;
                 last_dmem_store_data = dut.dmem_req_store_data_o;
-                write_dmem(dut.dmem_req_addr_o, dut.dmem_req_size_o, dut.dmem_req_store_data_o);
+                write_raw_dmem(dut.dmem_req_addr_o, dut.dmem_req_size_o, dut.dmem_req_store_data_o);
             } else {
-                dmem_rsp_data = read_dmem(dut.dmem_req_addr_o, dut.dmem_req_size_o);
+                dmem_rsp_data = read_raw_dmem(dut.dmem_req_addr_o, dut.dmem_req_size_o);
                 dmem_rsp_pending = true;
             }
         }
 
         bool next_pending = fetch_pending;
         uint64_t next_pc = rsp_pc;
-        uint32_t next_insn = rsp_insn;
+        uint64_t next_data = rsp_data;
 
         if (rsp_fire) next_pending = false;
         if (req_fire) {
             next_pc = dut.imem_req_addr_o;
-            next_insn = imem.count(next_pc) ? imem[next_pc] : 0x00000013;
+            uint64_t w0 = imem.count(next_pc) ? uint64_t(imem[next_pc]) : 0x00000013ULL;
+            uint64_t w1 = imem.count(next_pc + 4) ? uint64_t(imem[next_pc + 4]) : 0x00000013ULL;
+            next_data = (w1 << 32) | (w0 & 0xFFFFFFFFULL);
             next_pending = true;
         }
 
@@ -261,7 +312,7 @@ struct CoreSim {
         ++cycles;
         fetch_pending = next_pending;
         rsp_pc = next_pc;
-        rsp_insn = next_insn;
+        rsp_data = next_data;
 
         if (ev.commit) ++commits;
         dut.clk_i = 0;
@@ -551,17 +602,17 @@ int main(int argc, char** argv) {
             ++scenarios;
         }
 
-        // A-LRSC-11: LR.W followed by normal store SW to different address, then SC.W (conservative invalidation)
+        // A-LRSC-11: LR.W followed by normal store SW to different address in same granule, then SC.W (granule invalidation)
         {
             CoreSim s; s.reset();
             uint64_t addr1 = B + 0x400;
-            uint64_t addr2 = B + 0x600;
+            uint64_t addr2 = B + 0x404;
             s.write_dmem(addr1, 2, 0x1234);
             s.write_dmem(addr2, 2, 0x5678);
             uint64_t pc = B;
             s.imem[pc] = auipc(10); pc += 4;
             s.imem[pc] = addi(10, 10, 0x400); pc += 4;
-            s.imem[pc] = addi(12, 10, 0x200); pc += 4; // x12 = addr2
+            s.imem[pc] = addi(12, 10, 0x004); pc += 4; // x12 = addr2 (different word in same 64B granule)
             s.imem[pc] = addi(8, 0, 0x77); pc += 4;
             s.imem[pc] = addi(7, 0, 0x88); pc += 4;
             s.imem[pc] = lr_w(5, 10); pc += 4;

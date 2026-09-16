@@ -31,7 +31,7 @@ DTS_SOURCES = [
 ]
 
 RTL = [
-    ROOT / "rtl/core/fursoy_s0_fetch.sv",
+    ROOT / "rtl/core/fursoy_s0_l1i.sv",
     ROOT / "rtl/core/fursoy_s0_int_alu.sv",
     ROOT / "rtl/core/fursoy_s0_control.sv",
     ROOT / "rtl/core/fursoy_s0_lsu_decode.sv",
@@ -39,6 +39,8 @@ RTL = [
     ROOT / "rtl/core/fursoy_s0_csr.sv",
     ROOT / "rtl/core/fursoy_s0_pmp_check.sv",
     ROOT / "rtl/core/fursoy_s0_pmp.sv",
+    ROOT / "rtl/core/fursoy_s0_tlb.sv",
+    ROOT / "rtl/core/fursoy_s0_l1d.sv",
     ROOT / "rtl/core/fursoy_s0_mmu.sv",
     ROOT / "rtl/core/fursoy_s0_core.sv",
     ROOT / "rtl/platform/fursoy_s0_clint.sv",
