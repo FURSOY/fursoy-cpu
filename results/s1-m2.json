@@ -1,0 +1,59 @@
+{
+  "suite": "fursoy_s1_m2_backend",
+  "milestone": "Milestone 2 \u2014 Integer Out-of-Order Execution Backend (IntIQ + PRF + Port0 + Port1 + Lossless WB)",
+  "evidence_type": "directed_unit_and_randomized_adversarial_stress_with_invariant_checking",
+  "directed_tests": 35,
+  "stress_operations": 50000,
+  "status": "pass",
+  "observed_at_utc": "2026-09-18T21:39:43.266260+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s1_pkg.sv": "c86691196619b1fa5a2629bb82650bcaef2c59d3291db8c0537dff9aa1c84554",
+    "rtl/core/fursoy_s1_freelist.sv": "c6939130b8073d7c51e87a7ba7baa0cebd04a272ae386c590e00edf1069f4022",
+    "rtl/core/fursoy_s1_rat.sv": "f036405ed3ffa2f399e941a89fbf240a821489c73b70b1f579a11091b1874aa6",
+    "rtl/core/fursoy_s1_prf_status.sv": "b9738d1971389782ef19da1eafc2ce1cd4060767c8c4a351c49a6485771c9a8f",
+    "rtl/core/fursoy_s1_rob.sv": "ce26ce4c36b1a2aa16d5bc291be8b8dd00f3889364194604928143fcd9a2e347",
+    "rtl/core/fursoy_s1_substrate.sv": "b93be2cb28bb579e312902d81182b5868a30486ba17ecdf3afb686b46cc800f3",
+    "rtl/core/fursoy_s1_prf.sv": "c9ce1381fb5348703e682ab43e0a9c3107f9866ce3125706203f85e5668c969f",
+    "rtl/core/fursoy_s1_alu.sv": "49f7caa0b30c3b6490822bcfe37da283eb622e771c07b932bd7b7ac94f4cae3f",
+    "rtl/core/fursoy_s1_branch_unit.sv": "733112f7c6fb15ba914749337f26a01aa2b07ac5c5514ffbebb696569a246808",
+    "rtl/core/fursoy_s1_multiplier.sv": "485585277b8863b50cf00b73b9265317d40fddd9f611a5fb7b8d17ffa4ca89b7",
+    "rtl/core/fursoy_s1_divider.sv": "b7344da42fa2c42b3231842e2878cb1603434024bb8f2d86d3c182e71808d58b",
+    "rtl/core/fursoy_s1_port1_buffers.sv": "09ea5284855ce5675aa0f7aff8c72079d979f8a796f20280aebcf411f2f62132",
+    "rtl/core/fursoy_s1_int_iq.sv": "987b07ccd57c40d8d7a23268b104383af6145956140549e2f0ba31266662e659",
+    "rtl/core/fursoy_s1_backend.sv": "635e92dde7410b2a5eb62b44b2e65c8a5c14a136b4ae4d934377b5ee9eff7422",
+    "rtl/core/fursoy_s1_core.sv": "21964eac65bb5d357b9512b157da206059b7566c145ed3884539e99dc8833c75",
+    "verification/s1_m2_tb.cpp": "82c2619fb5c7bec2f34b93447f5a7a5c1fffc208bf44e521faae143c1d1bc96a",
+    "tools/run_s1_m2.py": "ef2b95723cd3fcc8bd2cfe60702c2bc7ddfe30ae4682d6e693fed9e83d24bb2e"
+  },
+  "verilator_version": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+  "g++_version": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "build": {
+    "command": [
+      "verilator",
+      "--cc",
+      "--exe",
+      "--build",
+      "--assert",
+      "-Wall",
+      "-O3",
+      "-j",
+      "4",
+      "--top-module",
+      "fursoy_s1_core",
+      "-Irtl/core",
+      "--Mdir",
+      "/mnt/c/Projeler/fursoy-cpu/build/s1_m2",
+      "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s1_core.sv",
+      "/mnt/c/Projeler/fursoy-cpu/verification/s1_m2_tb.cpp"
+    ],
+    "exit_code": 0,
+    "duration_sec": 0.37,
+    "log": "build/s1_m2/build.log"
+  },
+  "simulation": {
+    "exit_code": 0,
+    "duration_sec": 1.06,
+    "stdout": "===============================================================\n Fursoy Slice-1 Milestone 2 Backend Directed Verification Suite\n===============================================================\nTesting exhaustive 48x48 modulo-48 ROB distance (2304 combinations)...\n[PASS] Exhaustive ROB distance (2304 combinations + edge vectors) verified.\nTesting frozen wakeup/select pipeline timing (registered readiness)...\n[PASS] Frozen wakeup/select pipeline timing verified: dependent consumer cannot issue in producer WB cycle (C3) and issues on following cycle (C4).\n[PASS] Test 01: Basic ALU arithmetic verified.\n[PASS] Test 02: Word-sized ALU sign extension verified.\n[PASS] Test 03: Bitmanip ALU (Zba & Zbb) verified.\n[PASS] Test 04: RAW dependency chains verified.\n[PASS] Test 05: WAW independence verified.\n[PASS] Test 06: Dual-ALU simultaneous issue verified.\n[PASS] Test 07: Port-aware flexible ALU + branch matching (P2-1) verified.\n[PASS] Test 08: Port conflict serialization verified.\n[PASS] Test 09: Branch condition true & link register verified.\n[PASS] Test 10: Branch condition false verified.\n[PASS] Test 11: Branch synthetic prediction match verified.\n[PASS] Test 12: Branch prediction mispredict recovery verified.\n[PASS] Test 13: Lifetime-gated branch recovery (P1-3) verified.\n[PASS] Test 14: Branch recovery across ROB wrap (P2-2) verified.\n[PASS] Test 15: Multiplier basic operations verified.\n[PASS] Test 16: MULHSU signed x unsigned boundary vectors verified.\n[PASS] Test 17: Multiplier pipeline concurrency (K=3) verified.\n[PASS] Test 18: Divider basic operations verified.\n[PASS] Test 19: Divider zero quotient & remainder verified.\n[PASS] Test 20: Divider division by zero verified.\n[PASS] Test 21: DIVUW / REMUW sign-extension vectors (P1-4) verified.\n[PASS] Test 22: Divider signed overflow verified.\n[PASS] Test 23: Divider busy backpressure verified.\n[PASS] Test 24: Sustained multiplier completion pressure (P0-2) verified.\n[PASS] Test 25: Simultaneous tri-unit collision (DIV + MUL + ALU1) verified.\n[PASS] Test 26: Port 1 completion buffer credit saturation verified.\n[PASS] Test 27: Branch misprediction flush of IntIQ verified.\n[PASS] Test 28: Branch misprediction flush of active multiply verified.\n[PASS] Test 29: Branch misprediction active divide cancel verified.\n[PASS] Test 30: Stale completion PRF data immunity (P0-1) verified.\n[PASS] Test 31: Stale completion bypass / wakeup immunity (P0-1) verified.\n[PASS] Test 32: PRF p0 read/write immunity verified.\n[PASS] Test 33: IntIQ allocation handshake & partial acceptance (P2-3) verified.\n[PASS] Test 34: Simultaneous flush + WB / recovery + WB verified.\n[PASS] Test 35: Same-cycle IntIQ issue + two allocations verified.\n\nAll 35 Directed Tests Passed Successfully!\n\nStarting randomized adversarial stress test: seed=42, target=25000 operations...\n  Progress: 20000 / 25000 ops accepted (cycle 34302, comparisons: 6959)\n[PASS] Randomized adversarial stress test (seed 42):\n  Start cycle:               1352\n  End cycle:                 42286\n  Delta cycles:              40934\n  Operations accepted:       25000\n  Functional comparisons:    8752\n  RefModel eval_alu calls:   11183\n  RefModel eval_mul calls:   2709\n  RefModel eval_div calls:   2746\n  RefModel eval_branch calls:8362\nStarting randomized adversarial stress test: seed=20260918, target=25000 operations...\n  Progress: 20000 / 25000 ops accepted (cycle 74353, comparisons: 15334)\n[PASS] Randomized adversarial stress test (seed 20260918):\n  Start cycle:               42297\n  End cycle:                 83312\n  Delta cycles:              41015\n  Operations accepted:       25000\n  Functional comparisons:    8342\n  RefModel eval_alu calls:   22382\n  RefModel eval_mul calls:   5437\n  RefModel eval_div calls:   5668\n  RefModel eval_branch calls:16513\n===============================================================\n VERIFICATION RESULT: ALL TESTS PASSED\n Total accumulated cycles:     83312\n Total functional comparisons: 17094\n===============================================================\n",
+    "stderr": ""
+  }
+}

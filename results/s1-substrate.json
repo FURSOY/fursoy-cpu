@@ -1,0 +1,50 @@
+{
+  "suite": "fursoy_s1_substrate",
+  "milestone": "Milestone 1 \u2014 Rename + PRF Metadata + Free List + ROB + Recovery Substrate",
+  "evidence_type": "directed_unit_and_randomized_adversarial_stress_with_invariant_checking",
+  "directed_tests": 28,
+  "stress_operations": 50000,
+  "status": "pass",
+  "observed_at_utc": "2026-09-18T21:39:48.064665+00:00",
+  "source_sha256": {
+    "rtl/core/fursoy_s1_pkg.sv": "c86691196619b1fa5a2629bb82650bcaef2c59d3291db8c0537dff9aa1c84554",
+    "rtl/core/fursoy_s1_freelist.sv": "c6939130b8073d7c51e87a7ba7baa0cebd04a272ae386c590e00edf1069f4022",
+    "rtl/core/fursoy_s1_rat.sv": "f036405ed3ffa2f399e941a89fbf240a821489c73b70b1f579a11091b1874aa6",
+    "rtl/core/fursoy_s1_prf_status.sv": "b9738d1971389782ef19da1eafc2ce1cd4060767c8c4a351c49a6485771c9a8f",
+    "rtl/core/fursoy_s1_rob.sv": "ce26ce4c36b1a2aa16d5bc291be8b8dd00f3889364194604928143fcd9a2e347",
+    "rtl/core/fursoy_s1_substrate.sv": "b93be2cb28bb579e312902d81182b5868a30486ba17ecdf3afb686b46cc800f3",
+    "verification/s1_substrate_tb.cpp": "404579f7cadefce2a0ed490540e1d9137fb1007bdfe05b05c4ec534529916bba",
+    "tools/run_s1_substrate.py": "ed3342c67fb2c114988d686a193ef8545c08a653c7750918ac3e247abe3b7e7c"
+  },
+  "verilator_version": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+  "g++_version": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "build": {
+    "command": [
+      "verilator",
+      "--cc",
+      "--exe",
+      "--build",
+      "--assert",
+      "-Wall",
+      "-O3",
+      "-j",
+      "4",
+      "--top-module",
+      "fursoy_s1_substrate",
+      "-Irtl/core",
+      "--Mdir",
+      "/mnt/c/Projeler/fursoy-cpu/build/s1_substrate",
+      "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s1_substrate.sv",
+      "/mnt/c/Projeler/fursoy-cpu/verification/s1_substrate_tb.cpp"
+    ],
+    "exit_code": 0,
+    "duration_sec": 0.31,
+    "log": "build/s1_substrate/build.log"
+  },
+  "simulation": {
+    "exit_code": 0,
+    "duration_sec": 0.64,
+    "stdout": "===============================================================\n Fursoy Slice-1 Architectural Substrate Verification \u2014 M1\n===============================================================\n[PASS] Test 01: Reset mapping and initial Free List verified.\n[PASS] Test 02: Single rename verified.\n[PASS] Test 03: Two-wide rename verified.\n[PASS] Test 04: Same-group RAW dependency handling verified.\n[PASS] Test 05: Same-group WAW handling and sequential retirement verified.\n[PASS] Test 06: rd=x0 destination suppression verified.\n[PASS] Test 07: Free List near-empty and exhaustion backpressure verified.\n[PASS] Test 08: ROB full backpressure verified.\n[PASS] Test 09: ROB pointer wraparound multiple times verified.\n[PASS] Test 10: Simultaneous 2-wide allocate + 2-wide retire verified.\n[PASS] Test 11: Retirement Pold reclamation verified.\n[PASS] Test 12: Long WAW chain allocation and retirement verified.\n[PASS] Test 13: Branch checkpoint creation verified.\n[PASS] Test 14: Checkpoint exhaustion stall verified.\n[PASS] Test 15: Simple branch squash and Pnew reclamation verified.\n[PASS] Test 16: Branch squash of 10 younger destinations verified.\n[PASS] Test 17: Branch squash across ROB wrap verified.\n[PASS] Test 18: Older retirement concurrent with branch recovery verified.\n[PASS] Test 19: Nested unresolved branches verified.\n[PASS] Test 20: Squash of younger branch checkpoints verified.\n[PASS] Test 21: Back-to-back recovery requests verified.\n[PASS] Test 22: Full architectural flush verified.\n[PASS] Test 23: Full flush after WAW chains verified.\n[PASS] Test 24: Full flush with nearly exhausted Free List verified.\n[PASS] Test 25: Interrupt-style flush overriding active recovery verified.\n[PASS] Test 26: No duplicate physical register over thousands of operations verified.\n[PASS] Test 27: Stale completion rejection after squash & slot reuse verified.\n[PASS] Test 28: Stale exception and stale branch-mispredict completion rejection verified.\n\nAll 28 Directed Tests Passed Successfully!\n\nStarting randomized adversarial stress test: seed=42, target=25000 operations...\n  Progress: 10000 / 25000 ops accepted (cycle 13333)\n[PASS] Randomized adversarial stress test passed: 25000 operations in 33094 cycles (seed 42).\nStarting randomized adversarial stress test: seed=20260918, target=25000 operations...\n  Progress: 10000 / 25000 ops accepted (cycle 12840)\n  Progress: 20000 / 25000 ops accepted (cycle 25031)\n[PASS] Randomized adversarial stress test passed: 25001 operations in 31362 cycles (seed 20260918).\n\n===============================================================\n VERIFICATION RESULT: ALL TESTS PASSED\n Total cycles simulated: 68091\n===============================================================\n",
+    "stderr": ""
+  }
+}
