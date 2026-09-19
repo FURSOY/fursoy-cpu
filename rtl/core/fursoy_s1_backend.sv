@@ -13,7 +13,7 @@
 // - Provably lossless Port 1 completion buffers (div_buf, mul_fifo, alu1_fifo).
 // - Validated writeback gating & lifetime-gated branch recovery.
 // Reference: docs/architecture/slice1-m2-backend-v1.md
-// =============================================================================
+`include "fursoy_s1_lsu.sv"
 
 module fursoy_s1_backend
     import fursoy_s1_pkg::*;
@@ -108,13 +108,53 @@ module fursoy_s1_backend
     output logic [15:0]       diag_prs2_rdy_o,
     output rob_idx_t          diag_rob_idx_o [16],
 
-    // Testbench Injection Port on Port 0 WB (for Directed Stale Completion Verification)
     input  logic              test_inject_valid_i,
     input  logic [63:0]       test_inject_data_i,
     input  preg_t             test_inject_pnew_i,
     input  rob_idx_t          test_inject_rob_idx_i,
     input  rob_epoch_t        test_inject_rob_epoch_i,
-    input  logic              test_inject_mispredict_i
+    input  logic              test_inject_mispredict_i,
+
+    // In-Order Store Retirement Handshake at ROB Head (from Substrate / M1)
+    input  logic [1:0]        retire_valid_i,
+    input  preg_t             retire_pnew_i         [1:0],
+    input  logic [63:0]       retire_pc_i           [1:0],
+    input  rob_idx_t          retire_rob_idx_i      [1:0],
+    input  rob_epoch_t        retire_epoch_i        [1:0],
+
+    // -------------------------------------------------------------------------
+    // External Memory Interconnect & Translation Interface (M3)
+    // -------------------------------------------------------------------------
+    // Read Channel (MSHR Refills)
+    output logic              bus_rd_req_valid_o,
+    output logic [49:0]       bus_rd_req_addr_o,
+    output mshr_idx_t         bus_rd_req_tag_o,
+    input  logic              bus_rd_req_ready_i,
+
+    input  logic              bus_rd_rsp_valid_i,
+    input  mshr_idx_t         bus_rd_rsp_tag_i,
+    input  logic [511:0]      bus_rd_rsp_data_i,
+
+    // Write Channel (WBB Dirty Evictions)
+    output logic              bus_wr_req_valid_o,
+    output logic [49:0]       bus_wr_req_addr_o,
+    output logic [511:0]      bus_wr_req_data_o,
+    input  logic              bus_wr_req_ready_i,
+
+    input  logic              bus_wr_rsp_valid_i,
+
+    // DTLB / PTW Interface
+    output logic              ptw_req_valid_o,
+    output tr_id_t            ptw_req_tr_id_o,
+    output logic [26:0]       ptw_req_vpn_o,
+    output logic [1:0]        ptw_req_access_type_o,
+    input  logic              ptw_req_ready_i,
+
+    input  logic              ptw_rsp_valid_i,
+    input  tr_id_t            ptw_rsp_tr_id_i,
+    input  logic [55:0]       ptw_rsp_pa_i,
+    input  logic              ptw_rsp_page_fault_i,
+    input  logic              ptw_rsp_access_fault_i
 );
 
     // -------------------------------------------------------------------------
@@ -162,6 +202,40 @@ module fursoy_s1_backend
     chkpt_idx_t  internal_recover_chkpt_id;
     /* verilator lint_on UNUSEDSIGNAL */
 
+    // IntIQ and MemIQ dispatch readiness
+    logic [1:0] int_dispatch_ready;
+    logic [1:0] mem_dispatch_ready;
+
+    // PRF Port 4 & 5 read wires for LSU
+    preg_t      r4_paddr, r5_paddr;
+    logic [63:0] r4_data,  r5_data;
+
+    // Port 2 LSU Completion wires
+    logic        p2_comp_valid;
+    rob_idx_t    p2_comp_rob_idx;
+    rob_epoch_t  p2_comp_epoch;
+    preg_t       p2_comp_preg;
+    logic        p2_comp_exception;
+    logic [4:0]  p2_comp_cause;
+    logic [63:0] p2_wb_data;
+
+    // Dispatch Interface Readiness Combiner
+    wire uop0_is_mem = (uop0_class_i == UOP_LOAD) || (uop0_class_i == UOP_STORE) ||
+                       (uop0_class_i == UOP_AMO)  || (uop0_class_i == UOP_FENCE);
+    wire uop1_is_mem = (uop1_class_i == UOP_LOAD) || (uop1_class_i == UOP_STORE) ||
+                       (uop1_class_i == UOP_AMO)  || (uop1_class_i == UOP_FENCE);
+
+    always_comb begin
+        dispatch_ready_o[0] = uop0_is_mem ? mem_dispatch_ready[0] : int_dispatch_ready[0];
+
+        if (uop1_is_mem) begin
+            dispatch_ready_o[1] = mem_dispatch_ready[1];
+        end else begin
+            // uop1 is INT: if uop0 is MEM, uop1 is local INT #0, else local INT #1
+            dispatch_ready_o[1] = uop0_is_mem ? int_dispatch_ready[0] : int_dispatch_ready[1];
+        end
+    end
+
     // -------------------------------------------------------------------------
     // 1. Integer Issue Queue (IntIQ)
     // -------------------------------------------------------------------------
@@ -173,7 +247,7 @@ module fursoy_s1_backend
         .recover_rob_idx_i  (internal_recover_rob_idx),
         .rob_head_i         (rob_head_i),
 
-        .dispatch_ready_o   (dispatch_ready_o),
+        .dispatch_ready_o   (int_dispatch_ready),
         .rename_ack_i       (rename_ack_i),
 
         .uop0_valid_i       (uop0_valid_i),
@@ -223,6 +297,11 @@ module fursoy_s1_backend
         .wb1_valid_i        (p1_wb_valid),
         .wb1_comp_ack_i     (comp_ack_i[1]),
         .wb1_pnew_i         (p1_wb_pnew),
+
+        .wb2_valid_i        (p2_comp_valid),
+        .wb2_comp_ack_i     (comp_ack_i[2]),
+        .wb2_comp_exception_i (p2_comp_exception),
+        .wb2_pnew_i         (p2_comp_preg),
 
         .can_issue_mul_i    (can_issue_mul),
         .can_issue_alu1_i   (can_issue_alu1),
@@ -319,6 +398,17 @@ module fursoy_s1_backend
         .w1_paddr_i     (p1_wb_pnew),
         .w1_data_i      (p1_wb_data),
 
+        .r4_paddr_i     (r4_paddr),
+        .r4_data_o      (r4_data),
+        .r5_paddr_i     (r5_paddr),
+        .r5_data_o      (r5_data),
+
+        .w2_valid_i     (p2_comp_valid),
+        .w2_comp_ack_i  (comp_ack_i[2]),
+        .w2_comp_exception_i (p2_comp_exception),
+        .w2_paddr_i     (p2_comp_preg),
+        .w2_data_i      (p2_wb_data),
+
         .probe_paddr_i  (probe_paddr_i),
         .probe_pdata_o  (probe_pdata_o)
     );
@@ -336,10 +426,17 @@ module fursoy_s1_backend
         input logic        wb1_v,
         input logic        wb1_ack,
         input preg_t       wb1_p,
-        input logic [63:0] wb1_d
+        input logic [63:0] wb1_d,
+        input logic        wb2_v,
+        input logic        wb2_ack,
+        input logic        wb2_exc,
+        input preg_t       wb2_p,
+        input logic [63:0] wb2_d
     );
         if (prs == 7'd0) begin
             return 64'd0;
+        end else if (wb2_v && wb2_ack && !wb2_exc && (wb2_p == prs)) begin
+            return wb2_d;
         end else if (wb1_v && wb1_ack && (wb1_p == prs)) begin
             return wb1_d;
         end else if (wb0_v && wb0_ack && (wb0_p == prs)) begin
@@ -355,12 +452,12 @@ module fursoy_s1_backend
         if ((rf0_uop_q.uop_class == UOP_ALU_INT) && (rf0_uop_q.sub_op == ALU_AUIPC)) begin
             p0_op_a = rf0_uop_q.pc;
         end else begin
-            p0_op_a = get_operand(rf0_uop_q.prs1, r0_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data);
+            p0_op_a = get_operand(rf0_uop_q.prs1, r0_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
         end
         if (rf0_uop_q.use_imm && (rf0_uop_q.uop_class != UOP_BRANCH)) begin
             p0_op_b = rf0_uop_q.imm;
         end else begin
-            p0_op_b = get_operand(rf0_uop_q.prs2, r1_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data);
+            p0_op_b = get_operand(rf0_uop_q.prs2, r1_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
         end
     end
 
@@ -370,12 +467,12 @@ module fursoy_s1_backend
         if ((rf1_uop_q.uop_class == UOP_ALU_INT) && (rf1_uop_q.sub_op == ALU_AUIPC)) begin
             p1_op_a = rf1_uop_q.pc;
         end else begin
-            p1_op_a = get_operand(rf1_uop_q.prs1, r2_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data);
+            p1_op_a = get_operand(rf1_uop_q.prs1, r2_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
         end
         if (rf1_uop_q.use_imm) begin
             p1_op_b = rf1_uop_q.imm;
         end else begin
-            p1_op_b = get_operand(rf1_uop_q.prs2, r3_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data);
+            p1_op_b = get_operand(rf1_uop_q.prs2, r3_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
         end
     end
 
@@ -616,6 +713,108 @@ module fursoy_s1_backend
     );
 
     // -------------------------------------------------------------------------
+    // 5. Load/Store Unit (LSU) Subsystem — Milestone 3
+    // -------------------------------------------------------------------------
+    fursoy_s1_lsu u_lsu (
+        .clk_i                   (clk_i),
+        .rst_i                   (rst_i),
+        .flush_valid_i           (flush_valid_i),
+        .recover_valid_i         (internal_recover_valid),
+        .recover_rob_idx_i       (internal_recover_rob_idx),
+        .rob_head_i              (rob_head_i),
+
+        .mem_dispatch_ready_o    (mem_dispatch_ready),
+        .rename_ack_i            (rename_ack_i),
+
+        .uop0_valid_i            (uop0_valid_i),
+        .uop0_class_i            (uop0_class_i),
+        .uop0_subop_i            (uop0_subop_i),
+        .uop0_imm_i              (uop0_imm_i),
+        .uop0_prs1_i             (uop0_prs1_i),
+        .uop0_prs1_ready_i       (uop0_prs1_ready_i),
+        .uop0_prs2_i             (uop0_prs2_i),
+        .uop0_prs2_ready_i       (uop0_prs2_ready_i),
+        .uop0_pnew_i             (uop0_pnew_i),
+        .uop0_rob_idx_i          (uop0_rob_idx_i),
+        .uop0_rob_epoch_i        (uop0_rob_epoch_i),
+        .uop0_pc_i               (uop0_pc_i),
+
+        .uop1_valid_i            (uop1_valid_i),
+        .uop1_class_i            (uop1_class_i),
+        .uop1_subop_i            (uop1_subop_i),
+        .uop1_imm_i              (uop1_imm_i),
+        .uop1_prs1_i             (uop1_prs1_i),
+        .uop1_prs1_ready_i       (uop1_prs1_ready_i),
+        .uop1_prs2_i             (uop1_prs2_i),
+        .uop1_prs2_ready_i       (uop1_prs2_ready_i),
+        .uop1_pnew_i             (uop1_pnew_i),
+        .uop1_rob_idx_i          (uop1_rob_idx_i),
+        .uop1_rob_epoch_i        (uop1_rob_epoch_i),
+        .uop1_pc_i               (uop1_pc_i),
+
+        .r4_paddr_o              (r4_paddr),
+        .r4_data_i               (r4_data),
+        .r5_paddr_o              (r5_paddr),
+        .r5_data_i               (r5_data),
+
+        .wb0_valid_i             (p0_wb_valid),
+        .wb0_comp_ack_i          (comp_ack_i[0]),
+        .wb0_pnew_i              (p0_wb_pnew),
+        .wb0_data_i              (p0_wb_data),
+
+        .wb1_valid_i             (p1_wb_valid),
+        .wb1_comp_ack_i          (comp_ack_i[1]),
+        .wb1_pnew_i              (p1_wb_pnew),
+        .wb1_data_i              (p1_wb_data),
+
+        .wb2_valid_i             (p2_comp_valid),
+        .wb2_comp_ack_i          (comp_ack_i[2]),
+        .wb2_comp_exception_i    (p2_comp_exception),
+        .wb2_pnew_i              (p2_comp_preg),
+        .wb2_data_i              (p2_wb_data),
+
+        .retire_valid_i          (retire_valid_i),
+        .retire_pnew_i           (retire_pnew_i),
+        .retire_pc_i             (retire_pc_i),
+        .retire_rob_idx_i        (retire_rob_idx_i),
+        .retire_epoch_i          (retire_epoch_i),
+
+        .p2_comp_valid_o         (p2_comp_valid),
+        .p2_comp_rob_idx_o       (p2_comp_rob_idx),
+        .p2_comp_epoch_o         (p2_comp_epoch),
+        .p2_comp_preg_o          (p2_comp_preg),
+        .p2_comp_exception_o     (p2_comp_exception),
+        .p2_comp_cause_o         (p2_comp_cause),
+        .p2_wb_data_o            (p2_wb_data),
+        .p2_comp_ack_i           (comp_ack_i[2]),
+
+        .bus_rd_req_valid_o      (bus_rd_req_valid_o),
+        .bus_rd_req_addr_o       (bus_rd_req_addr_o),
+        .bus_rd_req_tag_o        (bus_rd_req_tag_o),
+        .bus_rd_req_ready_i      (bus_rd_req_ready_i),
+        .bus_rd_rsp_valid_i      (bus_rd_rsp_valid_i),
+        .bus_rd_rsp_tag_i        (bus_rd_rsp_tag_i),
+        .bus_rd_rsp_data_i       (bus_rd_rsp_data_i),
+
+        .bus_wr_req_valid_o      (bus_wr_req_valid_o),
+        .bus_wr_req_addr_o       (bus_wr_req_addr_o),
+        .bus_wr_req_data_o       (bus_wr_req_data_o),
+        .bus_wr_req_ready_i      (bus_wr_req_ready_i),
+        .bus_wr_rsp_valid_i      (bus_wr_rsp_valid_i),
+
+        .ptw_req_valid_o         (ptw_req_valid_o),
+        .ptw_req_tr_id_o         (ptw_req_tr_id_o),
+        .ptw_req_vpn_o           (ptw_req_vpn_o),
+        .ptw_req_access_type_o   (ptw_req_access_type_o),
+        .ptw_req_ready_i         (ptw_req_ready_i),
+        .ptw_rsp_valid_i         (ptw_rsp_valid_i),
+        .ptw_rsp_tr_id_i         (ptw_rsp_tr_id_i),
+        .ptw_rsp_pa_i            (ptw_rsp_pa_i),
+        .ptw_rsp_page_fault_i    (ptw_rsp_page_fault_i),
+        .ptw_rsp_access_fault_i  (ptw_rsp_access_fault_i)
+    );
+
+    // -------------------------------------------------------------------------
     // 6. Upstream Completion Interface (to M1 Substrate)
     // -------------------------------------------------------------------------
     assign comp_valid_o[0]          = p0_wb_valid && !flush_valid_i;
@@ -634,14 +833,14 @@ module fursoy_s1_backend
     assign comp_exception_o[1]      = 1'b0;
     assign comp_cause_o[1]          = 5'd0;
 
-    // Port 2 (LSU) reserved / tied idle for M2
-    assign comp_valid_o[2]          = 1'b0;
-    assign comp_rob_idx_o[2]        = '0;
-    assign comp_epoch_o[2]          = '0;
-    assign comp_preg_o[2]           = '0;
+    // Port 2 (LSU) Completion
+    assign comp_valid_o[2]          = p2_comp_valid && !flush_valid_i;
+    assign comp_rob_idx_o[2]        = p2_comp_rob_idx;
+    assign comp_epoch_o[2]          = p2_comp_epoch;
+    assign comp_preg_o[2]           = p2_comp_preg;
     assign comp_branch_mispred_o[2] = 1'b0;
-    assign comp_exception_o[2]      = 1'b0;
-    assign comp_cause_o[2]          = 5'd0;
+    assign comp_exception_o[2]      = p2_comp_exception;
+    assign comp_cause_o[2]          = p2_comp_cause;
 
     // -------------------------------------------------------------------------
     // 7. Lifetime-Gated Branch Recovery Interface (Section 2.4.3)
@@ -664,6 +863,7 @@ module fursoy_s1_backend
 `ifndef SYNTHESIS
     wire prf_w0_we = p0_wb_valid && comp_ack_i[0] && (p0_wb_pnew != 7'd0);
     wire prf_w1_we = p1_wb_valid && comp_ack_i[1] && (p1_wb_pnew != 7'd0);
+    wire prf_w2_we = p2_comp_valid && comp_ack_i[2] && !p2_comp_exception && (p2_comp_preg != 7'd0);
     logic flush_check_q;
 
     always_ff @(posedge clk_i) begin
@@ -686,11 +886,20 @@ module fursoy_s1_backend
                 if (prf_w1_we && !comp_ack_i[1]) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write on Port 1 without accepted completion!");
                 end
+                if (prf_w2_we && !comp_ack_i[2]) begin
+                    $fatal(1, "[BACKEND ASSERTION FAILED] PRF write on Port 2 without accepted completion!");
+                end
                 if (prf_w0_we && (p0_wb_pnew == 7'd0)) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write to p0 on Port 0!");
                 end
                 if (prf_w1_we && (p1_wb_pnew == 7'd0)) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write to p0 on Port 1!");
+                end
+                if (prf_w2_we && (p2_comp_preg == 7'd0)) begin
+                    $fatal(1, "[BACKEND ASSERTION FAILED] PRF write to p0 on Port 2!");
+                end
+                if (p2_comp_exception && comp_ack_i[2] && (p2_comp_preg != 7'd0) && prf_w2_we) begin
+                    $fatal(1, "[BACKEND ASSERTION FAILED] Faulting load wrote PRF!");
                 end
 
                 // 2. Branch recovery must not trigger while older recovery or flush is active
@@ -709,6 +918,24 @@ module fursoy_s1_backend
                         (mul_in_flight != 2'd0) || divider_busy || alu1_in_flight ||
                         (diag_valid_mask_o != 16'd0)) begin
                         $fatal(1, "[BACKEND ASSERTION FAILED] Full flush did not clear speculative backend state!");
+                    end
+                end
+
+                // 5. Accepted uop must allocate required target queue (no dropped uop)
+                if (uop0_valid_i && dispatch_ready_o[0]) begin
+                    if (uop0_is_mem && !mem_dispatch_ready[0]) begin
+                        $fatal(1, "[BACKEND ASSERTION FAILED] Memory uop0 accepted without mem queue ready!");
+                    end
+                    if (!uop0_is_mem && !int_dispatch_ready[0]) begin
+                        $fatal(1, "[BACKEND ASSERTION FAILED] Integer uop0 accepted without int queue ready!");
+                    end
+                end
+                if (uop1_valid_i && dispatch_ready_o[1]) begin
+                    if (uop1_is_mem && (uop0_is_mem ? !mem_dispatch_ready[1] : !mem_dispatch_ready[0])) begin
+                        $fatal(1, "[BACKEND ASSERTION FAILED] Memory uop1 accepted without mem queue ready!");
+                    end
+                    if (!uop1_is_mem && (uop0_is_mem ? !int_dispatch_ready[0] : !int_dispatch_ready[1])) begin
+                        $fatal(1, "[BACKEND ASSERTION FAILED] Integer uop1 accepted without int queue ready!");
                     end
                 end
             end

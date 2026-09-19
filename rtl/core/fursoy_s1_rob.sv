@@ -64,6 +64,8 @@ module fursoy_s1_rob
     output logic [1:0]             retire_is_branch_o,
     output chkpt_idx_t             retire_chkpt_id_o  [1:0],
     output logic [63:0]            retire_pc_o        [1:0],
+    output rob_idx_t               retire_rob_idx_o   [1:0],
+    output rob_epoch_t             retire_epoch_o     [1:0],
 
     // Precise Exception / Flush Trigger at ROB Head
     output logic                   retire_exception_o,
@@ -258,6 +260,8 @@ module fursoy_s1_rob
     assign retire_is_branch_o[0] = entry0.is_branch;
     assign retire_chkpt_id_o[0]  = entry0.chkpt_id;
     assign retire_pc_o[0]        = entry0.pc;
+    assign retire_rob_idx_o[0]   = head_q;
+    assign retire_epoch_o[0]     = entry0.epoch;
 
     assign retire_valid_o[1]     = retire_grant[1];
     assign retire_rd_o[1]        = entry1.rd;
@@ -266,6 +270,8 @@ module fursoy_s1_rob
     assign retire_is_branch_o[1] = entry1.is_branch;
     assign retire_chkpt_id_o[1]  = entry1.chkpt_id;
     assign retire_pc_o[1]        = entry1.pc;
+    assign retire_rob_idx_o[1]   = head_next;
+    assign retire_epoch_o[1]     = entry1.epoch;
 
     logic [1:0] num_retire;
     assign num_retire = (retire_grant == 2'b11) ? 2'd2 :

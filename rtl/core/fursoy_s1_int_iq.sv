@@ -80,6 +80,11 @@ module fursoy_s1_int_iq
     input  logic              wb1_comp_ack_i,
     input  preg_t             wb1_pnew_i,
 
+    input  logic              wb2_valid_i,
+    input  logic              wb2_comp_ack_i,
+    input  logic              wb2_comp_exception_i,
+    input  preg_t             wb2_pnew_i,
+
     // Port 1 Downstream Credit Availability
     input  logic              can_issue_mul_i,
     input  logic              can_issue_alu1_i,
@@ -120,8 +125,10 @@ module fursoy_s1_int_iq
     // -------------------------------------------------------------------------
     // Allocation Logic
     // -------------------------------------------------------------------------
-    wire alloc0_fire = uop0_valid_i && rename_ack_i[0] && !flush_valid_i;
-    wire alloc1_fire = uop1_valid_i && rename_ack_i[1] && !flush_valid_i;
+    wire uop0_is_mem = (uop0_class_i == UOP_LOAD) || (uop0_class_i == UOP_STORE) ||
+                       (uop0_class_i == UOP_AMO)  || (uop0_class_i == UOP_FENCE);
+    wire uop1_is_mem = (uop1_class_i == UOP_LOAD) || (uop1_class_i == UOP_STORE) ||
+                       (uop1_class_i == UOP_AMO)  || (uop1_class_i == UOP_FENCE);
 
     // Count free entries
     logic [4:0] free_count;
@@ -158,6 +165,12 @@ module fursoy_s1_int_iq
         end
     end
 
+    wire [3:0] alloc_slot1_eff = !uop0_is_mem ? alloc_slot1 : alloc_slot0;
+    wire       slot1_found_eff = !uop0_is_mem ? slot1_found : slot0_found;
+
+    wire alloc0_fire = uop0_valid_i && !uop0_is_mem && rename_ack_i[0] && !flush_valid_i && slot0_found;
+    wire alloc1_fire = uop1_valid_i && !uop1_is_mem && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
+
     // Port Mask Generation for Dispatch Uops
     function automatic logic [1:0] get_port_mask(input uop_class_t uclass);
         case (uclass)
@@ -172,6 +185,7 @@ module fursoy_s1_int_iq
     // -------------------------------------------------------------------------
     wire wb0_wake = wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i != 7'd0);
     wire wb1_wake = wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i != 7'd0);
+    wire wb2_wake = wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i != 7'd0);
 
     // -------------------------------------------------------------------------
     // Readiness Evaluation for Each Queue Entry (Frozen loop-free timing:
@@ -416,6 +430,10 @@ module fursoy_s1_int_iq
                         if (entries_q[i].prs1 == wb1_pnew_i) entries_q[i].prs1_ready <= 1'b1;
                         if ((!entries_q[i].use_imm || (entries_q[i].uop_class == UOP_BRANCH)) && (entries_q[i].prs2 == wb1_pnew_i)) entries_q[i].prs2_ready <= 1'b1;
                     end
+                    if (wb2_wake) begin
+                        if (entries_q[i].prs1 == wb2_pnew_i) entries_q[i].prs1_ready <= 1'b1;
+                        if ((!entries_q[i].use_imm || (entries_q[i].uop_class == UOP_BRANCH)) && (entries_q[i].prs2 == wb2_pnew_i)) entries_q[i].prs2_ready <= 1'b1;
+                    end
                 end
             end
 
@@ -430,11 +448,13 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot0].prs1        <= uop0_prs1_i;
                     entries_q[alloc_slot0].prs1_ready  <= uop0_prs1_ready_i || (uop0_prs1_i == 7'd0) ||
                                                           (wb0_wake && (uop0_prs1_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop0_prs1_i == wb1_pnew_i));
+                                                          (wb1_wake && (uop0_prs1_i == wb1_pnew_i)) ||
+                                                          (wb2_wake && (uop0_prs1_i == wb2_pnew_i));
                     entries_q[alloc_slot0].prs2        <= uop0_prs2_i;
                     entries_q[alloc_slot0].prs2_ready  <= (uop0_use_imm_i && (uop0_class_i != UOP_BRANCH)) || uop0_prs2_ready_i || (uop0_prs2_i == 7'd0) ||
                                                           (wb0_wake && (uop0_prs2_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop0_prs2_i == wb1_pnew_i));
+                                                          (wb1_wake && (uop0_prs2_i == wb1_pnew_i)) ||
+                                                          (wb2_wake && (uop0_prs2_i == wb2_pnew_i));
                     entries_q[alloc_slot0].pnew        <= uop0_pnew_i;
                     entries_q[alloc_slot0].rob_idx     <= uop0_rob_idx_i;
                     entries_q[alloc_slot0].rob_epoch   <= uop0_rob_epoch_i;
@@ -449,32 +469,34 @@ module fursoy_s1_int_iq
                 end
             end
 
-            if (alloc1_fire && slot1_found) begin
+            if (alloc1_fire) begin
                 if (!uop1_squashed) begin
-                    entries_q[alloc_slot1].valid       <= 1'b1;
-                    entries_q[alloc_slot1].uop_class   <= uop1_class_i;
-                    entries_q[alloc_slot1].sub_op      <= uop1_subop_i;
-                    entries_q[alloc_slot1].imm         <= uop1_imm_i;
-                    entries_q[alloc_slot1].use_imm     <= uop1_use_imm_i;
-                    entries_q[alloc_slot1].prs1        <= uop1_prs1_i;
-                    entries_q[alloc_slot1].prs1_ready  <= uop1_prs1_ready_i || (uop1_prs1_i == 7'd0) ||
+                    entries_q[alloc_slot1_eff].valid       <= 1'b1;
+                    entries_q[alloc_slot1_eff].uop_class   <= uop1_class_i;
+                    entries_q[alloc_slot1_eff].sub_op      <= uop1_subop_i;
+                    entries_q[alloc_slot1_eff].imm         <= uop1_imm_i;
+                    entries_q[alloc_slot1_eff].use_imm     <= uop1_use_imm_i;
+                    entries_q[alloc_slot1_eff].prs1        <= uop1_prs1_i;
+                    entries_q[alloc_slot1_eff].prs1_ready  <= uop1_prs1_ready_i || (uop1_prs1_i == 7'd0) ||
                                                           (wb0_wake && (uop1_prs1_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop1_prs1_i == wb1_pnew_i));
-                    entries_q[alloc_slot1].prs2        <= uop1_prs2_i;
-                    entries_q[alloc_slot1].prs2_ready  <= (uop1_use_imm_i && (uop1_class_i != UOP_BRANCH)) || uop1_prs2_ready_i || (uop1_prs2_i == 7'd0) ||
+                                                          (wb1_wake && (uop1_prs1_i == wb1_pnew_i)) ||
+                                                          (wb2_wake && (uop1_prs1_i == wb2_pnew_i));
+                    entries_q[alloc_slot1_eff].prs2        <= uop1_prs2_i;
+                    entries_q[alloc_slot1_eff].prs2_ready  <= (uop1_use_imm_i && (uop1_class_i != UOP_BRANCH)) || uop1_prs2_ready_i || (uop1_prs2_i == 7'd0) ||
                                                           (wb0_wake && (uop1_prs2_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop1_prs2_i == wb1_pnew_i));
-                    entries_q[alloc_slot1].pnew        <= uop1_pnew_i;
-                    entries_q[alloc_slot1].rob_idx     <= uop1_rob_idx_i;
-                    entries_q[alloc_slot1].rob_epoch   <= uop1_rob_epoch_i;
-                    entries_q[alloc_slot1].chkpt_id    <= uop1_chkpt_id_i;
-                    entries_q[alloc_slot1].pc          <= uop1_pc_i;
-                    entries_q[alloc_slot1].pred_taken  <= uop1_pred_taken_i;
-                    entries_q[alloc_slot1].pred_target <= uop1_pred_target_i;
-                    entries_q[alloc_slot1].is_branch   <= uop1_is_branch_i;
-                    entries_q[alloc_slot1].is_jal      <= uop1_is_jal_i;
-                    entries_q[alloc_slot1].is_jalr     <= uop1_is_jalr_i;
-                    entries_q[alloc_slot1].port_mask   <= get_port_mask(uop1_class_i);
+                                                          (wb1_wake && (uop1_prs2_i == wb1_pnew_i)) ||
+                                                          (wb2_wake && (uop1_prs2_i == wb2_pnew_i));
+                    entries_q[alloc_slot1_eff].pnew        <= uop1_pnew_i;
+                    entries_q[alloc_slot1_eff].rob_idx     <= uop1_rob_idx_i;
+                    entries_q[alloc_slot1_eff].rob_epoch   <= uop1_rob_epoch_i;
+                    entries_q[alloc_slot1_eff].chkpt_id    <= uop1_chkpt_id_i;
+                    entries_q[alloc_slot1_eff].pc          <= uop1_pc_i;
+                    entries_q[alloc_slot1_eff].pred_taken  <= uop1_pred_taken_i;
+                    entries_q[alloc_slot1_eff].pred_target <= uop1_pred_target_i;
+                    entries_q[alloc_slot1_eff].is_branch   <= uop1_is_branch_i;
+                    entries_q[alloc_slot1_eff].is_jal      <= uop1_is_jal_i;
+                    entries_q[alloc_slot1_eff].is_jalr     <= uop1_is_jalr_i;
+                    entries_q[alloc_slot1_eff].port_mask   <= get_port_mask(uop1_class_i);
                 end
             end
         end

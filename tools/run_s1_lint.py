@@ -23,6 +23,12 @@ RTL_FILES = [
     ROOT / "rtl/core/fursoy_s1_divider.sv",
     ROOT / "rtl/core/fursoy_s1_port1_buffers.sv",
     ROOT / "rtl/core/fursoy_s1_int_iq.sv",
+    ROOT / "rtl/core/fursoy_s1_agu.sv",
+    ROOT / "rtl/core/fursoy_s1_mem_iq.sv",
+    ROOT / "rtl/core/fursoy_s1_trt.sv",
+    ROOT / "rtl/core/fursoy_s1_lsu_queues.sv",
+    ROOT / "rtl/core/fursoy_s1_l1d.sv",
+    ROOT / "rtl/core/fursoy_s1_lsu.sv",
     ROOT / "rtl/core/fursoy_s1_backend.sv",
     ROOT / "rtl/core/fursoy_s1_core.sv",
 ]

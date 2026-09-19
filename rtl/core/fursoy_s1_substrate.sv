@@ -117,6 +117,8 @@ module fursoy_s1_substrate
     output logic [1:0]             retire_is_branch_o,
     output chkpt_idx_t             retire_chkpt_id_o     [1:0],
     output logic [63:0]            retire_pc_o           [1:0],
+    output rob_idx_t               retire_rob_idx_o      [1:0],
+    output rob_epoch_t             retire_epoch_o        [1:0],
 
     // Precise Exception Signaled at ROB Head
     output logic                   retire_exception_o,
@@ -222,6 +224,8 @@ module fursoy_s1_substrate
     logic [1:0]      rob_retire_is_br;
     chkpt_idx_t      rob_retire_chkpt_id [1:0];
     logic [63:0]     rob_retire_pc [1:0];
+    rob_idx_t        rob_retire_idx [1:0];
+    rob_epoch_t      rob_retire_epoch [1:0];
 
     // ROB Recovery Squash outputs
     logic [1:0]      rob_rec_pnew_valid;
@@ -477,6 +481,8 @@ module fursoy_s1_substrate
         .retire_is_branch_o   (rob_retire_is_br),
         .retire_chkpt_id_o    (rob_retire_chkpt_id),
         .retire_pc_o          (rob_retire_pc),
+        .retire_rob_idx_o     (rob_retire_idx),
+        .retire_epoch_o       (rob_retire_epoch),
         .retire_exception_o   (retire_exception_o),
         .retire_exc_cause_o   (retire_exc_cause_o),
         .retire_exc_pc_o      (retire_exc_pc_o),
@@ -545,6 +551,8 @@ module fursoy_s1_substrate
     assign retire_is_branch_o = rob_retire_is_br;
     assign retire_chkpt_id_o  = rob_retire_chkpt_id;
     assign retire_pc_o        = rob_retire_pc;
+    assign retire_rob_idx_o   = rob_retire_idx;
+    assign retire_epoch_o     = rob_retire_epoch;
 
     // =========================================================================
     // 4. Invariant Verification Engine (Simulation Assertions)

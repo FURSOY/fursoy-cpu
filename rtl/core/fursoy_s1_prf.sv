@@ -22,7 +22,7 @@ module fursoy_s1_prf
     input  logic              rst_i,
 
     // -------------------------------------------------------------------------
-    // 4 Read Ports (Register Fetch Stage: RF)
+    // 6 Read Ports (Register Fetch Stage: RF)
     // -------------------------------------------------------------------------
     // Port 0 Operand A & B
     input  preg_t             r0_paddr_i,
@@ -38,8 +38,15 @@ module fursoy_s1_prf
     input  preg_t             r3_paddr_i,
     output logic [63:0]       r3_data_o,
 
+    // Port 2 Base Address (R4) & Store Data (R5)
+    input  preg_t             r4_paddr_i,
+    output logic [63:0]       r4_data_o,
+
+    input  preg_t             r5_paddr_i,
+    output logic [63:0]       r5_data_o,
+
     // -------------------------------------------------------------------------
-    // 2 Writeback Ports (Validated Writeback Stage: WB)
+    // 3 Writeback Ports (Validated Writeback Stage: WB)
     // -------------------------------------------------------------------------
     // Port 0 Result Writeback
     input  logic              w0_valid_i,
@@ -53,6 +60,13 @@ module fursoy_s1_prf
     input  preg_t             w1_paddr_i,
     input  logic [63:0]       w1_data_i,
 
+    // Port 2 Load Result Writeback (Section 1.2, Section 3.2)
+    input  logic              w2_valid_i,
+    input  logic              w2_comp_ack_i,
+    input  logic              w2_comp_exception_i,
+    input  preg_t             w2_paddr_i,
+    input  logic [63:0]       w2_data_i,
+
     // Testbench / Diagnostics Read Probe Port
     input  preg_t             probe_paddr_i,
     output logic [63:0]       probe_pdata_o
@@ -63,9 +77,11 @@ module fursoy_s1_prf
     // -------------------------------------------------------------------------
     logic [63:0] mem_q [PRF_SIZE];
 
-    // Gated Write Enables
+    // Gated Write Enables: Strictly lifetime-gated by M1 comp_ack.
+    // Faulting loads (w2_comp_exception_i == 1) MUST NOT write PRF data (Section 3.2).
     wire w0_we = w0_valid_i && w0_comp_ack_i && (w0_paddr_i != 7'd0) && (w0_paddr_i < PRF_SIZE[6:0]);
     wire w1_we = w1_valid_i && w1_comp_ack_i && (w1_paddr_i != 7'd0) && (w1_paddr_i < PRF_SIZE[6:0]);
+    wire w2_we = w2_valid_i && w2_comp_ack_i && !w2_comp_exception_i && (w2_paddr_i != 7'd0) && (w2_paddr_i < PRF_SIZE[6:0]);
 
     // -------------------------------------------------------------------------
     // Synchronous Array Write
@@ -82,9 +98,13 @@ module fursoy_s1_prf
             if (w0_we) begin
                 mem_q[w0_paddr_i] <= w0_data_i;
             end
-            // Port 1 write (if both write same destination, Port 1 takes precedence or disjoint in OOO)
+            // Port 1 write
             if (w1_we) begin
                 mem_q[w1_paddr_i] <= w1_data_i;
+            end
+            // Port 2 write (Load completion)
+            if (w2_we) begin
+                mem_q[w2_paddr_i] <= w2_data_i;
             end
             // Hardwire p0
             mem_q[0] <= 64'd0;
@@ -101,10 +121,15 @@ module fursoy_s1_prf
         input logic [63:0] wdata0,
         input logic        we1,
         input preg_t       waddr1,
-        input logic [63:0] wdata1
+        input logic [63:0] wdata1,
+        input logic        we2,
+        input preg_t       waddr2,
+        input logic [63:0] wdata2
     );
         if (raddr == 7'd0) begin
             return 64'd0;
+        end else if (we2 && (waddr2 == raddr)) begin
+            return wdata2;
         end else if (we1 && (waddr1 == raddr)) begin
             return wdata1;
         end else if (we0 && (waddr0 == raddr)) begin
@@ -114,11 +139,13 @@ module fursoy_s1_prf
         end
     endfunction
 
-    assign r0_data_o = read_prf(r0_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i);
-    assign r1_data_o = read_prf(r1_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i);
-    assign r2_data_o = read_prf(r2_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i);
-    assign r3_data_o = read_prf(r3_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i);
-    assign probe_pdata_o = read_prf(probe_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i);
+    assign r0_data_o = read_prf(r0_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i);
+    assign r1_data_o = read_prf(r1_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i);
+    assign r2_data_o = read_prf(r2_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i);
+    assign r3_data_o = read_prf(r3_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i);
+    assign r4_data_o = read_prf(r4_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i);
+    assign r5_data_o = read_prf(r5_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i);
+    assign probe_pdata_o = read_prf(probe_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i);
 
     // -------------------------------------------------------------------------
     // Simulation Assertions
@@ -142,6 +169,12 @@ module fursoy_s1_prf
             if (r3_paddr_i == 7'd0 && r3_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 3 returned non-zero for p0: %016h", r3_data_o);
             end
+            if (r4_paddr_i == 7'd0 && r4_data_o != 64'd0) begin
+                $fatal(1, "[PRF ASSERTION FAILED] Read Port 4 returned non-zero for p0: %016h", r4_data_o);
+            end
+            if (r5_paddr_i == 7'd0 && r5_data_o != 64'd0) begin
+                $fatal(1, "[PRF ASSERTION FAILED] Read Port 5 returned non-zero for p0: %016h", r5_data_o);
+            end
 
             // 2. Stale completions must NEVER assert write enable
             if (w0_valid_i && !w0_comp_ack_i && w0_we) begin
@@ -149,6 +182,14 @@ module fursoy_s1_prf
             end
             if (w1_valid_i && !w1_comp_ack_i && w1_we) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Stale completion on Port 1 asserted PRF write enable!");
+            end
+            if (w2_valid_i && !w2_comp_ack_i && w2_we) begin
+                $fatal(1, "[PRF ASSERTION FAILED] Stale completion on Port 2 asserted PRF write enable!");
+            end
+
+            // 3. Faulting load must NEVER assert write enable (Section 3.2, 17.3)
+            if (w2_valid_i && w2_comp_exception_i && w2_we) begin
+                $fatal(1, "[PRF ASSERTION FAILED] Faulting load on Port 2 asserted PRF write enable!");
             end
         end
     end

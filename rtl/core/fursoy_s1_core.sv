@@ -136,13 +136,46 @@ module fursoy_s1_core
     output logic                   diag_recover_valid_o,
     output rob_idx_t               diag_recover_rob_idx_o,
 
-    // Testbench Injection Port on Port 0 WB (for Directed Stale Completion Verification)
     input  logic                   test_inject_valid_i,
     input  logic [63:0]            test_inject_data_i,
     input  preg_t                  test_inject_pnew_i,
     input  rob_idx_t               test_inject_rob_idx_i,
     input  rob_epoch_t             test_inject_rob_epoch_i,
-    input  logic                   test_inject_mispredict_i
+    input  logic                   test_inject_mispredict_i,
+
+    // -------------------------------------------------------------------------
+    // External Memory Interconnect & Translation Interface (M3)
+    // -------------------------------------------------------------------------
+    // Read Channel (MSHR Refills)
+    output logic                   bus_rd_req_valid_o,
+    output logic [49:0]            bus_rd_req_addr_o,
+    output mshr_idx_t              bus_rd_req_tag_o,
+    input  logic                   bus_rd_req_ready_i,
+
+    input  logic                   bus_rd_rsp_valid_i,
+    input  mshr_idx_t              bus_rd_rsp_tag_i,
+    input  logic [511:0]           bus_rd_rsp_data_i,
+
+    // Write Channel (WBB Dirty Evictions)
+    output logic                   bus_wr_req_valid_o,
+    output logic [49:0]            bus_wr_req_addr_o,
+    output logic [511:0]           bus_wr_req_data_o,
+    input  logic                   bus_wr_req_ready_i,
+
+    input  logic                   bus_wr_rsp_valid_i,
+
+    // DTLB / PTW Interface
+    output logic                   ptw_req_valid_o,
+    output tr_id_t                 ptw_req_tr_id_o,
+    output logic [26:0]            ptw_req_vpn_o,
+    output logic [1:0]             ptw_req_access_type_o,
+    input  logic                   ptw_req_ready_i,
+
+    input  logic                   ptw_rsp_valid_i,
+    input  tr_id_t                 ptw_rsp_tr_id_i,
+    input  logic [55:0]            ptw_rsp_pa_i,
+    input  logic                   ptw_rsp_page_fault_i,
+    input  logic                   ptw_rsp_access_fault_i
 );
 
     // =========================================================================
@@ -216,6 +249,9 @@ module fursoy_s1_core
 
     assign diag_recover_valid_o   = int_recover_valid;
     assign diag_recover_rob_idx_o = int_recover_rob_idx;
+
+    rob_idx_t   int_retire_rob_idx [1:0];
+    rob_epoch_t int_retire_epoch   [1:0];
 
     // =========================================================================
     // 1. Milestone 1 Architectural Substrate
@@ -299,6 +335,8 @@ module fursoy_s1_core
         .retire_is_branch_o      (retire_is_branch_o),
         .retire_chkpt_id_o       (retire_chkpt_id_o),
         .retire_pc_o             (retire_pc_o),
+        .retire_rob_idx_o        (int_retire_rob_idx),
+        .retire_epoch_o          (int_retire_epoch),
 
         .retire_exception_o      (retire_exception_o),
         .retire_exc_cause_o      (retire_exc_cause_o),
@@ -414,7 +452,40 @@ module fursoy_s1_core
         .test_inject_pnew_i      (test_inject_pnew_i),
         .test_inject_rob_idx_i   (test_inject_rob_idx_i),
         .test_inject_rob_epoch_i (test_inject_rob_epoch_i),
-        .test_inject_mispredict_i(test_inject_mispredict_i)
+        .test_inject_mispredict_i(test_inject_mispredict_i),
+
+        // In-Order Store Retirement Handshake at ROB Head
+        .retire_valid_i          (retire_valid_o),
+        .retire_pnew_i           (retire_pnew_o),
+        .retire_pc_i             (retire_pc_o),
+        .retire_rob_idx_i        (int_retire_rob_idx),
+        .retire_epoch_i          (int_retire_epoch),
+
+        // External Memory Interconnect & Translation Interface (M3)
+        .bus_rd_req_valid_o      (bus_rd_req_valid_o),
+        .bus_rd_req_addr_o       (bus_rd_req_addr_o),
+        .bus_rd_req_tag_o        (bus_rd_req_tag_o),
+        .bus_rd_req_ready_i      (bus_rd_req_ready_i),
+        .bus_rd_rsp_valid_i      (bus_rd_rsp_valid_i),
+        .bus_rd_rsp_tag_i        (bus_rd_rsp_tag_i),
+        .bus_rd_rsp_data_i       (bus_rd_rsp_data_i),
+
+        .bus_wr_req_valid_o      (bus_wr_req_valid_o),
+        .bus_wr_req_addr_o       (bus_wr_req_addr_o),
+        .bus_wr_req_data_o       (bus_wr_req_data_o),
+        .bus_wr_req_ready_i      (bus_wr_req_ready_i),
+        .bus_wr_rsp_valid_i      (bus_wr_rsp_valid_i),
+
+        .ptw_req_valid_o         (ptw_req_valid_o),
+        .ptw_req_tr_id_o         (ptw_req_tr_id_o),
+        .ptw_req_vpn_o           (ptw_req_vpn_o),
+        .ptw_req_access_type_o   (ptw_req_access_type_o),
+        .ptw_req_ready_i         (ptw_req_ready_i),
+        .ptw_rsp_valid_i         (ptw_rsp_valid_i),
+        .ptw_rsp_tr_id_i         (ptw_rsp_tr_id_i),
+        .ptw_rsp_pa_i            (ptw_rsp_pa_i),
+        .ptw_rsp_page_fault_i    (ptw_rsp_page_fault_i),
+        .ptw_rsp_access_fault_i  (ptw_rsp_access_fault_i)
     );
 
 endmodule
