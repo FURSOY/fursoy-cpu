@@ -38,6 +38,7 @@ RTL_FILES = [
     ROOT / "rtl/core/fursoy_s1_decode.sv",
     ROOT / "rtl/core/fursoy_s1_serialization.sv",
     ROOT / "rtl/core/fursoy_s1_csr.sv",
+    ROOT / "rtl/core/fursoy_s1_hpm.sv",
     ROOT / "rtl/core/fursoy_s1_frontend.sv",
     ROOT / "rtl/core/fursoy_s1_core.sv",
 ]
@@ -62,7 +63,7 @@ def main():
 
     report = {
         "status": "pass" if run.returncode == 0 else "fail",
-        "scope": "Fursoy Slice-1 Milestone 2 Core RTL (Substrate + Backend)",
+        "scope": "Fursoy Slice-1 Milestone 5 Phase A Core RTL (Production + HPM Telemetry)",
         "observed_at_utc": datetime.now(timezone.utc).isoformat(),
         "command": cmd,
         "verilator_version": subprocess.run(["verilator", "--version"], capture_output=True, text=True).stdout.strip(),

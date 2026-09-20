@@ -63,7 +63,8 @@ module fursoy_s1_port1_buffers
     output logic [63:0]       wb_data_o,
     output preg_t             wb_pnew_o,
     output rob_idx_t          wb_rob_idx_o,
-    output rob_epoch_t        wb_rob_epoch_o
+    output rob_epoch_t        wb_rob_epoch_o,
+    output logic              alu1_wb_stall_o
 );
 
     typedef struct packed {
@@ -98,6 +99,8 @@ module fursoy_s1_port1_buffers
     wire div_ready  = div_buf_q.valid;
     wire mul_ready  = mul_q[0].valid;
     wire alu1_ready = alu1_q[0].valid;
+
+    assign alu1_wb_stall_o = alu1_ready && (div_ready || mul_ready);
 
     logic div_pop, mul_pop, alu1_pop;
 

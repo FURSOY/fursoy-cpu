@@ -29,6 +29,7 @@
 `include "fursoy_s1_backend.sv"
 `include "fursoy_s1_frontend.sv"
 `include "fursoy_s1_csr.sv"
+`include "fursoy_s1_hpm.sv"
 
 module fursoy_s1_core
     import fursoy_s1_pkg::*;
@@ -286,7 +287,17 @@ module fursoy_s1_core
     output logic                   test_dtlb_rsp_page_fault_o,
     output logic                   test_dtlb_rsp_access_fault_o,
 
-    output logic [2:0]             ptw_dtlb_grants_since_itlb_o
+    output logic [2:0]             ptw_dtlb_grants_since_itlb_o,
+
+    // -------------------------------------------------------------------------
+    // Milestone 5 Hardware Performance Monitoring (HPM) & Profiling
+    // -------------------------------------------------------------------------
+    output logic [63:0]            mcycle_o,
+    output logic [63:0]            minstret_o,
+    output logic [63:0]            mhpmcounter_o         [32],
+    output logic [63:0]            cpi_category_o        [8],
+    output logic [7:0]             cpi_active_owner_o,
+    output logic [48:1]            raw_event_pulse_o
 );
 
     // =========================================================================
@@ -811,8 +822,62 @@ module fursoy_s1_core
         .p0_sys_pc_o             (backend_p0_sys_pc),
         .p0_sys_rob_idx_o        (backend_p0_sys_rob_idx),
         .p0_sys_rdata_i          (backend_p0_sys_rdata),
-        .p0_sys_illegal_i        (backend_p0_sys_illegal)
+        .p0_sys_illegal_i        (backend_p0_sys_illegal),
+
+        // Observability & Telemetry (Milestone 5)
+        .event_issue_port0_o     (be_event_issue_p0),
+        .event_issue_port1_alu_o (be_event_issue_p1_alu),
+        .event_issue_port1_mul_o (be_event_issue_p1_mul),
+        .event_issue_port1_div_o (be_event_issue_p1_div),
+        .event_issue_port2_agu_o (be_event_issue_p2_agu),
+        .event_port1_wb_stall_o  (be_event_p1_wb_stall),
+        .event_intiq_empty_o     (be_event_intiq_empty),
+        .event_memiq_empty_o     (be_event_memiq_empty),
+        .event_load_issued_o     (be_event_load_issued),
+        .event_load_fwd_exact_o  (be_event_load_fwd_exact),
+        .event_load_fwd_partial_o(be_event_load_fwd_partial),
+        .event_l1d_hits_o        (be_event_l1d_hits),
+        .event_l1d_misses_o      (be_event_l1d_misses),
+        .event_l1d_mshr_occ_o    (be_event_l1d_mshr_occ),
+        .event_l1d_wbb_full_o    (be_event_l1d_wbb_full),
+        .event_dtlb_misses_o     (be_event_dtlb_misses),
+        .rob_head_is_mem_stall_o (be_rob_head_is_mem_stall),
+        .int_dispatch_ready_o    (backend_int_dispatch_ready),
+        .memiq_ready_o           (backend_memiq_ready),
+        .lq_ready_o              (backend_lq_ready),
+        .sq_ready_o              (backend_sq_ready)
     );
+
+    logic              be_event_issue_p0;
+    logic              be_event_issue_p1_alu;
+    logic              be_event_issue_p1_mul;
+    logic              be_event_issue_p1_div;
+    logic              be_event_issue_p2_agu;
+    logic              be_event_p1_wb_stall;
+    logic              be_event_intiq_empty;
+    logic              be_event_memiq_empty;
+    logic              be_event_load_issued;
+    logic              be_event_load_fwd_exact;
+    logic              be_event_load_fwd_partial;
+    logic              be_event_l1d_hits;
+    logic              be_event_l1d_misses;
+    logic [2:0]        be_event_l1d_mshr_occ;
+    logic              be_event_l1d_wbb_full;
+    logic              be_event_dtlb_misses;
+    logic              be_rob_head_is_mem_stall;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [1:0]        backend_int_dispatch_ready;
+    logic [1:0]        backend_memiq_ready;
+    logic [1:0]        backend_lq_ready;
+    logic [1:0]        backend_sq_ready;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    logic [11:0]       hpm_csr_raddr;
+    logic [63:0]       hpm_csr_rdata;
+    logic              hpm_csr_hit;
+    logic              hpm_we;
+    logic [11:0]       hpm_waddr;
+    logic [63:0]       hpm_wdata;
 
     // =========================================================================
     // 3. Privileged CSR & System Execution Subsystem
@@ -870,7 +935,15 @@ module fursoy_s1_core
         .csr_scause_o            (csr_scause_o),
         .csr_stval_o             (csr_stval_o),
         .csr_mtvec_o             (csr_mtvec_o),
-        .csr_stvec_o             (csr_stvec_o)
+        .csr_stvec_o             (csr_stvec_o),
+
+        // HPM Interface (Milestone 5)
+        .hpm_csr_raddr_o         (hpm_csr_raddr),
+        .hpm_csr_rdata_i         (hpm_csr_rdata),
+        .hpm_csr_hit_i           (hpm_csr_hit),
+        .hpm_we_o                (hpm_we),
+        .hpm_waddr_o             (hpm_waddr),
+        .hpm_wdata_o             (hpm_wdata)
     );
 
     logic              int_train_valid;
@@ -1019,7 +1092,153 @@ module fursoy_s1_core
         .hpm_ras_returns_o       (hpm_ras_returns_o),
         .hpm_fence_i_flushes_o   (hpm_fence_i_flushes_o),
         .hpm_redirect_cyc_o      (hpm_redirect_cyc_o),
-        .diag_grants_since_itlb_o(core_diag_grants_since_itlb)
+        .diag_grants_since_itlb_o(core_diag_grants_since_itlb),
+
+        // Observability & Telemetry (Milestone 5)
+        .event_fetch_cycles_o    (fe_event_fetch_cycles),
+        .event_fetch_blocks_o    (fe_event_fetch_blocks),
+        .event_fetch_uops_o      (fe_event_fetch_uops),
+        .event_fetch_fq_starved_o(fe_event_fetch_fq_starved),
+        .event_fetch_fq_full_o   (fe_event_fetch_fq_full),
+        .event_fetch_odd_slot_o  (fe_event_fetch_odd_slot),
+        .event_l1i_hits_o        (fe_event_l1i_hits),
+        .event_l1i_misses_o      (fe_event_l1i_misses),
+        .event_l1i_imshr_occ_o   (fe_event_l1i_imshr_occ),
+        .event_itlb_misses_o     (fe_event_itlb_misses),
+        .event_btb_queries_o     (fe_event_btb_queries),
+        .event_btb_hits_o        (fe_event_btb_hits),
+        .event_bpu_cond_pred_o   (fe_event_bpu_cond_pred),
+        .event_ras_call_push_o   (fe_event_ras_call_push),
+        .event_ras_ret_pop_o     (fe_event_ras_ret_pop)
+    );
+
+    logic              fe_event_fetch_cycles;
+    logic              fe_event_fetch_blocks;
+    logic [1:0]        fe_event_fetch_uops;
+    logic              fe_event_fetch_fq_starved;
+    logic              fe_event_fetch_fq_full;
+    logic              fe_event_fetch_odd_slot;
+    logic              fe_event_l1i_hits;
+    logic              fe_event_l1i_misses;
+    logic [1:0]        fe_event_l1i_imshr_occ;
+    logic              fe_event_itlb_misses;
+    logic              fe_event_btb_queries;
+    logic              fe_event_btb_hits;
+    logic              fe_event_bpu_cond_pred;
+    logic              fe_event_ras_call_push;
+    logic              fe_event_ras_ret_pop;
+
+    // =========================================================================
+    // 4. Milestone 5 Hardware Performance Monitoring (HPM) Subsystem
+    // =========================================================================
+    wire rename_stalled = sub_uop0_valid && (int_rename_ack[0] == 1'b0);
+    wire uop0_is_mem_type = (be_uop0_class == UOP_LOAD) || (be_uop0_class == UOP_STORE) ||
+                            (be_uop0_class == UOP_AMO)  || (be_uop0_class == UOP_FENCE);
+    wire uop0_is_load_type = (be_uop0_class == UOP_LOAD);
+    wire uop0_is_store_type = (be_uop0_class == UOP_STORE) || (be_uop0_class == UOP_AMO);
+
+    wire ev_stall_rob_full   = rename_stalled && (rob_count_o >= 7'd48);
+    wire ev_stall_intiq_full = rename_stalled && !uop0_is_mem_type && !backend_int_dispatch_ready[0];
+    wire ev_stall_memiq_full = rename_stalled && uop0_is_mem_type && !backend_memiq_ready[0];
+    wire ev_stall_lq_full    = rename_stalled && uop0_is_load_type && !backend_lq_ready[0];
+    wire ev_stall_sq_full    = rename_stalled && uop0_is_store_type && !backend_sq_ready[0];
+    wire ev_stall_chkpt_full = rename_stalled && (chkpt_free_count_o == 4'd0) && (sub_uop0_is_branch || sub_uop1_is_branch);
+    wire ev_stall_recovery   = rename_stalled && int_recovering;
+
+    // Retire Density and Serialization Events
+    wire ev_retire_cycles_0  = (rob_count_o > 7'd0) && (retire_valid_o == 2'b00);
+    wire ev_retire_cycles_1  = (retire_valid_o[0] ^ retire_valid_o[1]);
+    wire ev_retire_cycles_2  = (retire_valid_o[0] && retire_valid_o[1]);
+    wire ev_serialize_cycles = !fe_retire_ready || csr_flush_valid;
+
+    // CPI Single-Owner Deterministic Accounting Predicates (Section 9.1)
+    wire cpi_serialize   = !fe_retire_ready || csr_flush_valid;
+    wire cpi_br_recover  = int_recovering;
+    wire cpi_productive  = (retire_valid_o != 2'b00);
+    wire cpi_mem_stall   = be_rob_head_is_mem_stall;
+    wire cpi_be_rename   = !fe_fetch_queue_empty_o && (int_rename_ack == 2'b00);
+    wire cpi_be_sched    = (rob_count_o > 7'd0) && be_event_intiq_empty && be_event_memiq_empty;
+    wire cpi_fe_starve   = fe_fetch_queue_empty_o && frontend_en_i && !rst_i;
+
+    fursoy_s1_hpm u_hpm (
+        .clk_i                   (clk_i),
+        .rst_i                   (rst_i),
+
+        .csr_raddr_i             (hpm_csr_raddr),
+        .csr_rdata_o             (hpm_csr_rdata),
+        .csr_hit_o               (hpm_csr_hit),
+        .csr_we_i                (hpm_we),
+        .csr_waddr_i             (hpm_waddr),
+        .csr_wdata_i             (hpm_wdata),
+
+        .retire_valid_i          (retire_valid_o),
+        .retire_rob_idx_i        (int_retire_rob_idx),
+
+        .recover_valid_i         (int_recover_valid),
+        .recover_rob_idx_i       (int_recover_rob_idx),
+        .recover_br_type_i       (int_train_br_type),
+        .flush_valid_i           (core_flush_valid),
+
+        .ev_fetch_cycles_i       (fe_event_fetch_cycles),
+        .ev_fetch_blocks_i       (fe_event_fetch_blocks),
+        .ev_fetch_uops_i         (fe_event_fetch_uops),
+        .ev_fetch_fq_starved_i   (fe_event_fetch_fq_starved),
+        .ev_fetch_fq_full_i      (fe_event_fetch_fq_full),
+        .ev_fetch_odd_slot_i     (fe_event_fetch_odd_slot),
+        .ev_l1i_hits_i           (fe_event_l1i_hits),
+        .ev_l1i_misses_i         (fe_event_l1i_misses),
+        .ev_l1i_imshr_occ_i      (fe_event_l1i_imshr_occ),
+        .ev_itlb_misses_i        (fe_event_itlb_misses),
+        .ev_btb_queries_i        (fe_event_btb_queries),
+        .ev_btb_hits_i           (fe_event_btb_hits),
+        .ev_bpu_cond_pred_i      (fe_event_bpu_cond_pred),
+        .ev_ras_call_push_i      (fe_event_ras_call_push),
+        .ev_ras_ret_pop_i        (fe_event_ras_ret_pop),
+        .ev_rename_uops_i        ((sub_uop0_ack ? 2'd1 : 2'd0) + (sub_uop1_ack ? 2'd1 : 2'd0)),
+        .ev_stall_rob_full_i     (ev_stall_rob_full),
+        .ev_stall_intiq_full_i   (ev_stall_intiq_full),
+        .ev_stall_memiq_full_i   (ev_stall_memiq_full),
+        .ev_stall_lq_full_i      (ev_stall_lq_full),
+        .ev_stall_sq_full_i      (ev_stall_sq_full),
+        .ev_stall_chkpt_full_i   (ev_stall_chkpt_full),
+        .ev_stall_recovery_i     (ev_stall_recovery),
+        .ev_issue_port0_i        (be_event_issue_p0),
+        .ev_issue_port1_alu_i    (be_event_issue_p1_alu),
+        .ev_issue_port1_mul_i    (be_event_issue_p1_mul),
+        .ev_issue_port1_div_i    (be_event_issue_p1_div),
+        .ev_issue_port2_agu_i    (be_event_issue_p2_agu),
+        .ev_port1_wb_stall_i     (be_event_p1_wb_stall),
+        .ev_intiq_empty_i        (be_event_intiq_empty),
+        .ev_memiq_empty_i        (be_event_memiq_empty),
+        .ev_load_issued_i        (be_event_load_issued),
+        .ev_load_speculative_i   (1'b0), // Phase B only
+        .ev_load_fwd_exact_i     (be_event_load_fwd_exact),
+        .ev_load_fwd_partial_i   (be_event_load_fwd_partial),
+        .ev_load_raw_violat_i    (1'b0), // Phase B only
+        .ev_l1d_hits_i           (be_event_l1d_hits),
+        .ev_l1d_misses_i         (be_event_l1d_misses),
+        .ev_l1d_mshr_occ_i       (be_event_l1d_mshr_occ),
+        .ev_l1d_wbb_full_i       (be_event_l1d_wbb_full),
+        .ev_dtlb_misses_i        (be_event_dtlb_misses),
+        .ev_retire_cycles_0_i    (ev_retire_cycles_0),
+        .ev_retire_cycles_1_i    (ev_retire_cycles_1),
+        .ev_retire_cycles_2_i    (ev_retire_cycles_2),
+        .ev_serialize_cycles_i   (ev_serialize_cycles),
+
+        .cpi_serialize_i         (cpi_serialize),
+        .cpi_br_recover_i        (cpi_br_recover),
+        .cpi_productive_i        (cpi_productive),
+        .cpi_mem_stall_i         (cpi_mem_stall),
+        .cpi_be_rename_i         (cpi_be_rename),
+        .cpi_be_sched_i          (cpi_be_sched),
+        .cpi_fe_starve_i         (cpi_fe_starve),
+
+        .mcycle_o                (mcycle_o),
+        .minstret_o              (minstret_o),
+        .mhpmcounter_o           (mhpmcounter_o),
+        .cpi_category_o          (cpi_category_o),
+        .cpi_active_owner_o      (cpi_active_owner_o),
+        .raw_event_pulse_o       (raw_event_pulse_o)
     );
 
 endmodule

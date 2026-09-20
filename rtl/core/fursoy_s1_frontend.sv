@@ -187,7 +187,24 @@ module fursoy_s1_frontend
     output logic [63:0]       hpm_redirect_cyc_o,
 
     // Diagnostics
-    output logic [2:0]        diag_grants_since_itlb_o
+    output logic [2:0]        diag_grants_since_itlb_o,
+
+    // Observability & Telemetry (Milestone 5)
+    output logic              event_fetch_cycles_o,
+    output logic              event_fetch_blocks_o,
+    output logic [1:0]        event_fetch_uops_o,
+    output logic              event_fetch_fq_starved_o,
+    output logic              event_fetch_fq_full_o,
+    output logic              event_fetch_odd_slot_o,
+    output logic              event_l1i_hits_o,
+    output logic              event_l1i_misses_o,
+    output logic [1:0]        event_l1i_imshr_occ_o,
+    output logic              event_itlb_misses_o,
+    output logic              event_btb_queries_o,
+    output logic              event_btb_hits_o,
+    output logic              event_bpu_cond_pred_o,
+    output logic              event_ras_call_push_o,
+    output logic              event_ras_ret_pop_o
 );
 
     // =========================================================================
@@ -242,6 +259,7 @@ module fursoy_s1_frontend
     wire        itlb_event_miss;
     wire        l1i_event_hit;
     wire        l1i_event_miss;
+    wire [1:0]  l1i_imshr_occ;
     wire        btb_event_hit;
     wire        btb_event_miss;
     wire        bpu_event_cond_pred;
@@ -560,6 +578,7 @@ module fursoy_s1_frontend
 
         .event_l1i_hit_o          (l1i_event_hit),
         .event_l1i_miss_o         (l1i_event_miss),
+        .imshr_occ_o              (l1i_imshr_occ),
         .diag_f2_skid_valid_o     ()
     );
 
@@ -823,6 +842,24 @@ module fursoy_s1_frontend
             if (any_redirect)                               hpm_redirect_cyc_o    <= hpm_redirect_cyc_o + 1'b1;
         end
     end
+
+    // Milestone 5 Telemetry Event Assignments
+    assign event_fetch_cycles_o     = f0_valid_q && frontend_en_i && !rst_i;
+    assign event_fetch_blocks_o     = f3_valid && !f3_exception_valid;
+    assign event_fetch_uops_o       = (fq_entry0.valid && !stall_downstream ? 2'd1 : 2'd0) +
+                                      (fq_entry1.valid && !stall_downstream ? 2'd1 : 2'd0);
+    assign event_fetch_fq_starved_o = fq_empty && frontend_en_i && !rst_i;
+    assign event_fetch_fq_full_o    = fq_full;
+    assign event_fetch_odd_slot_o   = f3_valid && (f3_pc[2] == 1'b1);
+    assign event_l1i_hits_o         = l1i_event_hit;
+    assign event_l1i_misses_o       = l1i_event_miss;
+    assign event_l1i_imshr_occ_o    = l1i_imshr_occ;
+    assign event_itlb_misses_o      = itlb_event_miss;
+    assign event_btb_queries_o      = f0_valid_q && !f2_stall_f1;
+    assign event_btb_hits_o         = btb_event_hit;
+    assign event_bpu_cond_pred_o    = bpu_event_cond_pred;
+    assign event_ras_call_push_o    = bpu_event_ras_call;
+    assign event_ras_ret_pop_o      = bpu_event_ras_ret;
 
     /* verilator lint_on PINCONNECTEMPTY */
 

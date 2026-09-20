@@ -70,6 +70,7 @@ module fursoy_s1_l1i
     // -------------------------------------------------------------------------
     output logic              event_l1i_hit_o,
     output logic              event_l1i_miss_o,
+    output logic [1:0]        imshr_occ_o,
     output logic              diag_f2_skid_valid_o
 );
 
@@ -159,6 +160,8 @@ module fursoy_s1_l1i
     } imshr_entry_t;
 
     imshr_entry_t imshr_q [IMSHR_DEPTH];
+
+    assign imshr_occ_o = (imshr_q[0].valid ? 2'd1 : 2'd0) + (imshr_q[1].valid ? 2'd1 : 2'd0);
 
     wire imshr0_avail = !imshr_q[0].valid;
     wire imshr1_avail = !imshr_q[1].valid;

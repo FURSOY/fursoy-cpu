@@ -95,7 +95,13 @@ module fursoy_s1_l1d
     output logic              dcache_clean_all_done_o,
 
     // Quiescence Diagnostics (for FENCE serialization)
-    output logic              l1d_quiescent_o
+    output logic              l1d_quiescent_o,
+
+    // Observability & Telemetry (Milestone 5)
+    output logic              event_l1d_hit_o,
+    output logic              event_l1d_miss_o,
+    output logic [2:0]        mshr_occ_o,
+    output logic              wbb_full_o
 );
 
     // =========================================================================
@@ -143,6 +149,14 @@ module fursoy_s1_l1d
     // =========================================================================
     mshr_entry_t mshr_q [MSHR_DEPTH];
     mshr_waiter_t mshr_waiters_q [MSHR_DEPTH][LQ_DEPTH];
+
+    assign event_l1d_hit_o  = load_req_valid_i && load_accept && (load_cache_hit || load_wbb_hit);
+    assign event_l1d_miss_o = load_req_valid_i && load_accept && !(load_cache_hit || load_wbb_hit);
+    assign mshr_occ_o       = (mshr_q[0].valid ? 3'd1 : 3'd0) +
+                              (mshr_q[1].valid ? 3'd1 : 3'd0) +
+                              (mshr_q[2].valid ? 3'd1 : 3'd0) +
+                              (mshr_q[3].valid ? 3'd1 : 3'd0);
+    assign wbb_full_o       = wbb_q[0].valid && wbb_q[1].valid;
 
     // MSHR Free Count & Slot Allocator
     logic [2:0] mshr_free_count;

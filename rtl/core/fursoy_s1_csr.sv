@@ -93,7 +93,15 @@ module fursoy_s1_csr
     output logic [63:0]       csr_scause_o,
     output logic [63:0]       csr_stval_o,
     output logic [63:0]       csr_mtvec_o,
-    output logic [63:0]       csr_stvec_o
+    output logic [63:0]       csr_stvec_o,
+
+    // HPM Interface (Milestone 5)
+    output logic [11:0]       hpm_csr_raddr_o,
+    input  logic [63:0]       hpm_csr_rdata_i,
+    input  logic              hpm_csr_hit_i,
+    output logic              hpm_we_o,
+    output logic [11:0]       hpm_waddr_o,
+    output logic [63:0]       hpm_wdata_o
 );
 
     // =========================================================================
@@ -159,6 +167,8 @@ module fursoy_s1_csr
     logic        csr_implemented;
     logic        csr_read_only;
 
+    assign hpm_csr_raddr_o = p0_sys_csr_addr_i;
+
     always_comb begin
         csr_implemented = 1'b1;
         csr_read_only   = (p0_sys_csr_addr_i[11:10] == 2'b11);
@@ -199,16 +209,16 @@ module fursoy_s1_csr
             12'h144: old_csr_val = sip_val;
             12'h180: old_csr_val = satp_q;
 
-            // Counters (Read-Only)
-            12'hc00, 12'hc01, 12'hc02: begin
-                old_csr_val   = cycle_q;
-                csr_read_only = 1'b1;
-            end
-
             default: begin
-                csr_implemented = 1'b0;
-                csr_read_only   = 1'b0;
-                old_csr_val     = 64'd0;
+                if (hpm_csr_hit_i) begin
+                    old_csr_val     = hpm_csr_rdata_i;
+                    csr_implemented = 1'b1;
+                    csr_read_only   = (p0_sys_csr_addr_i[11:10] == 2'b11);
+                end else begin
+                    csr_implemented = 1'b0;
+                    csr_read_only   = 1'b0;
+                    old_csr_val     = 64'd0;
+                end
             end
         endcase
     end
@@ -283,10 +293,10 @@ module fursoy_s1_csr
                     else if (csr_read_only && csr_write_intent) sys_illegal = 1'b1;
                     // TVM check: satp (0x180) in S-mode with mstatus.TVM == 1
                     else if (p0_sys_csr_addr_i == 12'h180 && eff_priv == 2'b01 && eff_mstatus[20]) sys_illegal = 1'b1;
-                    // Counter access gates
-                    else if (p0_sys_csr_addr_i >= 12'hc00 && p0_sys_csr_addr_i <= 12'hc02) begin
-                        if (eff_priv == 2'b01 && !mcounteren_q[{4'd0, p0_sys_csr_addr_i[1:0]}]) sys_illegal = 1'b1;
-                        else if (eff_priv == 2'b00 && (!mcounteren_q[{4'd0, p0_sys_csr_addr_i[1:0]}] || !scounteren_q[{4'd0, p0_sys_csr_addr_i[1:0]}])) sys_illegal = 1'b1;
+                    // Counter access gates (cycle/time/instret + hpmcounter3..31)
+                    else if (p0_sys_csr_addr_i >= 12'hc00 && p0_sys_csr_addr_i <= 12'hc1f) begin
+                        if (eff_priv == 2'b01 && !mcounteren_q[31:0][p0_sys_csr_addr_i[4:0]]) sys_illegal = 1'b1;
+                        else if (eff_priv == 2'b00 && (!mcounteren_q[31:0][p0_sys_csr_addr_i[4:0]] || !scounteren_q[31:0][p0_sys_csr_addr_i[4:0]])) sys_illegal = 1'b1;
                     end
                 end
 
@@ -353,6 +363,10 @@ module fursoy_s1_csr
 
             cycle_q      <= '0;
 
+            hpm_we_o     <= 1'b0;
+            hpm_waddr_o  <= '0;
+            hpm_wdata_o  <= '0;
+
             pending_sys_q         <= '0;
             sys_redirect_valid_o  <= 1'b0;
             sys_redirect_target_o <= '0;
@@ -368,6 +382,7 @@ module fursoy_s1_csr
             sys_redirect_valid_o <= 1'b0;
             sys_flush_valid_o    <= 1'b0;
             sfence_vma_valid_o   <= 1'b0;
+            hpm_we_o             <= 1'b0;
 
             // Capture valid non-illegal system uop issued on Port 0
             if (p0_sys_valid_i && !sys_illegal) begin
@@ -481,7 +496,7 @@ module fursoy_s1_csr
                                 12'h304: mie_q        <= pending_sys_q.write_val & 64'haaa;
                                 12'h305: mtvec_q      <= {pending_sys_q.write_val[63:2],
                                                          (pending_sys_q.write_val[1:0] <= 2'b01) ? pending_sys_q.write_val[1:0] : 2'b00};
-                                12'h306: mcounteren_q <= pending_sys_q.write_val & 64'd7;
+                                12'h306: mcounteren_q <= pending_sys_q.write_val & 64'h0000_0000_ffff_ffff;
                                 12'h30a: menvcfg_q    <= pending_sys_q.write_val & 64'd1;
                                 12'h340: mscratch_q   <= pending_sys_q.write_val;
                                 12'h341: mepc_q       <= {pending_sys_q.write_val[63:2], 2'b00};
@@ -503,7 +518,7 @@ module fursoy_s1_csr
                                 12'h104: mie_q        <= (mie_q & ~(mideleg_q & 64'h222)) | (pending_sys_q.write_val & (mideleg_q & 64'h222));
                                 12'h105: stvec_q      <= {pending_sys_q.write_val[63:2],
                                                          (pending_sys_q.write_val[1:0] <= 2'b01) ? pending_sys_q.write_val[1:0] : 2'b00};
-                                12'h106: scounteren_q <= pending_sys_q.write_val & 64'd7;
+                                12'h106: scounteren_q <= pending_sys_q.write_val & 64'h0000_0000_ffff_ffff;
                                 12'h10a: senvcfg_q    <= pending_sys_q.write_val & 64'd1;
                                 12'h140: sscratch_q   <= pending_sys_q.write_val;
                                 12'h141: sepc_q       <= {pending_sys_q.write_val[63:2], 2'b00};
@@ -522,7 +537,20 @@ module fursoy_s1_csr
                                     sys_flush_valid_o     <= 1'b1;
                                 end
 
-                                default: ;
+                                12'hB00, 12'hB02: begin
+                                    hpm_we_o    <= 1'b1;
+                                    hpm_waddr_o <= pending_sys_q.csr_addr;
+                                    hpm_wdata_o <= pending_sys_q.write_val;
+                                end
+
+                                default: begin
+                                    if ((pending_sys_q.csr_addr >= 12'hB03 && pending_sys_q.csr_addr <= 12'hB1F) ||
+                                        (pending_sys_q.csr_addr >= 12'h323 && pending_sys_q.csr_addr <= 12'h33F)) begin
+                                        hpm_we_o    <= 1'b1;
+                                        hpm_waddr_o <= pending_sys_q.csr_addr;
+                                        hpm_wdata_o <= pending_sys_q.write_val;
+                                    end
+                                end
                             endcase
                         end
                     end

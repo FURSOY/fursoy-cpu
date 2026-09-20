@@ -153,7 +153,22 @@ module fursoy_s1_lsu
     // L1D Maintenance & Serialization (M4)
     input  logic              dcache_clean_all_req_i,
     output logic              dcache_clean_all_done_o,
-    output logic              sq_empty_o
+    output logic              sq_empty_o,
+
+    // Observability & Telemetry (Milestone 5)
+    output logic              event_load_issued_o,
+    output logic              event_load_fwd_exact_o,
+    output logic              event_load_fwd_partial_o,
+    output logic              event_l1d_hit_o,
+    output logic              event_l1d_miss_o,
+    output logic [2:0]        event_l1d_mshr_occ_o,
+    output logic              event_l1d_wbb_full_o,
+    output logic              event_dtlb_miss_o,
+    output logic              rob_head_is_mem_stall_o,
+    output logic [1:0]        memiq_ready_o,
+    output logic [1:0]        lq_ready_o,
+    output logic [1:0]        sq_ready_o,
+    output logic [11:0]       memiq_diag_ready_o
 );
 
     // =========================================================================
@@ -276,10 +291,16 @@ module fursoy_s1_lsu
 
         /* verilator lint_off PINCONNECTEMPTY */
         .diag_valid_mask_o  (),
-        .diag_ready_mask_o  (),
+        .diag_ready_mask_o  (memiq_diag_ready_o),
         .free_count_o       ()
         /* verilator lint_on PINCONNECTEMPTY */
     );
+
+    assign event_load_issued_o = memiq_issue_valid && (memiq_issue_uop.uop_class == UOP_LOAD);
+    assign memiq_ready_o       = memiq_ready;
+    assign lq_ready_o          = lq_ready;
+    assign sq_ready_o          = sq_ready;
+    assign event_dtlb_miss_o   = ptw_req_valid_o && ptw_req_ready_i;
 
     // Drive PRF Read Port 4 (Base Address)
     assign r4_paddr_o = memiq_issue_uop.prs1;
@@ -465,6 +486,11 @@ module fursoy_s1_lsu
         .refill_comp_rob_epoch_o    (refill_comp_rob_epoch),
         .refill_comp_data_o         (refill_comp_data),
 
+        .event_l1d_hit_o            (event_l1d_hit_o),
+        .event_l1d_miss_o           (event_l1d_miss_o),
+        .mshr_occ_o                 (event_l1d_mshr_occ_o),
+        .wbb_full_o                 (event_l1d_wbb_full_o),
+
         .bus_rd_req_valid_o         (bus_rd_req_valid_o),
         .bus_rd_req_addr_o          (bus_rd_req_addr_o),
         .bus_rd_req_tag_o           (bus_rd_req_tag_o),
@@ -625,7 +651,11 @@ module fursoy_s1_lsu
         .comp_exception_o           (p2_comp_exception_o),
         .comp_cause_o               (p2_comp_cause_o),
         .wb_data_o                  (p2_wb_data_o),
-        .comp_ack_i                 (p2_comp_ack_i)
+        .comp_ack_i                 (p2_comp_ack_i),
+
+        .event_load_fwd_exact_o     (event_load_fwd_exact_o),
+        .event_load_fwd_partial_o   (event_load_fwd_partial_o),
+        .rob_head_is_mem_stall_o    (rob_head_is_mem_stall_o)
     );
 
 endmodule

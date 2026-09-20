@@ -190,7 +190,30 @@ module fursoy_s1_backend
     output rob_idx_t          p0_sys_rob_idx_o,
 
     input  logic [63:0]       p0_sys_rdata_i,
-    input  logic              p0_sys_illegal_i
+    input  logic              p0_sys_illegal_i,
+
+    // Observability & Telemetry (Milestone 5)
+    output logic              event_issue_port0_o,
+    output logic              event_issue_port1_alu_o,
+    output logic              event_issue_port1_mul_o,
+    output logic              event_issue_port1_div_o,
+    output logic              event_issue_port2_agu_o,
+    output logic              event_port1_wb_stall_o,
+    output logic              event_intiq_empty_o,
+    output logic              event_memiq_empty_o,
+    output logic              event_load_issued_o,
+    output logic              event_load_fwd_exact_o,
+    output logic              event_load_fwd_partial_o,
+    output logic              event_l1d_hits_o,
+    output logic              event_l1d_misses_o,
+    output logic [2:0]        event_l1d_mshr_occ_o,
+    output logic              event_l1d_wbb_full_o,
+    output logic              event_dtlb_misses_o,
+    output logic              rob_head_is_mem_stall_o,
+    output logic [1:0]        int_dispatch_ready_o,
+    output logic [1:0]        memiq_ready_o,
+    output logic [1:0]        lq_ready_o,
+    output logic [1:0]        sq_ready_o
 );
 
     // -------------------------------------------------------------------------
@@ -820,12 +843,15 @@ module fursoy_s1_backend
         .wb_data_o          (p1_wb_data),
         .wb_pnew_o          (p1_wb_pnew),
         .wb_rob_idx_o       (p1_wb_rob_idx),
-        .wb_rob_epoch_o     (p1_wb_rob_epoch)
+        .wb_rob_epoch_o     (p1_wb_rob_epoch),
+        .alu1_wb_stall_o    (event_port1_wb_stall_o)
     );
 
     // -------------------------------------------------------------------------
     // 5. Load/Store Unit (LSU) Subsystem — Milestone 3
     // -------------------------------------------------------------------------
+    wire [11:0] memiq_diag_ready;
+
     fursoy_s1_lsu u_lsu (
         .clk_i                   (clk_i),
         .rst_i                   (rst_i),
@@ -926,8 +952,35 @@ module fursoy_s1_backend
 
         .dcache_clean_all_req_i  (dcache_clean_all_req_i),
         .dcache_clean_all_done_o (dcache_clean_all_done_o),
-        .sq_empty_o              (sq_empty_o)
+        .sq_empty_o              (sq_empty_o),
+
+        .event_load_issued_o     (event_load_issued_o),
+        .event_load_fwd_exact_o  (event_load_fwd_exact_o),
+        .event_load_fwd_partial_o(event_load_fwd_partial_o),
+        .event_l1d_hit_o         (event_l1d_hits_o),
+        .event_l1d_miss_o        (event_l1d_misses_o),
+        .event_l1d_mshr_occ_o    (event_l1d_mshr_occ_o),
+        .event_l1d_wbb_full_o    (event_l1d_wbb_full_o),
+        .event_dtlb_miss_o       (event_dtlb_misses_o),
+        .rob_head_is_mem_stall_o (rob_head_is_mem_stall_o),
+        .memiq_ready_o           (memiq_ready_o),
+        .lq_ready_o              (lq_ready_o),
+        .sq_ready_o              (sq_ready_o),
+        .memiq_diag_ready_o      (memiq_diag_ready)
     );
+
+    wire is1_is_mul = (is1_uop.uop_class == UOP_MUL);
+    wire is1_is_div = (is1_uop.uop_class == UOP_DIV);
+
+    assign event_issue_port0_o     = is0_valid && !is0_squashed;
+    assign event_issue_port1_mul_o = is1_valid && !is1_squashed && is1_is_mul;
+    assign event_issue_port1_div_o = is1_valid && !is1_squashed && is1_is_div;
+    assign event_issue_port1_alu_o = is1_valid && !is1_squashed && !is1_is_mul && !is1_is_div;
+    assign event_issue_port2_agu_o = u_lsu.memiq_issue_valid;
+
+    assign event_intiq_empty_o     = (diag_ready_p0_o == 16'd0) && (diag_ready_p1_o == 16'd0);
+    assign event_memiq_empty_o     = (memiq_diag_ready == 12'd0);
+    assign int_dispatch_ready_o    = int_dispatch_ready;
 
     // -------------------------------------------------------------------------
     // 6. Upstream Completion Interface (to M1 Substrate)

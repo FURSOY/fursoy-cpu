@@ -189,7 +189,12 @@ module fursoy_s1_lsu_queues
     output logic              comp_exception_o,
     output logic [4:0]        comp_cause_o,
     output logic [63:0]       wb_data_o,
-    input  logic              comp_ack_i
+    input  logic              comp_ack_i,
+
+    // Observability & Telemetry (Milestone 5)
+    output logic              event_load_fwd_exact_o,
+    output logic              event_load_fwd_partial_o,
+    output logic              rob_head_is_mem_stall_o
 );
 
     // =========================================================================
@@ -533,6 +538,23 @@ module fursoy_s1_lsu_queues
 
     // L1D Speculative Load Issue Launch
     wire l1d_issue_fire = disambig_lq_valid && !fwd_success && !fwd_stall && l1d_load_req_ready_i;
+
+    assign event_load_fwd_exact_o   = disambig_lq_valid && fwd_success;
+    assign event_load_fwd_partial_o = disambig_lq_valid && fwd_stall;
+
+    always_comb begin
+        rob_head_is_mem_stall_o = 1'b0;
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            if (lq_q[l].valid && !lq_q[l].completed && (lq_q[l].rob_idx == rob_head_i)) begin
+                rob_head_is_mem_stall_o = 1'b1;
+            end
+        end
+        for (int s = 0; s < SQ_DEPTH; s++) begin
+            if (sq_q[s].valid && !sq_q[s].completed && (sq_q[s].rob_idx == rob_head_i)) begin
+                rob_head_is_mem_stall_o = 1'b1;
+            end
+        end
+    end
 
     assign l1d_load_req_valid_o    = disambig_lq_valid && !fwd_success && !fwd_stall;
     assign l1d_load_req_lq_idx_o   = disambig_lq_idx;

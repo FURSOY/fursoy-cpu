@@ -1,7 +1,7 @@
 {
   "status": "pass",
   "scope": "DUT execution of bare-metal ELFs with memory adapter",
-  "observed_at_utc": "2026-09-20T12:42:04.960489+00:00",
+  "observed_at_utc": "2026-09-20T16:19:31.795761+00:00",
   "source_sha256": {
     "rtl/core/fursoy_s0_fetch.sv": "a3b1cf21a06f4b0730c7a05233c5d063bce2d5f9c1ccef11456e3bb9981e0697",
     "rtl/core/fursoy_s0_int_alu.sv": "4bf05f9114c0e35c6c51020f126770127a28178d4eccd9798f8a8f5fa000e6d0",
