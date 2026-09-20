@@ -148,7 +148,12 @@ module fursoy_s1_lsu
     input  tr_id_t            ptw_rsp_tr_id_i,
     input  logic [55:0]       ptw_rsp_pa_i,
     input  logic              ptw_rsp_page_fault_i,
-    input  logic              ptw_rsp_access_fault_i
+    input  logic              ptw_rsp_access_fault_i,
+
+    // L1D Maintenance & Serialization (M4)
+    input  logic              dcache_clean_all_req_i,
+    output logic              dcache_clean_all_done_o,
+    output logic              sq_empty_o
 );
 
     // =========================================================================
@@ -476,6 +481,8 @@ module fursoy_s1_lsu
 
         .bus_wr_rsp_valid_i         (bus_wr_rsp_valid_i),
 
+        .dcache_clean_all_req_i     (dcache_clean_all_req_i),
+        .dcache_clean_all_done_o    (dcache_clean_all_done_o),
         .l1d_quiescent_o            (l1d_quiescent)
     );
 
@@ -603,6 +610,7 @@ module fursoy_s1_lsu
         .l1d_store_drain_ready_i    (l1d_store_drain_ready),
         .l1d_store_drain_done_i     (l1d_store_drain_done),
         .l1d_quiescent_i            (l1d_quiescent),
+        .sq_empty_o                 (sq_empty_o),
 
         .retire_valid_i             (retire_valid_i),
         .retire_pnew_i              (retire_pnew_i),

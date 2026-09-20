@@ -90,6 +90,10 @@ module fursoy_s1_l1d
 
     input  logic              bus_wr_rsp_valid_i,
 
+    // Maintenance Interface (M4 FENCE.I L1D clean-all)
+    input  logic              dcache_clean_all_req_i,
+    output logic              dcache_clean_all_done_o,
+
     // Quiescence Diagnostics (for FENCE serialization)
     output logic              l1d_quiescent_o
 );
@@ -176,8 +180,20 @@ module fursoy_s1_l1d
     endfunction
 
     // =========================================================================
-    // Cache Lookup Helper Functions
+    // Clean-All Sweep Maintenance FSM (Milestone 4 FENCE.I)
     // =========================================================================
+    typedef enum logic [1:0] {
+        CLEAN_IDLE  = 2'd0,
+        CLEAN_SWEEP = 2'd1,
+        CLEAN_DRAIN = 2'd2,
+        CLEAN_DONE  = 2'd3
+    } clean_state_t;
+
+    clean_state_t clean_state_q;
+    logic [5:0]   clean_set_q;
+    logic [1:0]   clean_way_q;
+
+    assign dcache_clean_all_done_o = (clean_state_q == CLEAN_DONE);
     function automatic logic check_cache_hit(
         input logic [5:0]  set_idx,
         input logic [43:0] tag,
@@ -551,6 +567,9 @@ module fursoy_s1_l1d
             end
             bus_wr_inflight_q      <= 1'b0;
             bus_wr_inflight_slot_q <= '0;
+            clean_state_q          <= CLEAN_IDLE;
+            clean_set_q            <= 6'd0;
+            clean_way_q            <= 2'd0;
         end else begin
             // -----------------------------------------------------------------
             // 1. Bus Writeback Response Handshake
@@ -786,6 +805,67 @@ module fursoy_s1_l1d
                     mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].rob_epoch    <= load_req_rob_epoch_i;
                 end
             end
+
+            // -----------------------------------------------------------------
+            // 7. Clean-All Maintenance Sweep (FENCE.I Dirty L1D Clean)
+            // -----------------------------------------------------------------
+            case (clean_state_q)
+                CLEAN_IDLE: begin
+                    if (dcache_clean_all_req_i) begin
+                        clean_state_q <= CLEAN_SWEEP;
+                        clean_set_q   <= 6'd0;
+                        clean_way_q   <= 2'd0;
+                    end
+                end
+
+                CLEAN_SWEEP: begin
+                    if (valid_array[clean_set_q][clean_way_q] && dirty_array[clean_set_q][clean_way_q]) begin
+                        if (wbb_avail_count > 0) begin
+                            wbb_q[store_wbb_target].valid       <= 1'b1;
+                            wbb_q[store_wbb_target].dirty       <= 1'b1;
+                            wbb_q[store_wbb_target].draining    <= 1'b0;
+                            wbb_q[store_wbb_target].line_addr   <= {tag_array[clean_set_q][clean_way_q], clean_set_q};
+                            wbb_q[store_wbb_target].data        <= data_array[clean_set_q][clean_way_q];
+                            wbb_q[store_wbb_target].dirty_mask  <= '1;
+                            dirty_array[clean_set_q][clean_way_q] <= 1'b0;
+
+                            if (clean_way_q == 2'd3) begin
+                                clean_way_q <= 2'd0;
+                                if (clean_set_q == 6'd63) begin
+                                    clean_state_q <= CLEAN_DRAIN;
+                                end else begin
+                                    clean_set_q <= clean_set_q + 1'b1;
+                                end
+                            end else begin
+                                clean_way_q <= clean_way_q + 1'b1;
+                            end
+                        end
+                    end else begin
+                        if (clean_way_q == 2'd3) begin
+                            clean_way_q <= 2'd0;
+                            if (clean_set_q == 6'd63) begin
+                                clean_state_q <= CLEAN_DRAIN;
+                            end else begin
+                                clean_set_q <= clean_set_q + 1'b1;
+                            end
+                        end else begin
+                            clean_way_q <= clean_way_q + 1'b1;
+                        end
+                    end
+                end
+
+                CLEAN_DRAIN: begin
+                    if ((wbb_free_count == 2'd2) && !bus_wr_inflight_q && (mshr_free_count == 3'd4)) begin
+                        clean_state_q <= CLEAN_DONE;
+                    end
+                end
+
+                CLEAN_DONE: begin
+                    if (!dcache_clean_all_req_i) begin
+                        clean_state_q <= CLEAN_IDLE;
+                    end
+                end
+            endcase
         end
     end
 `ifndef SYNTHESIS

@@ -150,7 +150,8 @@ package fursoy_s1_pkg;
         UOP_LOAD      = 4'd9,
         UOP_STORE     = 4'd10,
         UOP_AMO       = 4'd11,
-        UOP_FENCE     = 4'd12
+        UOP_FENCE     = 4'd12,
+        UOP_SYSTEM    = 4'd13
     } uop_class_t;
 
     typedef enum logic [6:0] {
@@ -262,8 +263,32 @@ package fursoy_s1_pkg;
         AMO_MAXU_D    = 7'd93,
         // Milestone 3 Fences
         MEM_FENCE     = 7'd94,
-        MEM_FENCE_I   = 7'd95
+        MEM_FENCE_I   = 7'd95,
+        // System & CSR Sub-Operations
+        SYS_CSRRW     = 7'd96,
+        SYS_CSRRS     = 7'd97,
+        SYS_CSRRC     = 7'd98,
+        SYS_CSRRWI    = 7'd99,
+        SYS_CSRRSI    = 7'd100,
+        SYS_CSRRCI    = 7'd101,
+        SYS_MRET      = 7'd102,
+        SYS_SRET      = 7'd103,
+        SYS_WFI       = 7'd104,
+        SYS_SFENCE_VMA= 7'd105
     } uop_subop_t;
+
+    localparam int unsigned GHR_WIDTH = 12; // 12-bit GHR
+    typedef logic [GHR_WIDTH-1:0] ghr_t;
+
+    // Branch Type Classification
+    typedef enum logic [2:0] {
+        BR_TYPE_COND = 3'd0,
+        BR_TYPE_JAL  = 3'd1,
+        BR_TYPE_JALR = 3'd2,
+        BR_TYPE_CALL = 3'd3,
+        BR_TYPE_RET  = 3'd4,
+        BR_TYPE_IND  = 3'd5
+    } branch_type_t;
 
     // -------------------------------------------------------------------------
     // Decoded Micro-operation Structure (Dispatch into IntIQ / MemIQ)
@@ -280,9 +305,13 @@ package fursoy_s1_pkg;
         logic        is_branch;
         logic        is_jal;
         logic        is_jalr;
+        branch_type_t br_type;
+        ghr_t        pre_ghr;
         logic        pred_taken;
         logic [63:0] pred_target;
         logic [63:0] pc;
+        logic        exception;
+        logic [4:0]  exc_cause;
     } uop_decoded_t;
 
     // -------------------------------------------------------------------------
@@ -308,7 +337,11 @@ package fursoy_s1_pkg;
         logic        is_branch;
         logic        is_jal;
         logic        is_jalr;
+        branch_type_t br_type;
+        ghr_t        pre_ghr;
         logic [1:0]  port_mask;     // Bit 0: P0 eligible, Bit 1: P1 eligible
+        logic        exception;
+        logic [4:0]  exc_cause;
     } iq_entry_t;
 
     // -------------------------------------------------------------------------
@@ -548,6 +581,50 @@ package fursoy_s1_pkg;
                      : diff[5:0];
         end
     endfunction
+
+    // -------------------------------------------------------------------------
+    // Milestone 4 Frontend Microarchitectural Dimensions & Parameters
+    // -------------------------------------------------------------------------
+    localparam int unsigned FETCH_QUEUE_DEPTH   = 12; // Decoupled Fetch Queue depth
+    localparam int unsigned FETCH_QUEUE_IDX_W   = 4;  // $clog2(12) <= 4 (0..11)
+    localparam int unsigned BTB_SETS            = 256;// BTB 256 sets
+    localparam int unsigned BTB_WAYS            = 2;  // BTB 2 ways (512 entries total)
+    localparam int unsigned GSHARE_ENTRIES      = 4096;// Gshare 4096 2-bit counters
+    localparam int unsigned RAS_DEPTH           = 16; // 16-entry circular RAS
+    localparam int unsigned L1I_WAYS            = 4;  // 16 KiB 4-Way baseline
+    localparam int unsigned L1I_SETS            = 64; // 64 sets (Way size = 4 KiB, VIPT-safe)
+    localparam int unsigned L1I_LINE_BYTES      = 64; // 64 bytes per cache line (512 bits)
+    localparam int unsigned IMSHR_DEPTH         = 2;  // 2 Instruction MSHRs
+    localparam int unsigned ITLB_BASE_ENTRIES   = 64; // 64 base page entries (4-way, 16 sets)
+    localparam int unsigned ITLB_SUPER_ENTRIES  = 8;  // 8 superpage CAM entries
+    localparam int unsigned ITRT_DEPTH          = 2;  // Instruction Translation Request Table
+
+    typedef logic [FETCH_QUEUE_IDX_W-1:0] fetch_queue_idx_t;
+
+    // Full 16-Entry Logical Return Address Stack Checkpoint Structure (Section 6)
+    typedef struct packed {
+        logic [15:0][63:0] ras_array;
+        logic [3:0]        tos_ptr;
+        logic [4:0]        depth;
+    } ras_chkpt_t;
+
+    // Fetch Queue Entry Structure (Section 5)
+    typedef struct packed {
+        logic        valid;
+        logic [63:0] pc;
+        logic [31:0] inst;
+        logic        exception_valid;
+        logic [4:0]  exception_cause;
+        logic [63:0] fault_addr;
+        logic        pred_taken;
+        logic [63:0] pred_target;
+        logic        is_branch;
+        logic        is_jal;
+        logic        is_jalr;
+        branch_type_t br_type;
+        ghr_t        pre_branch_ghr;
+        ras_chkpt_t  ras_chkpt;
+    } fetch_queue_entry_t;
 
 endpackage
 

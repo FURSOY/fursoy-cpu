@@ -166,6 +166,7 @@ module fursoy_s1_lsu_queues
     /* verilator lint_on UNUSEDSIGNAL */
     input  logic              l1d_store_drain_done_i,
     input  logic              l1d_quiescent_i,
+    output logic              sq_empty_o,
 
     // -------------------------------------------------------------------------
     // In-Order Store Retirement Handshake at ROB Head (Section 5.2)
@@ -263,6 +264,13 @@ module fursoy_s1_lsu_queues
     assign alloc_lq_slot1_o = lq_slot1;
     assign alloc_sq_slot0_o = sq_slot0;
     assign alloc_sq_slot1_o = sq_slot1;
+    logic [15:0] sq_store_mask;
+    always_comb begin
+        for (int i = 0; i < SQ_DEPTH; i++) begin
+            sq_store_mask[i] = sq_q[i].valid && (sq_q[i].sub_op != MEM_FENCE_I);
+        end
+    end
+    assign sq_empty_o       = (sq_store_mask == 16'd0);
 
     // Allocation Fires
     wire uop0_is_load  = (uop0_class_i == UOP_LOAD);

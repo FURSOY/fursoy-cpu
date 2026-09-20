@@ -20,6 +20,7 @@ module fursoy_s1_backend
 (
     input  logic              clk_i,
     input  logic              rst_i,
+    input  logic              frontend_en_i,
 
     // -------------------------------------------------------------------------
     // Substrate Flush & Recovery Handshake (M1 Interface)
@@ -29,10 +30,11 @@ module fursoy_s1_backend
     input  logic              recovering_i,        // Active recovery walk in progress
     input  rob_idx_t          rob_head_i,
 
-    // Branch recovery initiation (from Port 0 Branch Unit to M1 Substrate)
     output logic              recover_valid_o,
     output rob_idx_t          recover_rob_idx_o,
     output chkpt_idx_t        recover_chkpt_id_o,
+    output logic [63:0]       recover_target_o,
+    output logic              recover_actual_taken_o,
 
     // -------------------------------------------------------------------------
     // Dispatch Interface (from Decode / M1 Rename Stage)
@@ -60,6 +62,10 @@ module fursoy_s1_backend
     input  logic              uop0_is_branch_i,
     input  logic              uop0_is_jal_i,
     input  logic              uop0_is_jalr_i,
+    input  branch_type_t      uop0_br_type_i,
+    input  ghr_t              uop0_pre_ghr_i,
+    input  logic              uop0_exception_i,
+    input  logic [4:0]        uop0_exc_cause_i,
 
     // Uop 1 Payload
     input  logic              uop1_valid_i,
@@ -81,6 +87,10 @@ module fursoy_s1_backend
     input  logic              uop1_is_branch_i,
     input  logic              uop1_is_jal_i,
     input  logic              uop1_is_jalr_i,
+    input  branch_type_t      uop1_br_type_i,
+    input  ghr_t              uop1_pre_ghr_i,
+    input  logic              uop1_exception_i,
+    input  logic [4:0]        uop1_exc_cause_i,
 
     // -------------------------------------------------------------------------
     // M1 Completion Interface
@@ -154,7 +164,33 @@ module fursoy_s1_backend
     input  tr_id_t            ptw_rsp_tr_id_i,
     input  logic [55:0]       ptw_rsp_pa_i,
     input  logic              ptw_rsp_page_fault_i,
-    input  logic              ptw_rsp_access_fault_i
+    input  logic              ptw_rsp_access_fault_i,
+
+    // L1D Maintenance & Serialization (M4)
+    input  logic              dcache_clean_all_req_i,
+    output logic              dcache_clean_all_done_o,
+    output logic              sq_empty_o,
+
+    // Predictor Training Interface (to Frontend BPU)
+    output logic              train_valid_o,
+    output logic [63:0]       train_pc_o,
+    output logic              train_actual_taken_o,
+    output logic [63:0]       train_actual_target_o,
+    output branch_type_t      train_br_type_o,
+    output ghr_t              train_ghr_o,
+
+    // Privileged SYSTEM / CSR Execution Interface (Port 0)
+    output logic              p0_sys_valid_o,
+    output uop_subop_t        p0_sys_subop_o,
+    output logic [11:0]       p0_sys_csr_addr_o,
+    output logic [4:0]        p0_sys_rs1_field_o,
+    output logic [63:0]       p0_sys_rs1_val_o,
+    output logic [63:0]       p0_sys_rs2_val_o,
+    output logic [63:0]       p0_sys_pc_o,
+    output rob_idx_t          p0_sys_rob_idx_o,
+
+    input  logic [63:0]       p0_sys_rdata_i,
+    input  logic              p0_sys_illegal_i
 );
 
     // -------------------------------------------------------------------------
@@ -269,6 +305,10 @@ module fursoy_s1_backend
         .uop0_is_branch_i   (uop0_is_branch_i),
         .uop0_is_jal_i      (uop0_is_jal_i),
         .uop0_is_jalr_i     (uop0_is_jalr_i),
+        .uop0_br_type_i     (uop0_br_type_i),
+        .uop0_pre_ghr_i     (uop0_pre_ghr_i),
+        .uop0_exception_i   (uop0_exception_i),
+        .uop0_exc_cause_i   (uop0_exc_cause_i),
 
         .uop1_valid_i       (uop1_valid_i),
         .uop1_class_i       (uop1_class_i),
@@ -289,6 +329,10 @@ module fursoy_s1_backend
         .uop1_is_branch_i   (uop1_is_branch_i),
         .uop1_is_jal_i      (uop1_is_jal_i),
         .uop1_is_jalr_i     (uop1_is_jalr_i),
+        .uop1_br_type_i     (uop1_br_type_i),
+        .uop1_pre_ghr_i     (uop1_pre_ghr_i),
+        .uop1_exception_i   (uop1_exception_i),
+        .uop1_exc_cause_i   (uop1_exc_cause_i),
 
         .wb0_valid_i        (p0_wb_valid),
         .wb0_comp_ack_i     (comp_ack_i[0]),
@@ -510,43 +554,110 @@ module fursoy_s1_backend
         .mispredict_o   (br_mispredict)
     );
 
+
     wire p0_is_ctrl = (rf0_uop_q.uop_class == UOP_BRANCH) ||
                       (rf0_uop_q.uop_class == UOP_JAL)    ||
                       (rf0_uop_q.uop_class == UOP_JALR);
+    wire p0_is_sys  = (rf0_uop_q.uop_class == UOP_SYSTEM);
 
-    wire [63:0] p0_ex_data = p0_is_ctrl ? br_link_result : alu0_result;
+    assign p0_sys_valid_o     = rf0_valid_q && p0_is_sys;
+    assign p0_sys_subop_o     = rf0_uop_q.sub_op;
+    assign p0_sys_csr_addr_o  = rf0_uop_q.imm[11:0];
+    assign p0_sys_rs1_field_o = rf0_uop_q.imm[16:12];
+    assign p0_sys_rs1_val_o   = p0_op_a;
+    assign p0_sys_rs2_val_o   = p0_op_b;
+    assign p0_sys_pc_o        = rf0_uop_q.pc;
+    assign p0_sys_rob_idx_o   = rf0_uop_q.rob_idx;
+
+    wire [63:0] p0_ex_data = p0_is_ctrl ? br_link_result :
+                             p0_is_sys  ? p0_sys_rdata_i :
+                             alu0_result;
+
+    wire target_misaligned = (br_actual_target[1:0] != 2'b00);
+    wire cause0_fire = frontend_en_i &&
+                       (rf0_uop_q.uop_class == UOP_JAL || rf0_uop_q.uop_class == UOP_JALR ||
+                       (rf0_uop_q.uop_class == UOP_BRANCH && br_actual_taken)) && target_misaligned;
+
+    logic        p0_wb_exception;
+    logic [4:0]  p0_wb_cause;
+    logic [63:0] p0_wb_target;
+    logic        p0_wb_actual_taken;
+    logic [63:0] p0_wb_pc;
+    branch_type_t p0_wb_br_type;
+    ghr_t        p0_wb_ghr;
+    logic        p0_wb_is_ctrl;
 
     // Port 0 WB Pipeline Register (EX -> WB)
     wire ex0_squashed = internal_recover_valid && (rob_dist(rf0_uop_q.rob_idx, rob_head_i) > rob_dist(internal_recover_rob_idx, rob_head_i));
 
     always_ff @(posedge clk_i) begin
         if (rst_i || flush_valid_i) begin
-            p0_wb_valid      <= 1'b0;
-            p0_wb_data       <= 64'd0;
-            p0_wb_pnew       <= 7'd0;
-            p0_wb_rob_idx    <= '0;
-            p0_wb_rob_epoch  <= '0;
-            p0_wb_chkpt_id   <= '0;
-            p0_wb_mispredict <= 1'b0;
+            p0_wb_valid        <= 1'b0;
+            p0_wb_data         <= 64'd0;
+            p0_wb_pnew         <= 7'd0;
+            p0_wb_rob_idx      <= '0;
+            p0_wb_rob_epoch    <= '0;
+            p0_wb_chkpt_id     <= '0;
+            p0_wb_mispredict   <= 1'b0;
+            p0_wb_exception    <= 1'b0;
+            p0_wb_cause        <= 5'd0;
+            p0_wb_target       <= 64'd0;
+            p0_wb_actual_taken <= 1'b0;
+            p0_wb_pc           <= 64'd0;
+            p0_wb_br_type      <= BR_TYPE_COND;
+            p0_wb_ghr          <= '0;
+            p0_wb_is_ctrl      <= 1'b0;
         end else begin
             if (rf0_valid_q && !ex0_squashed) begin
-                p0_wb_valid      <= 1'b1;
-                p0_wb_data       <= p0_ex_data;
-                p0_wb_pnew       <= rf0_uop_q.pnew;
-                p0_wb_rob_idx    <= rf0_uop_q.rob_idx;
-                p0_wb_rob_epoch  <= rf0_uop_q.rob_epoch;
-                p0_wb_chkpt_id   <= rf0_uop_q.chkpt_id;
-                p0_wb_mispredict <= (rf0_uop_q.uop_class == UOP_BRANCH) ? br_mispredict : 1'b0;
+                p0_wb_valid        <= 1'b1;
+                p0_wb_data         <= p0_ex_data;
+                p0_wb_pnew         <= rf0_uop_q.pnew;
+                p0_wb_rob_idx      <= rf0_uop_q.rob_idx;
+                p0_wb_rob_epoch    <= rf0_uop_q.rob_epoch;
+                p0_wb_chkpt_id     <= rf0_uop_q.chkpt_id;
+                p0_wb_target       <= br_actual_target;
+                p0_wb_actual_taken <= br_actual_taken;
+                p0_wb_pc           <= rf0_uop_q.pc;
+                p0_wb_br_type      <= rf0_uop_q.br_type;
+                p0_wb_ghr          <= rf0_uop_q.pre_ghr;
+                p0_wb_is_ctrl      <= p0_is_ctrl;
+
+                if (cause0_fire) begin
+                    p0_wb_exception  <= 1'b1;
+                    p0_wb_cause      <= 5'd0; // Instruction address misaligned
+                    p0_wb_mispredict <= 1'b0;
+                end else if (rf0_uop_q.exception) begin
+                    p0_wb_exception  <= 1'b1;
+                    p0_wb_cause      <= rf0_uop_q.exc_cause;
+                    p0_wb_mispredict <= 1'b0;
+                end else if (p0_is_sys && p0_sys_illegal_i) begin
+                    p0_wb_exception  <= 1'b1;
+                    p0_wb_cause      <= 5'd2; // Illegal Instruction
+                    p0_wb_mispredict <= 1'b0;
+                end else begin
+                    p0_wb_exception  <= 1'b0;
+                    p0_wb_cause      <= 5'd0;
+                    p0_wb_mispredict <= (rf0_uop_q.uop_class == UOP_BRANCH || (frontend_en_i && rf0_uop_q.uop_class == UOP_JALR && rf0_uop_q.is_branch)) ? br_mispredict : 1'b0;
+                end
             end else if (test_inject_valid_i) begin
-                p0_wb_valid      <= 1'b1;
-                p0_wb_data       <= test_inject_data_i;
-                p0_wb_pnew       <= test_inject_pnew_i;
-                p0_wb_rob_idx    <= test_inject_rob_idx_i;
-                p0_wb_rob_epoch  <= test_inject_rob_epoch_i;
-                p0_wb_chkpt_id   <= '0;
-                p0_wb_mispredict <= test_inject_mispredict_i;
+                p0_wb_valid        <= 1'b1;
+                p0_wb_data         <= test_inject_data_i;
+                p0_wb_pnew         <= test_inject_pnew_i;
+                p0_wb_rob_idx      <= test_inject_rob_idx_i;
+                p0_wb_rob_epoch    <= test_inject_rob_epoch_i;
+                p0_wb_chkpt_id     <= '0;
+                p0_wb_mispredict   <= test_inject_mispredict_i;
+                p0_wb_exception    <= 1'b0;
+                p0_wb_cause        <= 5'd0;
+                p0_wb_target       <= 64'd0;
+                p0_wb_actual_taken <= 1'b0;
+                p0_wb_pc           <= 64'd0;
+                p0_wb_br_type      <= BR_TYPE_COND;
+                p0_wb_ghr          <= '0;
+                p0_wb_is_ctrl      <= 1'b0;
             end else begin
-                p0_wb_valid <= 1'b0;
+                p0_wb_valid   <= 1'b0;
+                p0_wb_is_ctrl <= 1'b0;
             end
         end
     end
@@ -811,7 +922,11 @@ module fursoy_s1_backend
         .ptw_rsp_tr_id_i         (ptw_rsp_tr_id_i),
         .ptw_rsp_pa_i            (ptw_rsp_pa_i),
         .ptw_rsp_page_fault_i    (ptw_rsp_page_fault_i),
-        .ptw_rsp_access_fault_i  (ptw_rsp_access_fault_i)
+        .ptw_rsp_access_fault_i  (ptw_rsp_access_fault_i),
+
+        .dcache_clean_all_req_i  (dcache_clean_all_req_i),
+        .dcache_clean_all_done_o (dcache_clean_all_done_o),
+        .sq_empty_o              (sq_empty_o)
     );
 
     // -------------------------------------------------------------------------
@@ -821,9 +936,9 @@ module fursoy_s1_backend
     assign comp_rob_idx_o[0]        = p0_wb_rob_idx;
     assign comp_epoch_o[0]          = p0_wb_rob_epoch;
     assign comp_preg_o[0]           = p0_wb_pnew;
-    assign comp_branch_mispred_o[0] = p0_wb_mispredict;
-    assign comp_exception_o[0]      = 1'b0;
-    assign comp_cause_o[0]          = 5'd0;
+    assign comp_branch_mispred_o[0] = p0_wb_mispredict && !p0_wb_exception;
+    assign comp_exception_o[0]      = p0_wb_exception;
+    assign comp_cause_o[0]          = p0_wb_cause;
 
     assign comp_valid_o[1]          = p1_wb_valid && !flush_valid_i;
     assign comp_rob_idx_o[1]        = p1_wb_rob_idx;
@@ -852,10 +967,22 @@ module fursoy_s1_backend
     assign recover_valid_o           = recover_fire;
     assign recover_rob_idx_o         = p0_wb_rob_idx;
     assign recover_chkpt_id_o        = p0_wb_chkpt_id;
+    assign recover_target_o          = p0_wb_target;
+    assign recover_actual_taken_o    = p0_wb_actual_taken;
 
     assign internal_recover_valid    = recover_fire;
     assign internal_recover_rob_idx  = p0_wb_rob_idx;
     assign internal_recover_chkpt_id = p0_wb_chkpt_id;
+
+    // -------------------------------------------------------------------------
+    // 8. Predictor Training Interface (Port 0 Completion)
+    // -------------------------------------------------------------------------
+    assign train_valid_o         = comp_valid_o[0] && comp_ack_i[0] && !p0_wb_exception && p0_wb_is_ctrl;
+    assign train_pc_o            = p0_wb_pc;
+    assign train_actual_taken_o  = p0_wb_actual_taken;
+    assign train_actual_target_o = p0_wb_target;
+    assign train_br_type_o       = p0_wb_br_type;
+    assign train_ghr_o           = p0_wb_ghr;
 
     // -------------------------------------------------------------------------
     // Simulation Assertions

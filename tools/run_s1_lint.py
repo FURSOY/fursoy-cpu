@@ -30,6 +30,15 @@ RTL_FILES = [
     ROOT / "rtl/core/fursoy_s1_l1d.sv",
     ROOT / "rtl/core/fursoy_s1_lsu.sv",
     ROOT / "rtl/core/fursoy_s1_backend.sv",
+    ROOT / "rtl/core/fursoy_s1_bpu.sv",
+    ROOT / "rtl/core/fursoy_s1_ptw.sv",
+    ROOT / "rtl/core/fursoy_s1_itlb.sv",
+    ROOT / "rtl/core/fursoy_s1_l1i.sv",
+    ROOT / "rtl/core/fursoy_s1_fetch_queue.sv",
+    ROOT / "rtl/core/fursoy_s1_decode.sv",
+    ROOT / "rtl/core/fursoy_s1_serialization.sv",
+    ROOT / "rtl/core/fursoy_s1_csr.sv",
+    ROOT / "rtl/core/fursoy_s1_frontend.sv",
     ROOT / "rtl/core/fursoy_s1_core.sv",
 ]
 

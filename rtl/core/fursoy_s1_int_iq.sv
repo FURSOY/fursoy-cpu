@@ -49,6 +49,10 @@ module fursoy_s1_int_iq
     input  logic              uop0_is_branch_i,
     input  logic              uop0_is_jal_i,
     input  logic              uop0_is_jalr_i,
+    input  branch_type_t      uop0_br_type_i,
+    input  ghr_t              uop0_pre_ghr_i,
+    input  logic              uop0_exception_i,
+    input  logic [4:0]        uop0_exc_cause_i,
 
     // Uop 1 Dispatch Payload
     input  logic              uop1_valid_i,
@@ -70,6 +74,10 @@ module fursoy_s1_int_iq
     input  logic              uop1_is_branch_i,
     input  logic              uop1_is_jal_i,
     input  logic              uop1_is_jalr_i,
+    input  branch_type_t      uop1_br_type_i,
+    input  ghr_t              uop1_pre_ghr_i,
+    input  logic              uop1_exception_i,
+    input  logic [4:0]        uop1_exc_cause_i,
 
     // Validated Writeback Snoop for Wakeup (from Validated WB stage)
     input  logic              wb0_valid_i,
@@ -174,9 +182,9 @@ module fursoy_s1_int_iq
     // Port Mask Generation for Dispatch Uops
     function automatic logic [1:0] get_port_mask(input uop_class_t uclass);
         case (uclass)
-            UOP_BRANCH, UOP_JAL, UOP_JALR: return 2'b01; // Port 0 only
-            UOP_MUL, UOP_DIV:              return 2'b10; // Port 1 only
-            default:                       return 2'b11; // Symmetric flexible ALU
+            UOP_BRANCH, UOP_JAL, UOP_JALR, UOP_SYSTEM: return 2'b01; // Port 0 only
+            UOP_MUL, UOP_DIV:                          return 2'b10; // Port 1 only
+            default:                                   return 2'b11; // Symmetric flexible ALU
         endcase
     endfunction
 
@@ -202,6 +210,8 @@ module fursoy_s1_int_iq
             logic prs1_r, prs2_r;
             logic ops_ready;
             logic p1_credit_ok;
+            logic is_sys;
+            logic sys_ready;
 
             prs1_r = entries_q[i].prs1_ready || (entries_q[i].prs1 == 7'd0);
 
@@ -210,13 +220,16 @@ module fursoy_s1_int_iq
 
             ops_ready = entries_q[i].valid && prs1_r && prs2_r;
 
+            is_sys    = (entries_q[i].uop_class == UOP_SYSTEM);
+            sys_ready = !is_sys || (entries_q[i].rob_idx == rob_head_i);
+
             // Classify eligibility
             is_p0_only[i] = entries_q[i].valid && (entries_q[i].port_mask == 2'b01);
             is_p1_only[i] = entries_q[i].valid && (entries_q[i].port_mask == 2'b10);
             is_flex[i]    = entries_q[i].valid && (entries_q[i].port_mask == 2'b11);
 
-            // Ready for Port 0 (ALU0 or Branch)
-            ready_p0[i] = ops_ready && entries_q[i].port_mask[0];
+            // Ready for Port 0 (ALU0, Branch, or Serialized System at ROB Head)
+            ready_p0[i] = ops_ready && entries_q[i].port_mask[0] && sys_ready;
 
             // Ready for Port 1 (ALU1, Multiplier, or Divider)
             p1_credit_ok = 1'b0;
@@ -465,7 +478,11 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot0].is_branch   <= uop0_is_branch_i;
                     entries_q[alloc_slot0].is_jal      <= uop0_is_jal_i;
                     entries_q[alloc_slot0].is_jalr     <= uop0_is_jalr_i;
+                    entries_q[alloc_slot0].br_type     <= uop0_br_type_i;
+                    entries_q[alloc_slot0].pre_ghr     <= uop0_pre_ghr_i;
                     entries_q[alloc_slot0].port_mask   <= get_port_mask(uop0_class_i);
+                    entries_q[alloc_slot0].exception   <= uop0_exception_i;
+                    entries_q[alloc_slot0].exc_cause   <= uop0_exc_cause_i;
                 end
             end
 
@@ -496,7 +513,11 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot1_eff].is_branch   <= uop1_is_branch_i;
                     entries_q[alloc_slot1_eff].is_jal      <= uop1_is_jal_i;
                     entries_q[alloc_slot1_eff].is_jalr     <= uop1_is_jalr_i;
+                    entries_q[alloc_slot1_eff].br_type     <= uop1_br_type_i;
+                    entries_q[alloc_slot1_eff].pre_ghr     <= uop1_pre_ghr_i;
                     entries_q[alloc_slot1_eff].port_mask   <= get_port_mask(uop1_class_i);
+                    entries_q[alloc_slot1_eff].exception   <= uop1_exception_i;
+                    entries_q[alloc_slot1_eff].exc_cause   <= uop1_exc_cause_i;
                 end
             end
         end
