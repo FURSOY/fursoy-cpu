@@ -1,93 +1,88 @@
 # Fursoy CPU
 
-Tek soketli, 4→8 çekirdekli Linux sunucusunu hedefleyen özgün CPU projesi.
-Mimari hedefler ve geçiş koşulları: [ana plan](CPU_MASTER_PLAN.md).
-Sunucu kararı ve ECC/RAS öncelikleri: [ADR-001](docs/decisions/001-server-target.md).
+Original CPU project targeting a single-socket, 4→8 core Linux server.
+Architectural goals and transition gates: [master plan](CPU_MASTER_PLAN.md).
+Server decision and ECC/RAS priorities: [ADR-001](docs/decisions/001-server-target.md).
 
-## Mevcut durum
+## Current Status
 
-Proje, çalışan ve doğrulanmış sıralı **Slice-0** çekirdeği aşamasındadır:
+The project is at the functional and verified in-order **Slice-0** core stage:
 
-- **Çekirdek mimarisi:** RV64I tamsayı komut kümesi, Zicsr ve FENCE.I desteği sunan in-order `fursoy_s0_core`.
-- **Ayrıcalık ve CSR:** İncelenmiş ve dondurulmuş M-mode temeli; açık M/S/U ayrıcalık durum makinesi, CSR adres yetki denetimi (`csr_addr[9:8] <= priv_mode`), salt-okunur CSR koruması, WARL alanları ve trap/hata anında yan etki (side-effect) bastırması.
-- **İlk S-mode Bare RTL paketi:** Bağımsız incelemeden geçmiş ve dondurulmuştur (ACCEPT AND FREEZE). S-mode trap bankası (`stvec`, `sscratch`, `sepc`, `scause`, `stval`), `sstatus` maskeli alias'ı, `medeleg` ile senkron exception yönlendirmesi, `mret`/`sret` kuralları, `wfi`, Bare `sfence.vma` ve sayaç erişim denetimi (`mcounteren`/`scounteren`) içerir.
-- **Kesmeler ve SoC entegrasyonu:** Tek-hart CLINT (MTIP/MSIP) ve harici kesme (MEIP) desteği; SoC bellek haritası ve MMIO veri yolu entegrasyonu (`fursoy_s0_soc`).
-- **Doğrulama ve referans:** 11 bare-metal ELF testi hem Spike referans simülatöründe hem Verilator DUT simülasyonunda çalışmakta ve imza karşılaştırmasından geçmektedir (`tools/run_core_baremetal_s0.py`). S-mode trap ve yetki senaryoları odaklı entegrasyon testleriyle (57 CSR birim kontrolü, 9 uçtan uca senaryo) doğrulanmıştır.
+- **Core architecture:** In-order `fursoy_s0_core` providing RV64I integer instruction set, Zicsr, and FENCE.I support.
+- **Privilege and CSR:** Reviewed and frozen M-mode substrate; explicit M/S/U privilege state machine, CSR address privilege check (`csr_addr[9:8] <= priv_mode`), read-only CSR protection, WARL fields, and side-effect suppression on trap/fault.
+- **Initial S-mode Bare RTL package:** Passed independent review and frozen (ACCEPT AND FREEZE). Includes S-mode trap register bank (`stvec`, `sscratch`, `sepc`, `scause`, `stval`), `sstatus` masked alias, synchronous exception delegation via `medeleg`, `mret`/`sret` rules, `wfi`, Bare `sfence.vma`, and counter access control (`mcounteren`/`scounteren`).
+- **Interrupts and SoC integration:** Single-hart CLINT (MTIP/MSIP) and external interrupt (MEIP) support; SoC memory map and MMIO bus integration (`fursoy_s0_soc`).
+- **Verification and reference:** 11 bare-metal ELF tests execute on both the Spike reference simulator and Verilator DUT simulation, passing signature comparisons (`tools/run_core_baremetal_s0.py`). S-mode trap and privilege scenarios are verified with focused integration tests (57 CSR unit checks, 9 end-to-end scenarios).
 
-Henüz uygulanmamış ve eksik olan temel bileşenler:
-- Supervisor kesme yönlendirmesi (`mideleg`, `sie`, `sip`, SSIP/STIP/SEIP).
-- Sv39 sayfalama / MMU / PTW / TLB.
-- PMP (Fiziksel Bellek Koruması).
-- PLIC (Platform Düzeyinde Kesme Denetleyicisi).
-- Önbellekler (L1I/L1D ve L2/L3 cache yapıları).
-- Çok çekirdek / çok-hart desteği.
-- Linux açılışı (boot).
-- Fiziksel PPA (alan, frekans, güç) sonuçları.
+Key components not yet implemented and missing:
+- Supervisor interrupt delegation (`mideleg`, `sie`, `sip`, SSIP/STIP/SEIP).
+- Sv39 paging / MMU / PTW / TLB.
+- PMP (Physical Memory Protection).
+- PLIC (Platform-Level Interrupt Controller).
+- Caches (L1I/L1D and L2/L3 cache structures).
+- Multi-core / multi-hart support.
+- Linux boot.
+- Physical PPA (area, frequency, power) results.
 
-## Ortam kontrolü
+## Environment Check
 
-Ubuntu WSL içinde, depo kökünde:
+Inside Ubuntu WSL, from the repository root:
 
 ```bash
 python3 tools/check_environment.py --require bootstrap --output results/environment-wsl.json
 python3 -m unittest discover -s verification -v
 ```
 
-Betik araç kurmaz. Bulunan araçların sürüm/yardım komutlarını çalıştırır.
-Bir profilin `ready` olması yalnızca bu çağrıların geçtiğini gösterir;
-birbirleriyle uyum, donanım simülasyonu veya üretim uygunluğu göstermez.
-JSON bir gözlem kaydıdır, kilitlenmiş araç zinciri değildir.
+The script does not install tools. It executes version/help commands for discovered tools.
+A profile showing `ready` indicates only that these invocations succeeded;
+it does not indicate interoperability, hardware simulation viability, or production readiness.
+The JSON is an observational record, not a locked toolchain.
 
-Örneğin `--require rtl` donanım simülasyon araçları eksik veya bozuksa
-sıfırdan farklı çıkış kodu verir. Birden fazla `--require` kullanılabilir.
-`--require` olmadan yalnızca envanter toplar; eksikler yine raporda görünür.
+For example, `--require rtl` returns a non-zero exit code if hardware simulation tools are missing or broken. Multiple `--require` flags can be specified.
+Without `--require`, it only collects inventory; missing items still appear in the report.
 
-## Gerçek RTL simülasyonu
+## Real RTL Simulation
 
-Ubuntu içinde depo kökünde:
+Inside Ubuntu from the repository root:
 
 ```bash
 python3 tools/run_fifo.py
 ```
 
-Verilator ve G++ gerekir. Betik dört FIFO konfigürasyonu ve bir bozuk RTL kopyası
-derler; derleme paralelliği 2 ile sınırlıdır. Kaynak RTL değiştirilmez.
-İlk hata sıfırdan farklı çıkış kodu verir. Sonuç ve kaynak SHA-256 değerleri
-`results/fifo.json`, derleme/koşu logları `build/fifo/` altında tutulur.
-Bu bir RTL araç zinciri ve FIFO işlev kontrolüdür; formal/PPA doğrulaması değildir.
+Requires Verilator and G++. The script compiles four FIFO configurations and one mutated/broken RTL copy; build parallelism is limited to 2. Source RTL is not modified.
+The first failure produces a non-zero exit code. Results and source SHA-256 hashes are stored in `results/fifo.json`; build/run logs are kept under `build/fifo/`.
+This is an RTL toolchain and FIFO functional check; it is not formal or PPA verification.
 
-Arayüz ve kapsam: [FIFO sözleşmesi](docs/architecture/fifo.md).
-Kanıt ve sınırlar: [RTL pilot raporu](docs/progress/002-rtl-pilot.md).
+Interface and scope: [FIFO contract](docs/architecture/fifo.md).
+Evidence and limits: [RTL pilot report](docs/progress/002-rtl-pilot.md).
 
-## Sıradaki işler
+## Next Steps
 
-1. Supervisor kesme yönlendirmesi paketi (`mideleg`, `sie`, `sip`, SSIP/STIP/SEIP).
-2. Sv39 / MMU mimari sözleşmesi ve donanım tasarımı.
-3. PMP, PLIC ve önbellek entegrasyonu.
+1. Supervisor interrupt delegation package (`mideleg`, `sie`, `sip`, SSIP/STIP/SEIP).
+2. Sv39 / MMU architectural contract and hardware design.
+3. PMP, PLIC, and cache integration.
 
-Mevcut donanım, eksikler ve doğrulama kanıtı:
-[ilk ortam kaydı](docs/progress/001-environment.md).
+Existing hardware, gaps, and verification evidence:
+[initial environment record](docs/progress/001-environment.md).
 
-ISA/platform kapsamı: [sözleşme](docs/requirements/isa-platform.md),
-[gereksinim tablosu](docs/requirements/isa-platform.csv).
-Tablo kontrolü: `python3 tools/check_requirements.py`.
+ISA/platform scope: [contract](docs/requirements/isa-platform.md),
+[requirements table](docs/requirements/isa-platform.csv).
+Table verification: `python3 tools/check_requirements.py`.
 
-## Bare-metal derleme ve DUT yürütme
+## Bare-Metal Compilation and DUT Execution
 
-Ubuntu içinde `python3 tools/build_baremetal.py` çalıştırılır. RISC-V GCC/binutils
-gerekir. ELF ve ayrıntılı loglar `build/baremetal/`, kalıcı özet ve kaynak hash'leri
-`results/baremetal-build.json` altında oluşur.
-Derlenen ELF'ler Spike üzerinde `python3 tools/run_spike.py` ve Verilator DUT üzerinde
-`python3 tools/run_core_baremetal_s0.py` ile çalıştırılarak imzalar doğrulanır.
-Test sözleşmesi: [bare-metal v1](docs/architecture/baremetal-v1.md).
-Komut, CSR ve trap alt sözleşmesi: [slice-0](docs/requirements/slice-0.md).
+Inside Ubuntu, run `python3 tools/build_baremetal.py`. Requires RISC-V GCC/binutils.
+ELFs and detailed logs are generated under `build/baremetal/`; persistent summaries and source hashes are recorded under `results/baremetal-build.json`.
+Compiled ELFs are executed on Spike via `python3 tools/run_spike.py` and on the Verilator DUT via `python3 tools/run_core_baremetal_s0.py` to verify signatures.
+Test contract: [bare-metal v1](docs/architecture/baremetal-v1.md).
+Instruction, CSR, and trap sub-contract: [slice-0](docs/requirements/slice-0.md).
 
-## Spike referans hazırlığı
+## Spike Reference Preparation
 
-Resmî kaynak commit'i `tools/spike-lock.json` içinde sabittir. Kaynak ve derleme
-proje içindeki `build/` altındadır; sistem PATH'i değiştirilmez.
-Ubuntu bağımlılıkları: `device-tree-compiler libboost-regex-dev libboost-system-dev`.
-Kurulduktan sonra Ubuntu'da sırasıyla:
+The official source commit is pinned in `tools/spike-lock.json`. Source and build
+artifacts reside under `build/` inside the project; the system PATH is not modified.
+Ubuntu dependencies: `device-tree-compiler libboost-regex-dev libboost-system-dev`.
+Once installed, execute sequentially in Ubuntu:
 
 ```bash
 python3 tools/setup_spike.py
@@ -95,7 +90,7 @@ python3 tools/build_baremetal.py
 python3 tools/run_spike.py
 ```
 
-Setup derleme logları `build/spike-build/` altında tutulur; 4 derleme işi kullanır.
-Çalıştırıcı gerçek başarı yanında beklenmeyen trap, bozuk imza ve timeout
-senaryolarını denetler. Spike referans koşuları ve altın imza üretim altyapısı
-doğrulanmış olup regresyonlarda kullanılmaktadır (`results/spike.json`).
+Setup compilation logs are maintained under `build/spike-build/`; uses 4 build jobs.
+In addition to genuine success, the runner checks unexpected trap, corrupted signature, and timeout
+scenarios. Spike reference execution and golden signature generation infrastructure
+are verified and used in regressions (`results/spike.json`).
