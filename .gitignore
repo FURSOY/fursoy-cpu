@@ -33,6 +33,7 @@ ENV/
 # Editor and IDE metadata / swap files
 .vscode/
 .idea/
+.gemini/
 *.swp
 *.swo
 *~
