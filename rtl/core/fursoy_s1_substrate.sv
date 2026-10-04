@@ -110,6 +110,16 @@ module fursoy_s1_substrate
     // -------------------------------------------------------------------------
     input  logic                   retire_ready_i,
 
+    // Milestone 5 Phase B1 Memory Disambiguation Violation & Replay
+    input  logic                   lsu_violation_valid_i,
+    input  rob_idx_t               lsu_violation_rob_idx_i,
+    input  rob_epoch_t             lsu_violation_rob_epoch_i,
+    input  logic                   lsu_retire0_allow_i,
+    input  logic                   lsu_retire1_allow_i,
+
+    output logic                   retire_replay_o,
+    output logic [63:0]            retire_replay_pc_o,
+
     output logic [1:0]             retire_valid_o,
     output areg_t                  retire_rd_o           [1:0],
     output preg_t                  retire_pnew_o         [1:0],
@@ -131,6 +141,7 @@ module fursoy_s1_substrate
     output logic                   recovering_o,
     output logic                   reconstructing_o,
     output rob_idx_t               rob_head_o,
+    output rob_idx_t               rob_head_next_o,
     output rob_idx_t               rob_tail_o,
     output logic [FL_CNT_W-1:0]    freelist_count_o,
     output logic [ROB_CNT_W-1:0]   rob_count_o,
@@ -474,6 +485,13 @@ module fursoy_s1_substrate
         .comp_cause_i         (comp_cause_i),
         .comp_ack_o           (rob_comp_ack),
         .retire_ready_i       (retire_ready_i),
+        .lsu_violation_valid_i(lsu_violation_valid_i),
+        .lsu_violation_rob_idx_i(lsu_violation_rob_idx_i),
+        .lsu_violation_rob_epoch_i(lsu_violation_rob_epoch_i),
+        .lsu_retire0_allow_i  (lsu_retire0_allow_i),
+        .lsu_retire1_allow_i  (lsu_retire1_allow_i),
+        .retire_replay_o      (retire_replay_o),
+        .retire_replay_pc_o   (retire_replay_pc_o),
         .retire_valid_o       (rob_retire_valid),
         .retire_rd_o          (rob_retire_rd),
         .retire_pnew_o        (rob_retire_pnew),
@@ -493,6 +511,7 @@ module fursoy_s1_substrate
         .recovering_o         (rob_recovering),
         .flush_valid_i        (flush_valid_i),
         .head_o               (rob_head),
+        .head_next_o          (rob_head_next_o),
         .tail_o               (rob_tail),
         .count_o              (rob_count),
         .empty_o              (rob_empty),

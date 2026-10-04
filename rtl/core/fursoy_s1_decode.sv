@@ -191,7 +191,7 @@ module fursoy_s1_decode
                         uop.sub_op    = ALU_AND;
                     end
                     3'b001: begin
-                        if (funct7 == 7'b0000000) begin
+                        if (funct7[6:1] == 6'b000000) begin
                             uop.uop_class = UOP_ALU_SHIFT;
                             uop.sub_op    = ALU_SLL;
                             uop.imm       = {58'd0, inst[25:20]};

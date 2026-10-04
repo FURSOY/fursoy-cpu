@@ -58,6 +58,10 @@ module fursoy_s1_frontend
     input  logic              recover_actual_taken_i,
     input  logic [63:0]       recover_target_i,
 
+    // Milestone 5 Phase B1: ROB-Head Memory Replay Interface
+    input  logic              mem_replay_valid_i,
+    input  logic [63:0]       mem_replay_pc_i,
+
     // Flush Input (Traps, Interrupts)
     input  logic              flush_valid_i,
 
@@ -306,10 +310,10 @@ module fursoy_s1_frontend
     assign fetch_queue_empty_o = fq_empty;
 
     // Global redirect notification to kill in-flight waiters and flush stages
-    wire any_redirect = trap_valid_i || mret_valid_i || recover_valid_i ||
+    wire any_redirect = trap_valid_i || mem_replay_valid_i || mret_valid_i || recover_valid_i ||
                         fence_i_redirect_valid || early_jal_redirect;
 
-    wire backend_flush = trap_valid_i || mret_valid_i || recover_valid_i ||
+    wire backend_flush = trap_valid_i || mem_replay_valid_i || mret_valid_i || recover_valid_i ||
                          fence_i_redirect_valid || fence_i_frontend_purge;
 
     // =========================================================================
@@ -335,6 +339,9 @@ module fursoy_s1_frontend
             next_fetch_valid = frontend_en_i;
         end else if (trap_valid_i) begin
             next_fetch_pc    = trap_target_i;
+            next_fetch_valid = 1'b1;
+        end else if (mem_replay_valid_i) begin
+            next_fetch_pc    = mem_replay_pc_i;
             next_fetch_valid = 1'b1;
         end else if (mret_valid_i) begin
             next_fetch_pc    = mret_target_i;
@@ -746,6 +753,8 @@ module fursoy_s1_frontend
     // =========================================================================
     // 6. Stage D0: Decode & Exception Bypass
     // =========================================================================
+    uop_decoded_t dec_uop0, dec_uop1;
+
     fursoy_s1_decode u_decode (
         .priv_mode_i              (priv_mode_i),
         .in0_valid_i              (fq_pop0_valid),
@@ -755,11 +764,49 @@ module fursoy_s1_frontend
         .in1_entry_i              (fq_pop1_entry),
 
         .uop0_valid_o             (uop0_valid_o),
-        .uop0_o                   (uop0_o),
+        .uop0_o                   (dec_uop0),
 
         .uop1_valid_o             (uop1_valid_o),
-        .uop1_o                   (uop1_o)
+        .uop1_o                   (dec_uop1)
     );
+
+    // Replay-Safe Token Forward-Progress Controller (Section 6.10)
+    logic        replay_safe_active_q;
+    logic [63:0] replay_safe_pc_q;
+
+    wire uop0_is_target_load = dec_uop0.valid && (dec_uop0.pc == replay_safe_pc_q) && (dec_uop0.uop_class == UOP_LOAD);
+    wire uop1_is_target_load = dec_uop1.valid && (dec_uop1.pc == replay_safe_pc_q) && (dec_uop1.uop_class == UOP_LOAD);
+
+    always_comb begin
+        uop0_o = dec_uop0;
+        uop1_o = dec_uop1;
+        if (replay_safe_active_q) begin
+            if (uop0_is_target_load) begin
+                uop0_o.replay_safe = 1'b1;
+            end else if (uop1_is_target_load) begin
+                uop1_o.replay_safe = 1'b1;
+            end
+        end
+    end
+
+    wire token_consumed = replay_safe_active_q &&
+        ((uop0_is_target_load && pop0_req) ||
+         (!uop0_is_target_load && uop1_is_target_load && pop1_req));
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i || !frontend_en_i || trap_valid_i || mret_valid_i || fence_i_redirect_valid || sfence_vma_valid_i || (flush_valid_i && !mem_replay_valid_i)) begin
+            replay_safe_active_q <= 1'b0;
+            replay_safe_pc_q     <= 64'd0;
+        end else if (mem_replay_valid_i) begin
+            replay_safe_active_q <= 1'b1;
+            replay_safe_pc_q     <= mem_replay_pc_i;
+        end else if (recover_valid_i) begin
+            // Branch recovery flushes pre-dispatch uops; cancel token
+            replay_safe_active_q <= 1'b0;
+        end else if (token_consumed) begin
+            replay_safe_active_q <= 1'b0;
+        end
+    end
 
     assign uop0_pre_ghr_o   = fq_pop0_entry.pre_branch_ghr;
     assign uop0_ras_chkpt_o = fq_pop0_entry.ras_chkpt;

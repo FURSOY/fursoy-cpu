@@ -84,6 +84,7 @@ package fursoy_s1_pkg;
         logic       is_branch;
         chkpt_idx_t chkpt_id;
         logic       branch_mispred;
+        logic       mem_violation;  // Phase B1: Sticky memory-order RAW violation
         logic [63:0] pc;
     } rob_entry_t;
 
@@ -116,6 +117,14 @@ package fursoy_s1_pkg;
     localparam int unsigned L1D_SETS         = 64; // 64 sets
     localparam int unsigned L1D_LINE_BYTES   = 64; // 64 bytes per cache line (512 bits)
     localparam int unsigned L1D_LINE_BITS    = 512;
+
+    // Physical Memory Map Classification (Milestone 5 Phase B1)
+    localparam logic [55:0] DRAM_BASE_PA  = 56'h0000_0000_8000_0000;
+    localparam logic [55:0] DRAM_LIMIT_PA = 56'h0000_0000_8FFF_FFFF;
+
+    function automatic logic is_dram_pa(input logic [55:0] pa);
+        return (pa[55:32] == 24'h0) && (pa[31:0] >= 32'h8000_0000) && (pa[31:0] <= 32'h8FFF_FFFF);
+    endfunction
 
     // Type aliases for M3 queue indices
     typedef logic [MEM_IQ_IDX_W-1:0] memiq_idx_t;
@@ -312,6 +321,7 @@ package fursoy_s1_pkg;
         logic [63:0] pc;
         logic        exception;
         logic [4:0]  exc_cause;
+        logic        replay_safe;   // Phase B1: One-shot conservative issue token
     } uop_decoded_t;
 
     // -------------------------------------------------------------------------
@@ -365,6 +375,7 @@ package fursoy_s1_pkg;
         sq_idx_t     sq_idx;        // Assigned Store Queue slot
         logic [63:0] pc;
         logic        addr_issued;   // Set when address has been issued to AGU
+        logic        replay_safe;   // Phase B1: Stamped conservative issue flag
     } memiq_entry_t;
 
     // -------------------------------------------------------------------------
@@ -385,6 +396,11 @@ package fursoy_s1_pkg;
         logic        wait_translation;
         tr_id_t      tr_id;
         logic [15:0] sq_older_mask; // Explicit older-store bitmask at allocation
+        logic [15:0] sq_unresolved_mask; // Stores older at dispatch whose PA/CAM is unresolved
+        logic        is_speculative; // Issued speculatively past unresolved store
+        logic        replay_safe;   // Conservative issue constraint active
+        logic        violated;      // Violated by an older store CAM check
+        logic        wb_done;       // Execution writeback completed to PRF/ROB
         logic        is_mmio;
         logic        is_lr;
         logic        align_fault;

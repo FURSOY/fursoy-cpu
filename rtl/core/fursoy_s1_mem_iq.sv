@@ -49,6 +49,7 @@ module fursoy_s1_mem_iq
     input  lq_idx_t           uop0_lq_idx_i,
     input  sq_idx_t           uop0_sq_idx_i,
     input  logic [63:0]       uop0_pc_i,
+    input  logic              uop0_replay_safe_i,
 
     // Uop 1 Dispatch
     input  logic              uop1_valid_i,
@@ -67,6 +68,7 @@ module fursoy_s1_mem_iq
     input  lq_idx_t           uop1_lq_idx_i,
     input  sq_idx_t           uop1_sq_idx_i,
     input  logic [63:0]       uop1_pc_i,
+    input  logic              uop1_replay_safe_i,
 
     // Validated Writeback Tag Snoop for Wakeup (WB0, WB1, WB2)
     input  logic              wb0_valid_i,
@@ -287,6 +289,7 @@ module fursoy_s1_mem_iq
                 entries_q[alloc_slot0].sq_idx       <= uop0_sq_idx_i;
                 entries_q[alloc_slot0].pc           <= uop0_pc_i;
                 entries_q[alloc_slot0].addr_issued  <= 1'b0;
+                entries_q[alloc_slot0].replay_safe  <= uop0_replay_safe_i;
             end
 
             if (alloc1_fire) begin
@@ -313,6 +316,7 @@ module fursoy_s1_mem_iq
                 entries_q[alloc_slot1_eff].sq_idx       <= uop1_sq_idx_i;
                 entries_q[alloc_slot1_eff].pc           <= uop1_pc_i;
                 entries_q[alloc_slot1_eff].addr_issued  <= 1'b0;
+                entries_q[alloc_slot1_eff].replay_safe  <= uop1_replay_safe_i;
             end
         end
     end

@@ -357,6 +357,7 @@ module fursoy_s1_core
     logic           int_recovering;
     logic           int_reconstructing;
     rob_idx_t       int_rob_head;
+    rob_idx_t       int_rob_head_next;
 
     // Assign Output Diagnostics
     assign rename_ack_o       = int_rename_ack;
@@ -438,7 +439,18 @@ module fursoy_s1_core
     wire        eff_sfence_valid = csr_sfence_vma_valid || sfence_vma_valid_i;
     wire [63:0] eff_sfence_va    = csr_sfence_vma_valid ? csr_sfence_vma_va : sfence_vma_va_i;
     wire [15:0] eff_sfence_asid  = csr_sfence_vma_valid ? csr_sfence_vma_asid : sfence_vma_asid_i;
-    wire        core_flush_valid = flush_valid_i || csr_flush_valid;
+
+    // Milestone 5 Phase B1: Speculative Disambiguation Interconnect Signals
+    logic        retire_replay;
+    logic [63:0] retire_replay_pc;
+    logic        lsu_violation_valid;
+    rob_idx_t    lsu_violation_rob_idx;
+    rob_epoch_t  lsu_violation_rob_epoch;
+    logic        lsu_retire0_allow;
+    logic        lsu_retire1_allow;
+    logic        be_event_load_speculative;
+
+    wire        core_flush_valid = flush_valid_i || csr_flush_valid || retire_replay;
 
     // DTLB Test Injection Muxing
     logic [2:0] core_diag_grants_since_itlb;
@@ -502,6 +514,7 @@ module fursoy_s1_core
     wire ghr_t         be_uop0_pre_ghr   = frontend_en_i ? fe_uop0.pre_ghr     : '0;
     wire             be_uop0_exception   = frontend_en_i ? fe_uop0.exception   : 1'b0;
     wire [4:0]       be_uop0_exc_cause   = frontend_en_i ? fe_uop0.exc_cause   : 5'd0;
+    wire             be_uop0_replay_safe = frontend_en_i ? fe_uop0.replay_safe : 1'b0;
 
     wire             be_uop1_valid       = frontend_en_i ? fe_uop1_valid       : uop1_valid_i;
     wire uop_class_t be_uop1_class       = frontend_en_i ? fe_uop1.uop_class   : uop1_class_i;
@@ -518,6 +531,7 @@ module fursoy_s1_core
     wire ghr_t         be_uop1_pre_ghr   = frontend_en_i ? fe_uop1.pre_ghr     : '0;
     wire             be_uop1_exception   = frontend_en_i ? fe_uop1.exception   : 1'b0;
     wire [4:0]       be_uop1_exc_cause   = frontend_en_i ? fe_uop1.exc_cause   : 5'd0;
+    wire             be_uop1_replay_safe = frontend_en_i ? fe_uop1.replay_safe : 1'b0;
 
     // FENCE.I detection at allocation
     wire alloc0_is_fence_i = sub_uop0_ack && frontend_en_i && (fe_uop0.sub_op == MEM_FENCE_I);
@@ -627,8 +641,19 @@ module fursoy_s1_core
         // Flush
         .flush_valid_i           (core_flush_valid),
 
-        // Retirement (Serialization controller gates retire_ready_i when FENCE.I is at head)
+        // Retirement (Serialization controller gates retire_ready_i when FENCE.I is at head, LSU gates when store check pending)
         .retire_ready_i          (frontend_en_i ? (retire_ready_i && fe_retire_ready) : retire_ready_i),
+        .lsu_retire0_allow_i     (lsu_retire0_allow),
+        .lsu_retire1_allow_i     (lsu_retire1_allow),
+
+        // Milestone 5 Phase B1 Memory Disambiguation Violation & Replay
+        .lsu_violation_valid_i   (lsu_violation_valid),
+        .lsu_violation_rob_idx_i (lsu_violation_rob_idx),
+        .lsu_violation_rob_epoch_i(lsu_violation_rob_epoch),
+
+        .retire_replay_o         (retire_replay),
+        .retire_replay_pc_o      (retire_replay_pc),
+
         .retire_valid_o          (retire_valid_o),
         .retire_rd_o             (retire_rd_o),
         .retire_pnew_o           (retire_pnew_o),
@@ -647,6 +672,7 @@ module fursoy_s1_core
         .recovering_o            (int_recovering),
         .reconstructing_o        (int_reconstructing),
         .rob_head_o              (int_rob_head),
+        .rob_head_next_o         (int_rob_head_next),
         .rob_tail_o              (rob_tail_o),
         .freelist_count_o        (freelist_count_o),
         .rob_count_o             (rob_count_o),
@@ -675,6 +701,7 @@ module fursoy_s1_core
         .fl_reconstructing_i     (int_reconstructing),
         .recovering_i            (int_recovering),
         .rob_head_i              (int_rob_head),
+        .rob_head_next_i         (int_rob_head_next),
 
         .recover_valid_o         (int_recover_valid),
         .recover_rob_idx_o       (int_recover_rob_idx),
@@ -699,6 +726,7 @@ module fursoy_s1_core
         .uop0_pnew_i             (sub_uop0_pnew),
         .uop0_rob_idx_i          (sub_uop0_rob_idx),
         .uop0_rob_epoch_i        (sub_uop0_rob_epoch),
+        .uop0_replay_safe_i      (be_uop0_replay_safe),
         .uop0_chkpt_id_i         (sub_uop0_chkpt_id),
         .uop0_pc_i               (be_uop0_pc),
         .uop0_pred_taken_i       (be_uop0_pred_taken),
@@ -724,6 +752,7 @@ module fursoy_s1_core
         .uop1_pnew_i             (sub_uop1_pnew),
         .uop1_rob_idx_i          (sub_uop1_rob_idx),
         .uop1_rob_epoch_i        (sub_uop1_rob_epoch),
+        .uop1_replay_safe_i      (be_uop1_replay_safe),
         .uop1_chkpt_id_i         (sub_uop1_chkpt_id),
         .uop1_pc_i               (be_uop1_pc),
         .uop1_pred_taken_i       (be_uop1_pred_taken),
@@ -836,12 +865,20 @@ module fursoy_s1_core
         .event_load_issued_o     (be_event_load_issued),
         .event_load_fwd_exact_o  (be_event_load_fwd_exact),
         .event_load_fwd_partial_o(be_event_load_fwd_partial),
+        .event_load_speculative_o(be_event_load_speculative),
         .event_l1d_hits_o        (be_event_l1d_hits),
         .event_l1d_misses_o      (be_event_l1d_misses),
         .event_l1d_mshr_occ_o    (be_event_l1d_mshr_occ),
         .event_l1d_wbb_full_o    (be_event_l1d_wbb_full),
         .event_dtlb_misses_o     (be_event_dtlb_misses),
         .rob_head_is_mem_stall_o (be_rob_head_is_mem_stall),
+
+        .lsu_violation_valid_o   (lsu_violation_valid),
+        .lsu_violation_rob_idx_o (lsu_violation_rob_idx),
+        .lsu_violation_rob_epoch_o(lsu_violation_rob_epoch),
+        .lsu_retire0_allow_o     (lsu_retire0_allow),
+        .lsu_retire1_allow_o     (lsu_retire1_allow),
+
         .int_dispatch_ready_o    (backend_int_dispatch_ready),
         .memiq_ready_o           (backend_memiq_ready),
         .lq_ready_o              (backend_lq_ready),
@@ -980,6 +1017,8 @@ module fursoy_s1_core
         .recover_actual_taken_i  (int_recover_actual_taken),
         .recover_target_i        (int_recover_target),
         .flush_valid_i           (core_flush_valid),
+        .mem_replay_valid_i      (retire_replay),
+        .mem_replay_pc_i         (retire_replay_pc),
 
         // SFENCE.VMA
         .sfence_vma_valid_i      (eff_sfence_valid),
@@ -1153,7 +1192,7 @@ module fursoy_s1_core
 
     // CPI Single-Owner Deterministic Accounting Predicates (Section 9.1)
     wire cpi_serialize   = !fe_retire_ready || csr_flush_valid;
-    wire cpi_br_recover  = int_recovering;
+    wire cpi_br_recover  = int_recovering || retire_replay;
     wire cpi_productive  = (retire_valid_o != 2'b00);
     wire cpi_mem_stall   = be_rob_head_is_mem_stall;
     wire cpi_be_rename   = !fe_fetch_queue_empty_o && (int_rename_ack == 2'b00);
@@ -1211,10 +1250,10 @@ module fursoy_s1_core
         .ev_intiq_empty_i        (be_event_intiq_empty),
         .ev_memiq_empty_i        (be_event_memiq_empty),
         .ev_load_issued_i        (be_event_load_issued),
-        .ev_load_speculative_i   (1'b0), // Phase B only
+        .ev_load_speculative_i   (be_event_load_speculative),
         .ev_load_fwd_exact_i     (be_event_load_fwd_exact),
         .ev_load_fwd_partial_i   (be_event_load_fwd_partial),
-        .ev_load_raw_violat_i    (1'b0), // Phase B only
+        .ev_load_raw_violat_i    (retire_replay),
         .ev_l1d_hits_i           (be_event_l1d_hits),
         .ev_l1d_misses_i         (be_event_l1d_misses),
         .ev_l1d_mshr_occ_i       (be_event_l1d_mshr_occ),

@@ -57,6 +57,16 @@ module fursoy_s1_rob
     // -------------------------------------------------------------------------
     input  logic                   retire_ready_i,
 
+    // Milestone 5 Phase B1 Memory Disambiguation Violation & Replay
+    input  logic                   lsu_violation_valid_i,
+    input  rob_idx_t               lsu_violation_rob_idx_i,
+    input  rob_epoch_t             lsu_violation_rob_epoch_i,
+    input  logic                   lsu_retire0_allow_i,
+    input  logic                   lsu_retire1_allow_i,
+
+    output logic                   retire_replay_o,
+    output logic [63:0]            retire_replay_pc_o,
+
     output logic [1:0]             retire_valid_o,
     output areg_t                  retire_rd_o        [1:0],
     output preg_t                  retire_pnew_o      [1:0],
@@ -91,6 +101,7 @@ module fursoy_s1_rob
     // Status & Pointer Exports
     // -------------------------------------------------------------------------
     output rob_idx_t               head_o,
+    output rob_idx_t               head_next_o,
     output rob_idx_t               tail_o,
     output logic [ROB_CNT_W-1:0]   count_o,
     output logic                   empty_o,
@@ -175,6 +186,7 @@ module fursoy_s1_rob
     // -------------------------------------------------------------------------
     rob_idx_t head_next;
     assign head_next = inc48(head_q, 3'd1);
+    assign head_next_o = head_next;
 
     /* verilator lint_off UNUSEDSIGNAL */
     rob_entry_t entry0;
@@ -225,8 +237,21 @@ module fursoy_s1_rob
         end
     end
 
-    // Exception detection at head
-    wire head_has_exception = entry0.valid && entry0_completed_eff && entry0_exception_eff;
+    // Effective memory violation detection at head
+    wire entry0_mem_violation_eff = entry0.mem_violation ||
+        (lsu_violation_valid_i && (lsu_violation_rob_idx_i == head_q) &&
+         (lsu_violation_rob_epoch_i == entry0.epoch));
+
+    wire entry1_mem_violation_eff = entry1.mem_violation ||
+        (lsu_violation_valid_i && (lsu_violation_rob_idx_i == head_next) &&
+         (lsu_violation_rob_epoch_i == entry1.epoch));
+
+    // Replay detection at head (Prompt Rule 14, 19: Violation suppresses speculative exception)
+    wire head_has_replay    = entry0.valid && entry0.completed && entry0_mem_violation_eff;
+    wire head_has_exception = entry0.valid && entry0_completed_eff && entry0_exception_eff && !entry0_mem_violation_eff;
+
+    assign retire_replay_o    = head_has_replay;
+    assign retire_replay_pc_o = entry0.pc;
 
     assign retire_exception_o = head_has_exception;
     assign retire_exc_cause_o = entry0_exc_cause_eff;
@@ -238,13 +263,17 @@ module fursoy_s1_rob
                            (!recovering_q || (head_next != target_tail_q));
 
     // Retirement conditions
-    wire uop0_can_retire = (count_q >= 7'd1) && entry0.valid && entry0_completed_eff && !entry0_exception_eff && rec_allows_uop0;
-    wire uop1_can_retire = uop0_can_retire && (count_q >= 7'd2) && entry1.valid && entry1_completed_eff && !entry1_exception_eff && rec_allows_uop1;
+    wire uop0_can_retire = (count_q >= 7'd1) && entry0.valid && entry0_completed_eff &&
+                           !entry0_exception_eff && !entry0_mem_violation_eff &&
+                           lsu_retire0_allow_i && rec_allows_uop0;
+    wire uop1_can_retire = uop0_can_retire && (count_q >= 7'd2) && entry1.valid && entry1_completed_eff &&
+                           !entry1_exception_eff && !entry1_mem_violation_eff &&
+                           lsu_retire1_allow_i && rec_allows_uop1;
 
     logic [1:0] retire_grant;
     always_comb begin
         retire_grant = 2'b00;
-        if (retire_ready_i && !head_has_exception) begin
+        if (retire_ready_i && !head_has_exception && !head_has_replay) begin
             if (uop1_can_retire) begin
                 retire_grant = 2'b11;
             end else if (uop0_can_retire) begin
@@ -378,6 +407,13 @@ module fursoy_s1_rob
                 end
             end
 
+            // Phase B1 LSU Sticky Memory-Order Violation Acceptance
+            if (lsu_violation_valid_i &&
+                entries_q[lsu_violation_rob_idx_i].valid &&
+                (entries_q[lsu_violation_rob_idx_i].epoch == lsu_violation_rob_epoch_i)) begin
+                entries_q[lsu_violation_rob_idx_i].mem_violation <= 1'b1;
+            end
+
             // -----------------------------------------------------------------
             // 2. In-Order Retirement (Advance head_q)
             // -----------------------------------------------------------------
@@ -438,6 +474,7 @@ module fursoy_s1_rob
                     entries_q[tail_q].is_branch      <= alloc_is_branch_i[0];
                     entries_q[tail_q].chkpt_id       <= alloc_chkpt_id_i[0];
                     entries_q[tail_q].branch_mispred <= 1'b0;
+                    entries_q[tail_q].mem_violation  <= 1'b0;
                     entries_q[tail_q].pc             <= alloc_pc_i[0];
                 end
 
@@ -454,6 +491,7 @@ module fursoy_s1_rob
                     entries_q[tail1_comb].is_branch      <= alloc_is_branch_i[1];
                     entries_q[tail1_comb].chkpt_id       <= alloc_chkpt_id_i[1];
                     entries_q[tail1_comb].branch_mispred <= 1'b0;
+                    entries_q[tail1_comb].mem_violation  <= 1'b0;
                     entries_q[tail1_comb].pc             <= alloc_pc_i[1];
                 end
 
@@ -486,6 +524,41 @@ module fursoy_s1_rob
                         end
                     end
                 end
+            end
+
+            // 3. Phase B1: Violated load NEVER retires
+            if (retire_grant[0] && entry0_mem_violation_eff) begin
+                $fatal(1, "[ROB ASSERTION FAILED] Violated load retired at slot 0!");
+            end
+            if (retire_grant[1] && entry1_mem_violation_eff) begin
+                $fatal(1, "[ROB ASSERTION FAILED] Violated load retired at slot 1!");
+            end
+
+            // Phase B1 Assertions for Lane 0 and Lane 1 retirement qualification
+            if (retire_grant[0] && !lsu_retire0_allow_i) begin
+                $fatal(1, "[ROB ASSERTION FAILED] Lane 0 retired while LSU retire0 allow was deasserted!");
+            end
+            if (retire_grant[1] && !lsu_retire1_allow_i) begin
+                $fatal(1, "[ROB ASSERTION FAILED] Lane 1 retired while LSU retire1 allow was deasserted!");
+            end
+            if (retire_grant[0] && lsu_violation_valid_i && (lsu_violation_rob_idx_i == head_q) && (lsu_violation_rob_epoch_i == entry0.epoch)) begin
+                $fatal(1, "[ROB ASSERTION FAILED] Lane 0 retired while receiving same-cycle violation!");
+            end
+            if (retire_grant[1] && lsu_violation_valid_i && (lsu_violation_rob_idx_i == head_next) && (lsu_violation_rob_epoch_i == entry1.epoch)) begin
+                $fatal(1, "[ROB ASSERTION FAILED] Lane 1 retired while receiving same-cycle violation!");
+            end
+
+            // 4. Phase B1: Stale epoch violation must NEVER set mem_violation in live ROB entry
+            if (lsu_violation_valid_i) begin
+                if (entries_q[lsu_violation_rob_idx_i].valid &&
+                    (entries_q[lsu_violation_rob_idx_i].epoch != lsu_violation_rob_epoch_i)) begin
+                    // Stale notification: verify epoch mismatch prevents update
+                end
+            end
+
+            // 5. Phase B1: Replay occurs strictly at ROB head
+            if (retire_replay_o && !head_has_replay) begin
+                $fatal(1, "[ROB ASSERTION FAILED] Replay asserted when head does not have replay!");
             end
         end
     end

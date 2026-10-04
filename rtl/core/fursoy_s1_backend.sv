@@ -29,6 +29,7 @@ module fursoy_s1_backend
     input  logic              fl_reconstructing_i,
     input  logic              recovering_i,        // Active recovery walk in progress
     input  rob_idx_t          rob_head_i,
+    input  rob_idx_t          rob_head_next_i,
 
     output logic              recover_valid_o,
     output rob_idx_t          recover_rob_idx_o,
@@ -55,6 +56,7 @@ module fursoy_s1_backend
     input  preg_t             uop0_pnew_i,
     input  rob_idx_t          uop0_rob_idx_i,
     input  rob_epoch_t        uop0_rob_epoch_i,
+    input  logic              uop0_replay_safe_i,
     input  chkpt_idx_t        uop0_chkpt_id_i,
     input  logic [63:0]       uop0_pc_i,
     input  logic              uop0_pred_taken_i,
@@ -80,6 +82,7 @@ module fursoy_s1_backend
     input  preg_t             uop1_pnew_i,
     input  rob_idx_t          uop1_rob_idx_i,
     input  rob_epoch_t        uop1_rob_epoch_i,
+    input  logic              uop1_replay_safe_i,
     input  chkpt_idx_t        uop1_chkpt_id_i,
     input  logic [63:0]       uop1_pc_i,
     input  logic              uop1_pred_taken_i,
@@ -204,12 +207,21 @@ module fursoy_s1_backend
     output logic              event_load_issued_o,
     output logic              event_load_fwd_exact_o,
     output logic              event_load_fwd_partial_o,
+    output logic              event_load_speculative_o,
     output logic              event_l1d_hits_o,
     output logic              event_l1d_misses_o,
     output logic [2:0]        event_l1d_mshr_occ_o,
     output logic              event_l1d_wbb_full_o,
     output logic              event_dtlb_misses_o,
     output logic              rob_head_is_mem_stall_o,
+
+    // Milestone 5 Phase B1 Speculative Disambiguation Interface
+    output logic              lsu_violation_valid_o,
+    output rob_idx_t          lsu_violation_rob_idx_o,
+    output rob_epoch_t        lsu_violation_rob_epoch_o,
+    output logic              lsu_retire0_allow_o,
+    output logic              lsu_retire1_allow_o,
+
     output logic [1:0]        int_dispatch_ready_o,
     output logic [1:0]        memiq_ready_o,
     output logic [1:0]        lq_ready_o,
@@ -859,6 +871,7 @@ module fursoy_s1_backend
         .recover_valid_i         (internal_recover_valid),
         .recover_rob_idx_i       (internal_recover_rob_idx),
         .rob_head_i              (rob_head_i),
+        .rob_head_next_i         (rob_head_next_i),
 
         .mem_dispatch_ready_o    (mem_dispatch_ready),
         .rename_ack_i            (rename_ack_i),
@@ -874,6 +887,7 @@ module fursoy_s1_backend
         .uop0_pnew_i             (uop0_pnew_i),
         .uop0_rob_idx_i          (uop0_rob_idx_i),
         .uop0_rob_epoch_i        (uop0_rob_epoch_i),
+        .uop0_replay_safe_i      (uop0_replay_safe_i),
         .uop0_pc_i               (uop0_pc_i),
 
         .uop1_valid_i            (uop1_valid_i),
@@ -887,6 +901,7 @@ module fursoy_s1_backend
         .uop1_pnew_i             (uop1_pnew_i),
         .uop1_rob_idx_i          (uop1_rob_idx_i),
         .uop1_rob_epoch_i        (uop1_rob_epoch_i),
+        .uop1_replay_safe_i      (uop1_replay_safe_i),
         .uop1_pc_i               (uop1_pc_i),
 
         .r4_paddr_o              (r4_paddr),
@@ -957,12 +972,20 @@ module fursoy_s1_backend
         .event_load_issued_o     (event_load_issued_o),
         .event_load_fwd_exact_o  (event_load_fwd_exact_o),
         .event_load_fwd_partial_o(event_load_fwd_partial_o),
+        .event_load_speculative_o(event_load_speculative_o),
         .event_l1d_hit_o         (event_l1d_hits_o),
         .event_l1d_miss_o        (event_l1d_misses_o),
         .event_l1d_mshr_occ_o    (event_l1d_mshr_occ_o),
         .event_l1d_wbb_full_o    (event_l1d_wbb_full_o),
         .event_dtlb_miss_o       (event_dtlb_misses_o),
         .rob_head_is_mem_stall_o (rob_head_is_mem_stall_o),
+
+        .lsu_violation_valid_o   (lsu_violation_valid_o),
+        .lsu_violation_rob_idx_o (lsu_violation_rob_idx_o),
+        .lsu_violation_rob_epoch_o(lsu_violation_rob_epoch_o),
+        .lsu_retire0_allow_o     (lsu_retire0_allow_o),
+        .lsu_retire1_allow_o     (lsu_retire1_allow_o),
+
         .memiq_ready_o           (memiq_ready_o),
         .lq_ready_o              (lq_ready_o),
         .sq_ready_o              (sq_ready_o),
