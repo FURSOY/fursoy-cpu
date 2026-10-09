@@ -601,8 +601,8 @@ package fursoy_s1_pkg;
     // -------------------------------------------------------------------------
     // Milestone 4 Frontend Microarchitectural Dimensions & Parameters
     // -------------------------------------------------------------------------
-    localparam int unsigned FETCH_QUEUE_DEPTH   = 12; // Decoupled Fetch Queue depth
-    localparam int unsigned FETCH_QUEUE_IDX_W   = 4;  // $clog2(12) <= 4 (0..11)
+    localparam int unsigned FETCH_QUEUE_DEPTH   = 16; // Decoupled Fetch Queue depth (Milestone 5 Phase B2)
+    localparam int unsigned FETCH_QUEUE_IDX_W   = 4;  // $clog2(16) = 4 (0..15)
     localparam int unsigned BTB_SETS            = 256;// BTB 256 sets
     localparam int unsigned BTB_WAYS            = 2;  // BTB 2 ways (512 entries total)
     localparam int unsigned GSHARE_ENTRIES      = 4096;// Gshare 4096 2-bit counters

@@ -2,17 +2,17 @@
 `define FURSOY_S1_FETCH_QUEUE_SV
 
 // =============================================================================
-// Fursoy Slice-1 Decoupled Fetch Queue FIFO (12 Entries) — Milestone 4
+// Fursoy Slice-1 Decoupled Fetch Queue FIFO (16 Entries) — Milestone 5 Phase B2
 // =============================================================================
 // Buffers instruction supply from frontend stages (F0-F3) to Stage D0 Decode.
 // Features:
-// - 12-entry circular FIFO with wrap-safe modulo-12 pointers.
+// - 16-entry circular FIFO with wrap-safe modulo-16 pointers.
 // - Up to 2 enqueues / cycle (Slot 0 and Slot 1 from Stage F3).
 // - Up to 2 dequeues / cycle (Slot 0 and Slot 1 to Stage D0).
 // - Support for partial enqueue (1 uop when 1 slot free) and partial dequeue.
 // - Full metadata preservation (carried pre_branch_ghr, full RAS checkpoint, exceptions).
 // - Single-cycle synchronous clear on pipeline flush / redirect.
-// Reference: docs/architecture/slice1-m4-frontend-v1.md Section 5
+// Reference: docs/architecture/slice1-m5-performance-v1.md Section 7.2
 // =============================================================================
 
 `include "fursoy_s1_pkg.sv"
@@ -47,27 +47,28 @@ module fursoy_s1_fetch_queue
     // Status & Capacity
     output logic              empty_o,
     output logic              full_o,
-    output logic [3:0]        count_o,              // 0..12
-    output logic [3:0]        free_count_o          // 12 - count
+    output logic [4:0]        count_o,              // 0..16
+    output logic [4:0]        free_count_o          // 16 - count
 );
 
-    localparam int unsigned DEPTH = FETCH_QUEUE_DEPTH; // 12
+    localparam int unsigned DEPTH = FETCH_QUEUE_DEPTH; // 16
 
     fetch_queue_entry_t queue_mem [DEPTH];
     logic [3:0] head_q;
     logic [3:0] tail_q;
-    logic [4:0] count_q; // 0..12
+    logic [4:0] count_q; // 0..16
 
-    assign count_o      = count_q[3:0];
-    assign free_count_o = 4'(5'd12 - count_q);
+    assign count_o      = count_q;
+    assign free_count_o = 5'd16 - count_q;
     assign empty_o      = (count_q == 5'd0);
-    assign full_o       = (count_q >= 5'd12);
+    assign full_o       = (count_q >= 5'd16);
 
     // Dequeue outputs
     wire has_one = (count_q >= 5'd1);
     wire has_two = (count_q >= 5'd2);
 
-    wire [3:0] head_plus_1 = (head_q == 4'd11) ? 4'd0 : (head_q + 4'd1);
+    wire [3:0] head_plus_1 = head_q + 4'd1;
+    wire [3:0] head_plus_2 = head_q + 4'd2;
 
     assign pop0_valid_o = has_one;
     assign pop0_entry_o = queue_mem[head_q];
@@ -75,9 +76,9 @@ module fursoy_s1_fetch_queue
     assign pop1_valid_o = has_two;
     assign pop1_entry_o = queue_mem[head_plus_1];
 
-    // Enqueue admission calculation (respecting available capacity)
-    wire [1:0] req_push_count = (push0_valid_i ? 2'd1 : 2'd0) + (push1_valid_i ? 2'd1 : 2'd0);
-    wire [4:0] avail_slots    = 5'd12 - count_q;
+    // Enqueue admission calculation (respecting available capacity, accounting for simultaneous pops)
+    wire [1:0] actual_pops = (pop0_i && pop1_i && has_two) ? 2'd2 : (pop0_i && has_one) ? 2'd1 : 2'd0;
+    wire [4:0] avail_slots = (5'd16 - count_q) + {3'd0, actual_pops};
 
     logic do_push0, do_push1;
     always_comb begin
@@ -99,10 +100,10 @@ module fursoy_s1_fetch_queue
     end
 
     // Sequential Queue State Management
-    wire [3:0] tail_plus_1 = (tail_q == 4'd11) ? 4'd0 : (tail_q + 4'd1);
-    wire [3:0] tail_plus_2 = (tail_plus_1 == 4'd11) ? 4'd0 : (tail_plus_1 + 4'd1);
+    wire [3:0] tail_plus_1 = tail_q + 4'd1;
+    wire [3:0] tail_plus_2 = tail_q + 4'd2;
 
-    wire [3:0] head_plus_2 = (head_plus_1 == 4'd11) ? 4'd0 : (head_plus_1 + 4'd1);
+    wire [1:0] actual_pushes = (do_push0 ? 2'd1 : 2'd0) + (do_push1 ? 2'd1 : 2'd0);
 
     always_ff @(posedge clk_i) begin
         if (rst_i || flush_i) begin
@@ -142,14 +143,11 @@ module fursoy_s1_fetch_queue
         end
     end
 
-    wire [1:0] actual_pushes = (do_push0 ? 2'd1 : 2'd0) + (do_push1 ? 2'd1 : 2'd0);
-    wire [1:0] actual_pops   = (pop0_i && pop1_i && has_two) ? 2'd2 : (pop0_i && has_one) ? 2'd1 : 2'd0;
-
 `ifndef SYNTHESIS
     // Queue Invariant Assertion
     always_ff @(posedge clk_i) begin
         if (!rst_i && !flush_i) begin
-            assert(count_q <= 5'd12) else $fatal(1, "[FETCH QUEUE ASSERTION FAILED] Count exceeded 12!");
+            assert(count_q <= 5'd16) else $fatal(1, "[FETCH QUEUE ASSERTION FAILED] Count exceeded 16!");
         end
     end
 `endif

@@ -237,7 +237,7 @@ module fursoy_s1_core
     // -------------------------------------------------------------------------
     // Frontend Diagnostics & Performance Instrumentation Counters (18 counters)
     // -------------------------------------------------------------------------
-    output logic [3:0]             fe_fetch_queue_count_o,
+    output logic [4:0]             fe_fetch_queue_count_o,
     output logic                   fe_fetch_queue_full_o,
     output logic                   fe_fetch_queue_empty_o,
     output logic [63:0]            hpm_fetch_words_o,

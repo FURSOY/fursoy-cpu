@@ -170,7 +170,7 @@ module fursoy_s1_frontend
     // -------------------------------------------------------------------------
     // Diagnostics & Performance Counters
     // -------------------------------------------------------------------------
-    output logic [3:0]        fetch_queue_count_o,
+    output logic [4:0]        fetch_queue_count_o,
     output logic              fetch_queue_full_o,
     output logic              fetch_queue_empty_o,
 
@@ -297,8 +297,8 @@ module fursoy_s1_frontend
     wire [1:0]  push_ack;
     wire        fq_empty;
     wire        fq_full;
-    wire [3:0]  fq_count;
-    wire [3:0]  fq_free_count;
+    wire [4:0]  fq_count;
+    wire [4:0]  fq_free_count;
 
     wire        fq_pop0_valid;
     fetch_queue_entry_t fq_pop0_entry;
@@ -541,9 +541,15 @@ module fursoy_s1_frontend
     // =========================================================================
     // 3. Stage F2: Level-1 Instruction Cache (L1I) & Response Skid Buffer
     // =========================================================================
+    wire pop0_req = rename_ack_i[0] && fq_pop0_valid;
+    wire pop1_req = rename_ack_i[1] && fq_pop1_valid;
+    wire [1:0] fq_actual_pops = (pop0_req && pop1_req) ? 2'd2 :
+                                (pop0_req)             ? 2'd1 : 2'd0;
+    wire [4:0] fq_avail_slots = fq_free_count + {3'd0, fq_actual_pops};
+
     wire [1:0] num_pushes = {1'b0, fq_entry0.valid} + {1'b0, fq_entry1.valid};
-    wire stall_downstream = (num_pushes == 2'd2) ? (fq_free_count < 4'd2) :
-                            (num_pushes == 2'd1) ? (fq_free_count < 4'd1) : 1'b0;
+    wire stall_downstream = (num_pushes == 2'd2) ? (fq_avail_slots < 5'd2) :
+                            (num_pushes == 2'd1) ? (fq_avail_slots < 5'd1) : 1'b0;
 
     // L1I translation response valid
 
@@ -721,10 +727,8 @@ module fursoy_s1_frontend
     end
 
     // =========================================================================
-    // 5. Stage F4: Decoupled Fetch Queue FIFO (12 Entries)
+    // 5. Stage F4: Decoupled Fetch Queue FIFO (16 Entries)
     // =========================================================================
-    wire pop0_req = rename_ack_i[0] && fq_pop0_valid;
-    wire pop1_req = rename_ack_i[1] && fq_pop1_valid;
 
     fursoy_s1_fetch_queue u_fetch_queue (
         .clk_i                    (clk_i),
