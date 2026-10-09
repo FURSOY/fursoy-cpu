@@ -180,7 +180,7 @@ module fursoy_s1_lsu
     output logic [1:0]        memiq_ready_o,
     output logic [1:0]        lq_ready_o,
     output logic [1:0]        sq_ready_o,
-    output logic [11:0]       memiq_diag_ready_o
+    output logic [MEM_IQ_DEPTH-1:0] memiq_diag_ready_o
 );
 
     // =========================================================================
@@ -306,7 +306,8 @@ module fursoy_s1_lsu
         /* verilator lint_off PINCONNECTEMPTY */
         .diag_valid_mask_o  (),
         .diag_ready_mask_o  (memiq_diag_ready_o),
-        .free_count_o       ()
+        .free_count_o       (),
+        .count_o            ()
         /* verilator lint_on PINCONNECTEMPTY */
     );
 

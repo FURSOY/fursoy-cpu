@@ -100,8 +100,8 @@ package fursoy_s1_pkg;
     // -------------------------------------------------------------------------
     // Milestone 3 Memory Subsystem Microarchitectural Dimensions
     // -------------------------------------------------------------------------
-    localparam int unsigned MEM_IQ_DEPTH     = 12; // Memory issue queue depth (provisional parameter)
-    localparam int unsigned MEM_IQ_IDX_W     = 4;  // $clog2(12) <= 4 (0..11)
+    localparam int unsigned MEM_IQ_DEPTH     = 16; // Memory issue queue depth (Milestone 5 Phase B3)
+    localparam int unsigned MEM_IQ_IDX_W     = 4;  // $clog2(16) = 4 (0..15)
     localparam int unsigned LQ_DEPTH         = 16; // Load queue depth (provisional parameter)
     localparam int unsigned LQ_IDX_W         = 4;  // $clog2(16) = 4 (0..15)
     localparam int unsigned SQ_DEPTH         = 16; // Store queue depth (provisional parameter)

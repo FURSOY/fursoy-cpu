@@ -1,7 +1,7 @@
 {
   "status": "pass",
   "scope": "Fursoy Slice-1 Milestone 5 Phase A Core RTL (Production + HPM Telemetry)",
-  "observed_at_utc": "2026-10-09T17:35:35.778200+00:00",
+  "observed_at_utc": "2026-10-09T19:01:54.835649+00:00",
   "command": [
     "verilator",
     "--lint-only",
@@ -43,9 +43,9 @@
     "/mnt/c/Projeler/fursoy-cpu/rtl/core/fursoy_s1_core.sv"
   ],
   "verilator_version": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
-  "rtl_manifest_sha256": "5020df1870d7f012d806869eba1ec6bc335fe1c4b8dea6e22136b1398674a8e9",
+  "rtl_manifest_sha256": "3531ae06999d0782d13577ed21fd3691a1fab0a2cf1117c67bd2fc1412edd0c4",
   "source_sha256": {
-    "rtl/core/fursoy_s1_pkg.sv": "ed5fe0c7619b5113dd9ac3919267d937d99ebbfa874c52c3a51beba7a058d8a1",
+    "rtl/core/fursoy_s1_pkg.sv": "a95f491d6c2e3f792637790125e9ad5fe36804ae5940e2a3398756f514c6ffdc",
     "rtl/core/fursoy_s1_freelist.sv": "c6939130b8073d7c51e87a7ba7baa0cebd04a272ae386c590e00edf1069f4022",
     "rtl/core/fursoy_s1_rat.sv": "f036405ed3ffa2f399e941a89fbf240a821489c73b70b1f579a11091b1874aa6",
     "rtl/core/fursoy_s1_prf_status.sv": "b9738d1971389782ef19da1eafc2ce1cd4060767c8c4a351c49a6485771c9a8f",
@@ -59,12 +59,12 @@
     "rtl/core/fursoy_s1_port1_buffers.sv": "8942d0f8a178f7e7e1c61c131a8e43d931332c81fb1a4e10b3ee181e11253ff9",
     "rtl/core/fursoy_s1_int_iq.sv": "13d06f8bfb8a252462f7e4e278af1a2c42fdc473639c648e8d77ef869aaca6dc",
     "rtl/core/fursoy_s1_agu.sv": "08acf06b9006c1b4ebf25b72d0010ac236d1cc0f14f3e0c80afa715efc8e4527",
-    "rtl/core/fursoy_s1_mem_iq.sv": "0588bef2512fa576ba02c3368b10a6e5f1ae40caebfdddc7738bfb07ca962702",
+    "rtl/core/fursoy_s1_mem_iq.sv": "ee44658e28cadf9048d362d2a580e98b19808fcbf64ca08fd1ff6446d8b881f3",
     "rtl/core/fursoy_s1_trt.sv": "903d5a4193c027d4a8a74d4ef047078706c6376671c465367e27c33e256f5b81",
     "rtl/core/fursoy_s1_lsu_queues.sv": "6cbbee34096edeef8f539feeddbaef3388de8a46f898ebfbdfb108f7659f2c2c",
     "rtl/core/fursoy_s1_l1d.sv": "8ff83d1eea69c1a61c2db8d60d826b68ee10bf15e90b250bfa58505bbe8edc6d",
-    "rtl/core/fursoy_s1_lsu.sv": "82b7f768381aeae0558924cd7f619ffff633af2e9ec3b244d2d2377e48fd3e9b",
-    "rtl/core/fursoy_s1_backend.sv": "16944616cbaed47e5ff7e05b635372cb6ff956327a6c10ef7b5b1555819b2c9a",
+    "rtl/core/fursoy_s1_lsu.sv": "fd45a58bb5e221e4247a81d41df56415a4f7873830b2d37fd6a6a1c55506730e",
+    "rtl/core/fursoy_s1_backend.sv": "199c31d610a7a8866bd7c5c834af974fe493306bba167e101107b80b7474515b",
     "rtl/core/fursoy_s1_bpu.sv": "909b7e0117602855e51d04d547a510e8715ec1abbcae08c0c6fe3a9abae2e504",
     "rtl/core/fursoy_s1_ptw.sv": "cd9f7193489f3fae9d2b0c74838c436cdee786bb7fc461bca9416626568276ec",
     "rtl/core/fursoy_s1_itlb.sv": "679248804661fea28b8ceace31d16c2c6d279a7bacc30bc5aa27c1631daa964d",

@@ -862,7 +862,7 @@ module fursoy_s1_backend
     // -------------------------------------------------------------------------
     // 5. Load/Store Unit (LSU) Subsystem — Milestone 3
     // -------------------------------------------------------------------------
-    wire [11:0] memiq_diag_ready;
+    wire [MEM_IQ_DEPTH-1:0] memiq_diag_ready;
 
     fursoy_s1_lsu u_lsu (
         .clk_i                   (clk_i),
@@ -1002,7 +1002,7 @@ module fursoy_s1_backend
     assign event_issue_port2_agu_o = u_lsu.memiq_issue_valid;
 
     assign event_intiq_empty_o     = (diag_ready_p0_o == 16'd0) && (diag_ready_p1_o == 16'd0);
-    assign event_memiq_empty_o     = (memiq_diag_ready == 12'd0);
+    assign event_memiq_empty_o     = (memiq_diag_ready == '0);
     assign int_dispatch_ready_o    = int_dispatch_ready;
 
     // -------------------------------------------------------------------------
