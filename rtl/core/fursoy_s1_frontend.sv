@@ -662,25 +662,7 @@ module fursoy_s1_frontend
         input logic is_jal,
         input logic is_jalr
     );
-        logic [4:0] rd;
-        logic [4:0] rs1;
-        logic is_link_rd;
-        logic is_link_rs;
-        rd  = inst[11:7];
-        rs1 = inst[19:15];
-        is_link_rd = (rd == 5'd1 || rd == 5'd5);
-        is_link_rs = (rs1 == 5'd1 || rs1 == 5'd5);
-        if (is_jal) begin
-            return is_link_rd ? BR_TYPE_CALL : BR_TYPE_JAL;
-        end else if (is_jalr) begin
-            if (is_link_rs && !is_link_rd) return BR_TYPE_RET;
-            else if (!is_link_rs && is_link_rd) return BR_TYPE_CALL;
-            else if (is_link_rs && is_link_rd) return (rd != rs1) ? BR_TYPE_CALL : BR_TYPE_CALL;
-            else return BR_TYPE_IND;
-        end else if (is_branch) begin
-            return BR_TYPE_COND;
-        end
-        return BR_TYPE_COND;
+        return classify_branch(inst, is_branch, is_jal, is_jalr);
     endfunction
 
     always_comb begin

@@ -1,0 +1,42 @@
+{
+  "timestamp_utc": "2026-10-18T19:49:12.867792+00:00",
+  "phase": "M6 Phase B: Return Address Stack (RAS) Call-Stack Hardening & Coroutine Swap",
+  "production_rtl_manifest_sha256": "953c9cdc61c70be317ddb5061f2c4de70ed0ded5c9614d863b16428e20cbffe1",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m6-frontend-opt-v1.md",
+    "version": "1.1",
+    "commit": "530e52ab91c5c180d8ce1d3f20bbef7060fbc9a1",
+    "sha256": "cfe3b2f6f984e737848c9185c2c6d7602aef89f069e6331edc2153b7852549a9"
+  },
+  "unit_verification": {
+    "directed_scenarios": 55,
+    "directed_total": 55,
+    "total_accepted_ops": 75000,
+    "seeds": [
+      {
+        "seed": 42,
+        "accepted_ops": 25000,
+        "cycles": 59399,
+        "mismatches": 0,
+        "status": "pass"
+      },
+      {
+        "seed": 20260920,
+        "accepted_ops": 25000,
+        "cycles": 108697,
+        "mismatches": 0,
+        "status": "pass"
+      },
+      {
+        "seed": 20261009,
+        "accepted_ops": 25000,
+        "cycles": 157956,
+        "mismatches": 0,
+        "status": "pass"
+      }
+    ],
+    "status": "pass"
+  },
+  "elapsed_seconds": 0.67,
+  "overall_status": "PASS"
+}

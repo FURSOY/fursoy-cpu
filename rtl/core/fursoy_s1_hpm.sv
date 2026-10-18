@@ -169,7 +169,8 @@ module fursoy_s1_hpm
     wire ev_bpu_tgt_mispred = mispred_retiring && ((pending_mispred_type_q == BR_TYPE_JALR) ||
                                                    (pending_mispred_type_q == BR_TYPE_IND) ||
                                                    (pending_mispred_type_q == BR_TYPE_CALL));
-    wire ev_ras_ret_mispred = mispred_retiring && (pending_mispred_type_q == BR_TYPE_RET);
+    wire ev_ras_ret_mispred = mispred_retiring && ((pending_mispred_type_q == BR_TYPE_RET) ||
+                                                   (pending_mispred_type_q == BR_TYPE_CORO));
 
     // =========================================================================
     // 2. Hardware Performance Event Value Multiplexer (0x01 .. 0x30)

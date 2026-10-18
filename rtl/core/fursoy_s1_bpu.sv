@@ -621,7 +621,7 @@ module fursoy_s1_bpu
                     slot0_taken  = 1'b1;
                     slot0_target = slot0_entry.target;
                 end
-                BR_TYPE_RET: begin
+                BR_TYPE_RET, BR_TYPE_CORO: begin
                     slot0_taken  = 1'b1;
                     slot0_target = ras_top_val;
                 end
@@ -648,7 +648,7 @@ module fursoy_s1_bpu
                     slot1_taken  = 1'b1;
                     slot1_target = slot1_entry.target;
                 end
-                BR_TYPE_RET: begin
+                BR_TYPE_RET, BR_TYPE_CORO: begin
                     slot1_taken  = 1'b1;
                     slot1_target = (slot0_hit && (slot0_entry.br_type == BR_TYPE_CALL))
                                  ? (pc_slot0 + 64'd4)
@@ -698,10 +698,14 @@ module fursoy_s1_bpu
     assign event_btb_miss_o  = fetch_lookup_valid_i && !slot0_hit && !slot1_hit;
     assign event_cond_pred_o = fetch_lookup_valid_i && ((slot0_hit && (slot0_entry.br_type == BR_TYPE_COND)) ||
                                                         (slot1_hit && (slot1_entry.br_type == BR_TYPE_COND)));
-    assign event_ras_call_o  = fetch_lookup_valid_i && ((slot0_hit && (slot0_entry.br_type == BR_TYPE_CALL)) ||
-                                                        (slot1_hit && (slot1_entry.br_type == BR_TYPE_CALL)));
-    assign event_ras_ret_o   = fetch_lookup_valid_i && ((slot0_hit && (slot0_entry.br_type == BR_TYPE_RET)) ||
-                                                        (slot1_hit && (slot1_entry.br_type == BR_TYPE_RET)));
+    assign event_ras_call_o  = fetch_lookup_valid_i && (
+        (slot0_hit && ((slot0_entry.br_type == BR_TYPE_CALL) || (slot0_entry.br_type == BR_TYPE_CORO))) ||
+        (!slot0_taken && slot1_hit && ((slot1_entry.br_type == BR_TYPE_CALL) || (slot1_entry.br_type == BR_TYPE_CORO)))
+    );
+    assign event_ras_ret_o   = fetch_lookup_valid_i && (
+        (slot0_hit && ((slot0_entry.br_type == BR_TYPE_RET) || (slot0_entry.br_type == BR_TYPE_CORO))) ||
+        (!slot0_taken && slot1_hit && ((slot1_entry.br_type == BR_TYPE_RET) || (slot1_entry.br_type == BR_TYPE_CORO)))
+    );
 
     // =========================================================================
     // 6. Sequential State Updates & Training (§5.6, §6.1, §6.2)
@@ -912,17 +916,19 @@ module fursoy_s1_bpu
                     csr_q <= update_csr_bundle(cur_csr, s1_tage_pred, cur_ghr);
                 end
 
-                // Speculative RAS push / pop
-                if (slot0_hit) begin
-                    if (slot0_entry.br_type == BR_TYPE_CALL) begin
-                        ras_tos_q <= 4'(ras_tos_q + 4'd1);
-                        ras_array[4'(ras_tos_q + 4'd1)] <= pc_slot0 + 64'd4;
-                        if (ras_depth_q < 5'd16) ras_depth_q <= ras_depth_q + 1'b1;
-                    end else if (slot0_entry.br_type == BR_TYPE_RET) begin
-                        ras_tos_q <= 4'(ras_tos_q - 4'd1);
-                        if (ras_depth_q > 5'd0) ras_depth_q <= ras_depth_q - 1'b1;
-                    end
-                end else if (slot1_hit) begin
+                // Speculative RAS push / pop / coroutine swap (§6.3)
+                if (slot0_hit && (slot0_entry.br_type == BR_TYPE_CALL)) begin
+                    ras_tos_q <= 4'(ras_tos_q + 4'd1);
+                    ras_array[4'(ras_tos_q + 4'd1)] <= pc_slot0 + 64'd4;
+                    if (ras_depth_q < 5'd16) ras_depth_q <= ras_depth_q + 1'b1;
+                end else if (slot0_hit && (slot0_entry.br_type == BR_TYPE_RET)) begin
+                    ras_tos_q <= 4'(ras_tos_q - 4'd1);
+                    if (ras_depth_q > 5'd0) ras_depth_q <= ras_depth_q - 1'b1;
+                end else if (slot0_hit && (slot0_entry.br_type == BR_TYPE_CORO)) begin
+                    // Case 4: Coroutine Swap (POP then PUSH)
+                    // In-place overwrite at current TOS; TOS and depth strictly invariant
+                    ras_array[ras_tos_q] <= pc_slot0 + 64'd4;
+                end else if (!slot0_taken && slot1_hit) begin
                     if (slot1_entry.br_type == BR_TYPE_CALL) begin
                         ras_tos_q <= 4'(ras_tos_q + 4'd1);
                         ras_array[4'(ras_tos_q + 4'd1)] <= pc_slot1 + 64'd4;
@@ -930,6 +936,9 @@ module fursoy_s1_bpu
                     end else if (slot1_entry.br_type == BR_TYPE_RET) begin
                         ras_tos_q <= 4'(ras_tos_q - 4'd1);
                         if (ras_depth_q > 5'd0) ras_depth_q <= ras_depth_q - 1'b1;
+                    end else if (slot1_entry.br_type == BR_TYPE_CORO) begin
+                        // Case 4: Coroutine Swap (POP then PUSH)
+                        ras_array[ras_tos_q] <= pc_slot1 + 64'd4;
                     end
                 end
             end

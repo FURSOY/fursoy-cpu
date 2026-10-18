@@ -308,15 +308,59 @@ package fursoy_s1_pkg;
         logic [9:0]  csr_tagb4; // T4 tagB CSR (10b, L=54)
     } tage_csr_bundle_t;
 
-    // Branch Type Classification
+    // Branch Type Classification (including Milestone 6 Phase B Coroutine Swap)
     typedef enum logic [2:0] {
         BR_TYPE_COND = 3'd0,
         BR_TYPE_JAL  = 3'd1,
         BR_TYPE_JALR = 3'd2,
         BR_TYPE_CALL = 3'd3,
         BR_TYPE_RET  = 3'd4,
-        BR_TYPE_IND  = 3'd5
+        BR_TYPE_IND  = 3'd5,
+        BR_TYPE_CORO = 3'd6
     } branch_type_t;
+
+    // 5-Case RISC-V Calling Convention Link-Register Classification (§2.5, M6 §6.3)
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic branch_type_t classify_branch(
+        input logic [31:0] inst,
+        input logic        is_branch,
+        input logic        is_jal,
+        input logic        is_jalr
+    );
+        logic [4:0] rd;
+        logic [4:0] rs1;
+        logic is_link_rd;
+        logic is_link_rs;
+        rd  = inst[11:7];
+        rs1 = inst[19:15];
+        is_link_rd = (rd == 5'd1 || rd == 5'd5);
+        is_link_rs = (rs1 == 5'd1 || rs1 == 5'd5);
+        if (is_jal) begin
+            return is_link_rd ? BR_TYPE_CALL : BR_TYPE_JAL;
+        end else if (is_jalr) begin
+            if (!is_link_rd && !is_link_rs) begin
+                // Case 1: Neither link -> None (standard indirect jump)
+                return BR_TYPE_IND;
+            end else if (is_link_rd && !is_link_rs) begin
+                // Case 2: Link rd, non-link rs1 -> PUSH (Call)
+                return BR_TYPE_CALL;
+            end else if (!is_link_rd && is_link_rs) begin
+                // Case 3: Non-link rd, link rs1 -> POP (Return)
+                return BR_TYPE_RET;
+            end else if (is_link_rd && is_link_rs && (rd != rs1)) begin
+                // Case 4: Link rd, link rs1, rd != rs1 -> POP then PUSH (Coroutine Swap)
+                return BR_TYPE_CORO;
+            end else begin
+                // Case 5: Link rd, link rs1, rd == rs1 -> PUSH only (Special link re-use)
+                return BR_TYPE_CALL;
+            end
+        end else if (is_branch) begin
+            return BR_TYPE_COND;
+        end
+        return BR_TYPE_COND;
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
 
     // -------------------------------------------------------------------------
     // Decoded Micro-operation Structure (Dispatch into IntIQ / MemIQ)
