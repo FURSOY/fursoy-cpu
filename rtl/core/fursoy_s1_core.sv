@@ -473,11 +473,13 @@ module fursoy_s1_core
     logic         fe_uop0_valid;
     logic         fe_uop1_valid;
     uop_decoded_t fe_uop0;
-    ghr_t         fe_uop0_pre_ghr;
-    ras_chkpt_t   fe_uop0_ras_chkpt;
-    uop_decoded_t fe_uop1;
-    ghr_t         fe_uop1_pre_ghr;
-    ras_chkpt_t   fe_uop1_ras_chkpt;
+    ghr_t             fe_uop0_pre_ghr;
+    ras_chkpt_t       fe_uop0_ras_chkpt;
+    tage_csr_bundle_t fe_uop0_csr_chkpt;
+    uop_decoded_t     fe_uop1;
+    ghr_t             fe_uop1_pre_ghr;
+    ras_chkpt_t       fe_uop1_ras_chkpt;
+    tage_csr_bundle_t fe_uop1_csr_chkpt;
     /* verilator lint_on UNUSEDSIGNAL */
 
     logic         fe_retire_ready;
@@ -1030,11 +1032,13 @@ module fursoy_s1_core
         .chkpt_alloc_id0_i       (sub_uop0_chkpt_id),
         .chkpt_alloc_ghr0_i      (fe_uop0_pre_ghr),
         .chkpt_alloc_ras0_i      (fe_uop0_ras_chkpt),
+        .chkpt_alloc_csr0_i      (fe_uop0_csr_chkpt),
 
         .chkpt_alloc_valid1_i    (sub_uop1_ack && frontend_en_i && (fe_uop1.is_branch || fe_uop1.is_jalr)),
         .chkpt_alloc_id1_i       (sub_uop1_chkpt_id),
         .chkpt_alloc_ghr1_i      (fe_uop1_pre_ghr),
         .chkpt_alloc_ras1_i      (fe_uop1_ras_chkpt),
+        .chkpt_alloc_csr1_i      (fe_uop1_csr_chkpt),
 
         // Predictor training from resolved branches
         .train_valid_i           (int_train_valid),
@@ -1049,11 +1053,13 @@ module fursoy_s1_core
         .uop0_o                  (fe_uop0),
         .uop0_pre_ghr_o          (fe_uop0_pre_ghr),
         .uop0_ras_chkpt_o        (fe_uop0_ras_chkpt),
+        .uop0_csr_chkpt_o        (fe_uop0_csr_chkpt),
 
         .uop1_valid_o            (fe_uop1_valid),
         .uop1_o                  (fe_uop1),
         .uop1_pre_ghr_o          (fe_uop1_pre_ghr),
         .uop1_ras_chkpt_o        (fe_uop1_ras_chkpt),
+        .uop1_csr_chkpt_o        (fe_uop1_csr_chkpt),
 
         .rename_ack_i            (int_rename_ack),
 

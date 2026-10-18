@@ -78,15 +78,15 @@ inline uint8_t calc_rob_dist(uint8_t idx, uint8_t head) {
     return (48 - head) + idx;
 }
 
-// Packed struct field accessors for VlWide<9> iq_entry_t (268 bits total)
-inline uint8_t get_uop_rob_idx(const VlWide<9>& uop) {
-    return (uop[5] >> 2) & 0x3F;
+// Packed struct field accessors for VlWide<12> iq_entry_t (364 bits total with 108b GHR)
+inline uint8_t get_uop_rob_idx(const VlWide<12>& uop) {
+    return (uop[8] >> 2) & 0x3F;
 }
-inline uint8_t get_uop_pnew(const VlWide<9>& uop) {
-    return (uop[5] >> 8) & 0x7F;
+inline uint8_t get_uop_pnew(const VlWide<12>& uop) {
+    return (uop[8] >> 8) & 0x7F;
 }
-inline bool get_uop_is_branch(const VlWide<9>& uop) {
-    return (uop[0] >> 25) & 1;
+inline bool get_uop_is_branch(const VlWide<12>& uop) {
+    return (uop[3] >> 25) & 1;
 }
 
 class IntIQTB {
@@ -124,7 +124,7 @@ public:
         dut->uop0_is_jal_i = 0;
         dut->uop0_is_jalr_i = 0;
         dut->uop0_br_type_i = 0;
-        dut->uop0_pre_ghr_i = 0;
+        dut->uop0_pre_ghr_i[0] = 0; dut->uop0_pre_ghr_i[1] = 0; dut->uop0_pre_ghr_i[2] = 0; dut->uop0_pre_ghr_i[3] = 0;
         dut->uop0_exception_i = 0;
         dut->uop0_exc_cause_i = 0;
 
@@ -148,7 +148,7 @@ public:
         dut->uop1_is_jal_i = 0;
         dut->uop1_is_jalr_i = 0;
         dut->uop1_br_type_i = 0;
-        dut->uop1_pre_ghr_i = 0;
+        dut->uop1_pre_ghr_i[0] = 0; dut->uop1_pre_ghr_i[1] = 0; dut->uop1_pre_ghr_i[2] = 0; dut->uop1_pre_ghr_i[3] = 0;
         dut->uop1_exception_i = 0;
         dut->uop1_exc_cause_i = 0;
 
@@ -212,7 +212,7 @@ public:
         dut->uop0_is_jal_i      = u.is_jal;
         dut->uop0_is_jalr_i     = u.is_jalr;
         dut->uop0_br_type_i     = u.br_type;
-        dut->uop0_pre_ghr_i     = u.pre_ghr;
+        dut->uop0_pre_ghr_i[0] = u.pre_ghr; dut->uop0_pre_ghr_i[1] = 0; dut->uop0_pre_ghr_i[2] = 0; dut->uop0_pre_ghr_i[3] = 0;
         dut->uop0_exception_i   = u.exception;
         dut->uop0_exc_cause_i   = u.exc_cause;
     }
@@ -242,7 +242,7 @@ public:
         dut->uop1_is_jal_i      = u.is_jal;
         dut->uop1_is_jalr_i     = u.is_jalr;
         dut->uop1_br_type_i     = u.br_type;
-        dut->uop1_pre_ghr_i     = u.pre_ghr;
+        dut->uop1_pre_ghr_i[0] = u.pre_ghr; dut->uop1_pre_ghr_i[1] = 0; dut->uop1_pre_ghr_i[2] = 0; dut->uop1_pre_ghr_i[3] = 0;
         dut->uop1_exception_i   = u.exception;
         dut->uop1_exc_cause_i   = u.exc_cause;
     }

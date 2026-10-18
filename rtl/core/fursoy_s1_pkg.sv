@@ -286,8 +286,27 @@ package fursoy_s1_pkg;
         SYS_SFENCE_VMA= 7'd105
     } uop_subop_t;
 
-    localparam int unsigned GHR_WIDTH = 12; // 12-bit GHR
+    localparam int unsigned GHR_WIDTH = 108; // 108-bit GHR for Milestone 6 Phase A TAGE-Lite
     typedef logic [GHR_WIDTH-1:0] ghr_t;
+
+    // -------------------------------------------------------------------------
+    // Milestone 6 Phase A TAGE-Lite Folded History CSR Bundle (106 bits)
+    // Reference: docs/architecture/slice1-m6-frontend-opt-v1.md Section 5.3
+    // -------------------------------------------------------------------------
+    typedef struct packed {
+        logic [8:0]  csr_idx1; // T1 index CSR (9b, L=4)
+        logic [8:0]  csr_idx2; // T2 index CSR (9b, L=12)
+        logic [8:0]  csr_idx3; // T3 index CSR (9b, L=36)
+        logic [8:0]  csr_idx4; // T4 index CSR (9b, L=108)
+        logic [7:0]  csr_taga1; // T1 tagA CSR (8b, L=4)
+        logic [7:0]  csr_taga2; // T2 tagA CSR (8b, L=12)
+        logic [8:0]  csr_taga3; // T3 tagA CSR (9b, L=36)
+        logic [9:0]  csr_taga4; // T4 tagA CSR (10b, L=108)
+        logic [7:0]  csr_tagb1; // T1 tagB CSR (8b, L=2)
+        logic [7:0]  csr_tagb2; // T2 tagB CSR (8b, L=6)
+        logic [8:0]  csr_tagb3; // T3 tagB CSR (9b, L=18)
+        logic [9:0]  csr_tagb4; // T4 tagB CSR (10b, L=54)
+    } tage_csr_bundle_t;
 
     // Branch Type Classification
     typedef enum logic [2:0] {
@@ -640,6 +659,7 @@ package fursoy_s1_pkg;
         branch_type_t br_type;
         ghr_t        pre_branch_ghr;
         ras_chkpt_t  ras_chkpt;
+        tage_csr_bundle_t csr_chkpt;
     } fetch_queue_entry_t;
 
 endpackage
