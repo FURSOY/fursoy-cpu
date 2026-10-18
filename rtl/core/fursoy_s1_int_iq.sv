@@ -247,12 +247,40 @@ module fursoy_s1_int_iq
     end
 
     // -------------------------------------------------------------------------
-    // Wrap-Safe Age Comparison & Port-Aware Bipartite Arbiter
+    // Wrap-Safe Age Comparison & Port-Aware Bipartite Arbiter (Phase B4)
+    // Reference: docs/architecture/slice1-m5-performance-v1.md Section 7.4
     // -------------------------------------------------------------------------
     logic [3:0] sel_p0_idx;
     logic [3:0] sel_p1_idx;
     logic       sel_p0_valid;
     logic       sel_p1_valid;
+
+    // Strict oldest-ready-first priority with Section 7.4 tie-breaking:
+    // 1. Primary rule: wrap-safe circular ROB age (strictly smaller rob_dist).
+    // 2. Equal age tie-break: branch priority (branch uop takes precedence over non-branch).
+    // 3. Both branches or neither branch: lower slot index (Slot 0 precedence).
+    function automatic logic is_older_or_tiebreak(
+        input logic [5:0] cand_dist,
+        input logic       cand_is_br,
+        input logic [3:0] cand_idx,
+        input logic [5:0] curr_dist,
+        input logic       curr_is_br,
+        input logic [3:0] curr_idx
+    );
+        if (cand_dist < curr_dist) begin
+            return 1'b1;
+        end else if (cand_dist == curr_dist) begin
+            if (cand_is_br && !curr_is_br) begin
+                return 1'b1;
+            end else if (!cand_is_br && curr_is_br) begin
+                return 1'b0;
+            end else begin
+                return (cand_idx < curr_idx);
+            end
+        end else begin
+            return 1'b0;
+        end
+    endfunction
 
     always_comb begin
         // Find oldest ready uop across all categories (u0)
@@ -289,7 +317,8 @@ module fursoy_s1_int_iq
         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
             if (ready_p0[i] || ready_p1[i]) begin
                 d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                if (!u0_valid || (d < u0_dist)) begin
+                if (!u0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), 4'(i),
+                                                      u0_dist, entries_q[u0_idx].is_branch || (entries_q[u0_idx].uop_class == UOP_BRANCH), u0_idx)) begin
                     u0_dist  = d;
                     u0_idx   = 4'(i);
                     u0_valid = 1'b1;
@@ -301,7 +330,8 @@ module fursoy_s1_int_iq
             for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                 if ((4'(i) != u0_idx) && (ready_p0[i] || ready_p1[i])) begin
                     d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                    if (!u1_valid || (d < u1_dist)) begin
+                    if (!u1_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), 4'(i),
+                                                          u1_dist, entries_q[u1_idx].is_branch || (entries_q[u1_idx].uop_class == UOP_BRANCH), u1_idx)) begin
                         u1_dist  = d;
                         u1_idx   = 4'(i);
                         u1_valid = 1'b1;
@@ -322,7 +352,8 @@ module fursoy_s1_int_iq
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                     if ((4'(i) != u0_idx) && ready_p1[i]) begin
                         d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                        if (!sel_p1_valid || (d < best_p1_dist)) begin
+                        if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, 4'(i),
+                                                                  best_p1_dist, 1'b0, sel_p1_idx)) begin
                             best_p1_dist = d;
                             sel_p1_idx   = 4'(i);
                             sel_p1_valid = 1'b1;
@@ -339,7 +370,8 @@ module fursoy_s1_int_iq
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                     if ((4'(i) != u0_idx) && ready_p0[i]) begin
                         d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                        if (!sel_p0_valid || (d < best_p0_dist)) begin
+                        if (!sel_p0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), 4'(i),
+                                                                  best_p0_dist, entries_q[sel_p0_idx].is_branch || (entries_q[sel_p0_idx].uop_class == UOP_BRANCH), sel_p0_idx)) begin
                             best_p0_dist = d;
                             sel_p0_idx   = 4'(i);
                             sel_p0_valid = 1'b1;
@@ -380,7 +412,8 @@ module fursoy_s1_int_iq
                         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                             if ((4'(i) != u0_idx) && ready_p1[i]) begin
                                 d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                                if (!sel_p1_valid || (d < best_p1_dist)) begin
+                                if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, 4'(i),
+                                                                          best_p1_dist, 1'b0, sel_p1_idx)) begin
                                     best_p1_dist = d;
                                     sel_p1_idx   = 4'(i);
                                     sel_p1_valid = 1'b1;
@@ -587,6 +620,38 @@ module fursoy_s1_int_iq
             // 4. Never issue the same queue entry on both ports
             if (sel_p0_valid && sel_p1_valid && (sel_p0_idx == sel_p1_idx)) begin
                 $fatal(1, "[INT_IQ ASSERTION FAILED] Same slot %0d issued to both Port 0 and Port 1!", sel_p0_idx);
+            end
+
+            // Phase B4: Strict Oldest-Ready Priority & No Age Inversion Assertions (Section 7.4)
+            // 4a. Younger branch uop NEVER bypasses older ready ALU uop
+            if (sel_p0_valid && (entries_q[sel_p0_idx].uop_class == UOP_BRANCH || entries_q[sel_p0_idx].is_branch)) begin
+                for (int i = 0; i < INT_IQ_DEPTH; i++) begin
+                    if (entries_q[i].valid && (4'(i) != sel_p0_idx) && ready_p0[i] &&
+                        !(entries_q[i].uop_class == UOP_BRANCH || entries_q[i].is_branch) &&
+                        (rob_dist(entries_q[i].rob_idx, rob_head_i) < rob_dist(entries_q[sel_p0_idx].rob_idx, rob_head_i))) begin
+                        assert (sel_p1_valid && (sel_p1_idx == 4'(i)))
+                            else $fatal(1, "[INT_IQ ASSERTION FAILED] Younger branch (slot %0d, rob %0d) bypassed older ready ALU (slot %0d, rob %0d)!",
+                                        sel_p0_idx, entries_q[sel_p0_idx].rob_idx, i, entries_q[i].rob_idx);
+                    end
+                end
+            end
+
+            // 4b. Port 0 strictly selects oldest/highest-priority ready uop unless issued to Port 1
+            if (sel_p0_valid) begin
+                for (int i = 0; i < INT_IQ_DEPTH; i++) begin
+                    if (entries_q[i].valid && (4'(i) != sel_p0_idx) && ready_p0[i] &&
+                        !(sel_p1_valid && (sel_p1_idx == 4'(i)))) begin
+                        assert (!is_older_or_tiebreak(
+                            rob_dist(entries_q[i].rob_idx, rob_head_i),
+                            entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH),
+                            4'(i),
+                            rob_dist(entries_q[sel_p0_idx].rob_idx, rob_head_i),
+                            entries_q[sel_p0_idx].is_branch || (entries_q[sel_p0_idx].uop_class == UOP_BRANCH),
+                            sel_p0_idx))
+                            else $fatal(1, "[INT_IQ ASSERTION FAILED] Port 0 selected slot %0d (rob %0d) when higher-priority slot %0d (rob %0d) was eligible!",
+                                        sel_p0_idx, entries_q[sel_p0_idx].rob_idx, i, entries_q[i].rob_idx);
+                    end
+                end
             end
 
             // 5. Stale completion cannot wake operands
