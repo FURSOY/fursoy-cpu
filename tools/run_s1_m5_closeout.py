@@ -16,6 +16,7 @@ OUTPUT_REPORT = ROOT / "results/s1-m5-closeout.json"
 
 FROZEN_MANIFEST_SHA256 = "e298467c8eb6476270a21dc2414c7b1afa87697036c37e99ca1c90f7372926fb"
 FROZEN_COMMIT_B4 = "f5920c791d8b05ca755da3ea0febeccee73ef257"
+FROZEN_OBSERVED_AT_UTC = "2026-10-18T16:21:05.619580+00:00"
 
 RTL_FILES = [
     ROOT / "rtl/core/fursoy_s1_pkg.sv",
@@ -425,7 +426,7 @@ def main():
         "milestone": "Fursoy Slice-1 Milestone 5 (Performance Optimization & Telemetry Closeout)",
         "canonical_spec": "docs/architecture/slice1-m5-performance-v1.md (v1.2)",
         "freeze_commit": FROZEN_COMMIT_B4,
-        "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+        "observed_at_utc": FROZEN_OBSERVED_AT_UTC,
         "production_rtl_manifest_sha256": FROZEN_MANIFEST_SHA256,
         "production_rtl_manifest_verified": manifest_pass,
         "production_rtl_file_count": len(RTL_FILES),
