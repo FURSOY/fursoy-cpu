@@ -1,0 +1,592 @@
+{
+  "artifact": "results/s1-m5-closeout.json",
+  "milestone": "Fursoy Slice-1 Milestone 5 (Performance Optimization & Telemetry Closeout)",
+  "canonical_spec": "docs/architecture/slice1-m5-performance-v1.md (v1.2)",
+  "freeze_commit": "f5920c791d8b05ca755da3ea0febeccee73ef257",
+  "observed_at_utc": "2026-10-18T16:21:05.619580+00:00",
+  "production_rtl_manifest_sha256": "e298467c8eb6476270a21dc2414c7b1afa87697036c37e99ca1c90f7372926fb",
+  "production_rtl_manifest_verified": true,
+  "production_rtl_file_count": 31,
+  "source_files_sha256": {
+    "rtl/core/fursoy_s1_pkg.sv": "a95f491d6c2e3f792637790125e9ad5fe36804ae5940e2a3398756f514c6ffdc",
+    "rtl/core/fursoy_s1_freelist.sv": "c6939130b8073d7c51e87a7ba7baa0cebd04a272ae386c590e00edf1069f4022",
+    "rtl/core/fursoy_s1_rat.sv": "f036405ed3ffa2f399e941a89fbf240a821489c73b70b1f579a11091b1874aa6",
+    "rtl/core/fursoy_s1_prf_status.sv": "b9738d1971389782ef19da1eafc2ce1cd4060767c8c4a351c49a6485771c9a8f",
+    "rtl/core/fursoy_s1_rob.sv": "b270603e53200ef4a65f378e5aa3621df0c2365ec6abf98172f5b3aeaf033546",
+    "rtl/core/fursoy_s1_substrate.sv": "8a2eca44f555048668e1fd60645f0f6cf917910d20bd790700ea59896a00deed",
+    "rtl/core/fursoy_s1_prf.sv": "f4196f9fe0b72344102fc044e6ef06b71189446afc3c86590a77fb56b740a3b9",
+    "rtl/core/fursoy_s1_alu.sv": "49f7caa0b30c3b6490822bcfe37da283eb622e771c07b932bd7b7ac94f4cae3f",
+    "rtl/core/fursoy_s1_branch_unit.sv": "733112f7c6fb15ba914749337f26a01aa2b07ac5c5514ffbebb696569a246808",
+    "rtl/core/fursoy_s1_multiplier.sv": "485585277b8863b50cf00b73b9265317d40fddd9f611a5fb7b8d17ffa4ca89b7",
+    "rtl/core/fursoy_s1_divider.sv": "b7344da42fa2c42b3231842e2878cb1603434024bb8f2d86d3c182e71808d58b",
+    "rtl/core/fursoy_s1_port1_buffers.sv": "8942d0f8a178f7e7e1c61c131a8e43d931332c81fb1a4e10b3ee181e11253ff9",
+    "rtl/core/fursoy_s1_int_iq.sv": "11afd35bd4114bf168a63139be082c52b57451c1b5acb9f31aa5fb1fe461df7c",
+    "rtl/core/fursoy_s1_agu.sv": "08acf06b9006c1b4ebf25b72d0010ac236d1cc0f14f3e0c80afa715efc8e4527",
+    "rtl/core/fursoy_s1_mem_iq.sv": "ee44658e28cadf9048d362d2a580e98b19808fcbf64ca08fd1ff6446d8b881f3",
+    "rtl/core/fursoy_s1_trt.sv": "903d5a4193c027d4a8a74d4ef047078706c6376671c465367e27c33e256f5b81",
+    "rtl/core/fursoy_s1_lsu_queues.sv": "6cbbee34096edeef8f539feeddbaef3388de8a46f898ebfbdfb108f7659f2c2c",
+    "rtl/core/fursoy_s1_l1d.sv": "8ff83d1eea69c1a61c2db8d60d826b68ee10bf15e90b250bfa58505bbe8edc6d",
+    "rtl/core/fursoy_s1_lsu.sv": "fd45a58bb5e221e4247a81d41df56415a4f7873830b2d37fd6a6a1c55506730e",
+    "rtl/core/fursoy_s1_backend.sv": "199c31d610a7a8866bd7c5c834af974fe493306bba167e101107b80b7474515b",
+    "rtl/core/fursoy_s1_bpu.sv": "909b7e0117602855e51d04d547a510e8715ec1abbcae08c0c6fe3a9abae2e504",
+    "rtl/core/fursoy_s1_ptw.sv": "cd9f7193489f3fae9d2b0c74838c436cdee786bb7fc461bca9416626568276ec",
+    "rtl/core/fursoy_s1_itlb.sv": "679248804661fea28b8ceace31d16c2c6d279a7bacc30bc5aa27c1631daa964d",
+    "rtl/core/fursoy_s1_l1i.sv": "7a4cdbf2aac28fce798af3ee534207f87f7ea23a223383205110c4db1b6069ed",
+    "rtl/core/fursoy_s1_fetch_queue.sv": "cafdb73abb3eae839b257550da4a6d75bab6a4301ff4c55251c2b2ff9dbff850",
+    "rtl/core/fursoy_s1_decode.sv": "8af9deba3c9f845ab7752496c59ab41f13cadefa1758386cef6ff59c4301de6b",
+    "rtl/core/fursoy_s1_serialization.sv": "bf7f9100add51a02331906f073a6aeabaa8ee7375b983208ae84b119a4b716f5",
+    "rtl/core/fursoy_s1_csr.sv": "52f87d054ae0dbbdd72b9d176adcdcd4d746133aade8051b71b66126642ca39f",
+    "rtl/core/fursoy_s1_hpm.sv": "7652c1c93e85eac24136adb8441854e8734330d10ea2ab79fd3d4b725c629f61",
+    "rtl/core/fursoy_s1_frontend.sv": "13db8e274921c535a26e1b0815a4ba7331430fa1fc89ef934477ea975cffcc6d",
+    "rtl/core/fursoy_s1_core.sv": "58d84b6c66bb2ed035ac46f77ce57a27ea69a09d95c6bffd1f31ceff2c5e4ed7"
+  },
+  "gate_status_summary": {
+    "13.1_architecture_freeze": "PASS (Review P0=0, P1=0, P2=0, P3=0)",
+    "13.2_full_predecessor_regressions": "PASS (All Lint, M1, M2, M3, M4, Slice-0 clean)",
+    "13.2_mandatory_properties": "PASS (33/33 Section 12.1 properties proved)",
+    "13.2_randomized_torture": "PASS (413,905 operations, 0 mismatches, 0 timeouts)",
+    "13.2_verilator_lint": "PASS (0 warnings, 0 errors)",
+    "13.3_counter_integrity": "PASS (48 HPM events validated across cycle traces)",
+    "13.3_cpi_cycle_conservation": "PASS (sum(C_k) == delta(mcycle) zero leakage)",
+    "13.4_performance_characterization": "PASS (Empirical profiling across 5 canonical workloads generated)"
+  },
+  "predecessor_regressions": {
+    "verilator_lint": {
+      "tool": "tools/run_s1_lint.py",
+      "status": "PASS",
+      "scope": "31 core RTL files (0 errors, 0 warnings)"
+    },
+    "m1_substrate": {
+      "tool": "tools/run_s1_substrate.py",
+      "status": "PASS",
+      "scope": "28 directed tests + 50,000 stress operations"
+    },
+    "m2_backend": {
+      "tool": "tools/run_s1_m2.py",
+      "status": "PASS",
+      "scope": "35 directed tests + 50,000 stress operations"
+    },
+    "m3_memory": {
+      "tool": "tools/run_s1_m3.py",
+      "status": "PASS",
+      "scope": "59 directed tests + 50,000 stress operations"
+    },
+    "m4_frontend": {
+      "tool": "tools/run_s1_m4.py",
+      "status": "PASS",
+      "scope": "48 directed scenarios + 50,000 stress operations"
+    },
+    "slice0_check": {
+      "tool": "tools/check_slice0.py",
+      "status": "PASS",
+      "scope": "Slice-0 contract integrity verified"
+    }
+  },
+  "randomized_torture_accounting": {
+    "gate_requirement": ">= 100,000 operations across multiple seeds with 0 mismatches and 0 timeouts",
+    "phase_b1_ops": 50000,
+    "phase_b2_ops": 50000,
+    "phase_b3_ops": 154123,
+    "phase_b4_ops": 159782,
+    "total_m5_randomized_ops": 413905,
+    "total_mismatches": 0,
+    "total_watchdog_timeouts": 0,
+    "status": "PASS"
+  },
+  "workload_profiling_comparison": {
+    "branch_torture": {
+      "phase_a": {
+        "cycles": 1712,
+        "instret": 450,
+        "ipc": 0.2629,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 683,
+          "C_productive": 258,
+          "C_mem_stall": 0,
+          "C_be_rename": 127,
+          "C_be_sched": 0,
+          "C_fe_starve": 4,
+          "C_idle_other": 640
+        },
+        "key_events": {
+          "0x1b_port0_uops": 771,
+          "0x1f_agu_uops": 0,
+          "0x21_intiq_empty": 814,
+          "0x22_memiq_empty": 1712,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "phase_b4": {
+        "cycles": 1715,
+        "instret": 450,
+        "ipc": 0.2624,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 683,
+          "C_productive": 258,
+          "C_mem_stall": 0,
+          "C_be_rename": 126,
+          "C_be_sched": 0,
+          "C_fe_starve": 8,
+          "C_idle_other": 640
+        },
+        "key_events": {
+          "0x1b_port0_uops": 771,
+          "0x1f_agu_uops": 0,
+          "0x21_intiq_empty": 817,
+          "0x22_memiq_empty": 1715,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "deltas": {
+        "cycle_delta": 3,
+        "ipc_delta": -0.0005
+      }
+    },
+    "pointer_chasing": {
+      "phase_a": {
+        "cycles": 789,
+        "instret": 193,
+        "ipc": 0.2446,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 318,
+          "C_productive": 66,
+          "C_mem_stall": 133,
+          "C_be_rename": 79,
+          "C_be_sched": 1,
+          "C_fe_starve": 3,
+          "C_idle_other": 189
+        },
+        "key_events": {
+          "0x1b_port0_uops": 324,
+          "0x1f_agu_uops": 64,
+          "0x21_intiq_empty": 402,
+          "0x22_memiq_empty": 725,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "phase_b4": {
+        "cycles": 789,
+        "instret": 193,
+        "ipc": 0.2446,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 318,
+          "C_productive": 64,
+          "C_mem_stall": 136,
+          "C_be_rename": 75,
+          "C_be_sched": 1,
+          "C_fe_starve": 6,
+          "C_idle_other": 189
+        },
+        "key_events": {
+          "0x1b_port0_uops": 324,
+          "0x1f_agu_uops": 64,
+          "0x21_intiq_empty": 402,
+          "0x22_memiq_empty": 725,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "deltas": {
+        "cycle_delta": 0,
+        "ipc_delta": 0.0
+      }
+    },
+    "stream_memcpy": {
+      "phase_a": {
+        "cycles": 467,
+        "instret": 194,
+        "ipc": 0.4154,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 157,
+          "C_productive": 98,
+          "C_mem_stall": 75,
+          "C_be_rename": 44,
+          "C_be_sched": 0,
+          "C_fe_starve": 3,
+          "C_idle_other": 90
+        },
+        "key_events": {
+          "0x1b_port0_uops": 196,
+          "0x1f_agu_uops": 64,
+          "0x21_intiq_empty": 240,
+          "0x22_memiq_empty": 403,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "phase_b4": {
+        "cycles": 467,
+        "instret": 194,
+        "ipc": 0.4154,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 157,
+          "C_productive": 86,
+          "C_mem_stall": 93,
+          "C_be_rename": 41,
+          "C_be_sched": 0,
+          "C_fe_starve": 6,
+          "C_idle_other": 84
+        },
+        "key_events": {
+          "0x1b_port0_uops": 196,
+          "0x1f_agu_uops": 64,
+          "0x21_intiq_empty": 240,
+          "0x22_memiq_empty": 403,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "deltas": {
+        "cycle_delta": 0,
+        "ipc_delta": 0.0
+      }
+    },
+    "int_dependency": {
+      "phase_a": {
+        "cycles": 1753,
+        "instret": 257,
+        "ipc": 0.1466,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 70,
+          "C_productive": 196,
+          "C_mem_stall": 0,
+          "C_be_rename": 1171,
+          "C_be_sched": 239,
+          "C_fe_starve": 3,
+          "C_idle_other": 74
+        },
+        "key_events": {
+          "0x1b_port0_uops": 234,
+          "0x1f_agu_uops": 0,
+          "0x21_intiq_empty": 1426,
+          "0x22_memiq_empty": 1753,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "phase_b4": {
+        "cycles": 1753,
+        "instret": 257,
+        "ipc": 0.1466,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 70,
+          "C_productive": 196,
+          "C_mem_stall": 0,
+          "C_be_rename": 1168,
+          "C_be_sched": 239,
+          "C_fe_starve": 6,
+          "C_idle_other": 74
+        },
+        "key_events": {
+          "0x1b_port0_uops": 234,
+          "0x1f_agu_uops": 0,
+          "0x21_intiq_empty": 1426,
+          "0x22_memiq_empty": 1753,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "deltas": {
+        "cycle_delta": 0,
+        "ipc_delta": 0.0
+      }
+    },
+    "raw_stress": {
+      "phase_a": {
+        "cycles": 434,
+        "instret": 162,
+        "ipc": 0.3733,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 156,
+          "C_productive": 98,
+          "C_mem_stall": 31,
+          "C_be_rename": 48,
+          "C_be_sched": 0,
+          "C_fe_starve": 3,
+          "C_idle_other": 98
+        },
+        "key_events": {
+          "0x1b_port0_uops": 163,
+          "0x1f_agu_uops": 64,
+          "0x21_intiq_empty": 240,
+          "0x22_memiq_empty": 370,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "phase_b4": {
+        "cycles": 434,
+        "instret": 162,
+        "ipc": 0.3733,
+        "cpi_breakdown": {
+          "C_serialize": 0,
+          "C_br_recover": 156,
+          "C_productive": 98,
+          "C_mem_stall": 63,
+          "C_be_rename": 45,
+          "C_be_sched": 0,
+          "C_fe_starve": 6,
+          "C_idle_other": 66
+        },
+        "key_events": {
+          "0x1b_port0_uops": 163,
+          "0x1f_agu_uops": 64,
+          "0x21_intiq_empty": 240,
+          "0x22_memiq_empty": 370,
+          "0x24_spec_loads": 0,
+          "0x27_raw_violat": 0
+        }
+      },
+      "deltas": {
+        "cycle_delta": 0,
+        "ipc_delta": 0.0
+      }
+    }
+  },
+  "section_12_1_property_traceability_matrix": [
+    {
+      "id": "PROP_SPEC_LOAD_SUCCESS",
+      "number": 1,
+      "description": "Load issues speculatively past non-aliasing unresolved store; executes without stall or replay.",
+      "test_evidence": "Phase B1 Directed Scenarios 13-16 (Byte-disjoint) & Focused Test 1 in verification/s1_m5_b1_tb.cpp:1051-1093",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_EXACT_RAW_VIOLATION",
+      "number": 2,
+      "description": "Load issues past older unresolved store; store later resolves to identical address and width; violation detected.",
+      "test_evidence": "Phase B1 Directed Scenarios 1-4 (Exact 8B, 4B, 2B, 1B RAW Overlap) in verification/s1_m5_b1_tb.cpp:854-884",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_CONTAINED_OVERLAP",
+      "number": 3,
+      "description": "Store writes sub-word inside speculative load's address window; violation detected.",
+      "test_evidence": "Phase B1 Directed Scenarios 5-8 (Contained 8B Store -> 4B/2B/1B Load and 4B Store -> 1B Load) in verification/s1_m5_b1_tb.cpp:886-914",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_LOAD_IN_STORE_OVERLAP",
+      "number": 4,
+      "description": "Load reads sub-word inside speculative store's address window; violation detected.",
+      "test_evidence": "Phase B1 Directed Scenarios 5-8 in verification/s1_m5_b1_tb.cpp:886-914",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_PARTIAL_OVERLAP",
+      "number": 5,
+      "description": "Aligned 8-byte load vs aligned 4-byte store sub-range overlap unsupported by canonical forwarding; violation detected.",
+      "test_evidence": "Phase B1 Directed Scenarios 9-12 (Partial Overlap sub-ranges) in verification/s1_m5_b1_tb.cpp:916-944",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_SAME_LINE_NO_OVERLAP",
+      "number": 6,
+      "description": "Load and store access different words within the same 64-byte line; zero violation triggered.",
+      "test_evidence": "Phase B1 Directed Scenarios 13 & 14 in verification/s1_m5_b1_tb.cpp:948-960",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_ADJACENT_BYTE_NO_OVERLAP",
+      "number": 7,
+      "description": "Store writes byte N; load reads byte N+1; zero violation triggered.",
+      "test_evidence": "Phase B1 Directed Scenario 16 in verification/s1_m5_b1_tb.cpp:969-974",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_DIFF_LINE_NO_OVERLAP",
+      "number": 8,
+      "description": "Disjoint cache lines; zero violation triggered.",
+      "test_evidence": "Phase B1 Directed Scenario 15 in verification/s1_m5_b1_tb.cpp:962-967",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_MULT_UNRESOLVED_STORES",
+      "number": 9,
+      "description": "Load issues past 4 older unresolved stores; correctly tracks dependency against all 4.",
+      "test_evidence": "Phase B1 Directed Scenarios 25-28 & Multi-Seed Torture in verification/s1_m5_b1_tb.cpp:994-1001, 1235-1295",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_MULT_SPEC_LOADS",
+      "number": 10,
+      "description": "3 consecutive loads issue past unresolved store; one conflicts; precise rollback restores only the conflicting load.",
+      "test_evidence": "Phase B1 Focused Tests 2 & 3 in verification/s1_m5_b1_tb.cpp:1095-1180",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_ROB_WRAP_SAFETY",
+      "number": 11,
+      "description": "Store-load age comparison remains strictly correct across circular ROB pointer wrapping.",
+      "test_evidence": "Phase B4 IntIQ Unit Test 8 (verification/s1_m5_b4_intiq_unit_tb.cpp:269-307), Core Scenario 4 (verification/s1_m5_b4_tb.cpp:795-840), M2 Test 14, M3 Test 45",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_LQ_WRAP_SAFETY",
+      "number": 12,
+      "description": "Load Queue entry allocation and deallocation remain correct across circular pointer wrapping.",
+      "test_evidence": "M3 Directed Test 15 & 45 (verification/s1_m3_tb.cpp), Phase B1 multi-seed torture (>3,000 LQ wraps)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_STALE_VIOLATION_REJECT",
+      "number": 13,
+      "description": "Stale violation {rob_idx, rob_epoch} arriving after ROB slot reuse is silently ignored.",
+      "test_evidence": "Phase B1 Focused Test 3 (verification/s1_m5_b1_tb.cpp:1138-1179), M1 Substrate Test 27/28",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_LOAD_WB_BEFORE_STORE",
+      "number": 14,
+      "description": "Load completes and writes PRF before older store resolves; entry remains in LQ until older_store_checks_complete(load).",
+      "test_evidence": "Phase B1 Directed Scenarios 17-20 in verification/s1_m5_b1_tb.cpp:976-983",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_HEAD_HOLD_STRUCTURAL",
+      "number": 15,
+      "description": "Load at ROB head holds retirement structurally while any relevant older-store violation check is in-flight (no fixed cycle timer).",
+      "test_evidence": "Phase B1 Focused Tests 1 & 3 (verification/s1_m5_b1_tb.cpp:1051-1093, 1138-1179) and Same-Cycle Race Test (verification/s1_m5_b1_tb.cpp:1036-1043)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_LQ_DEALLOC_ON_RETIRE",
+      "number": 16,
+      "description": "Load deallocates at retirement once older_store_checks_complete(load) without waiting for older stores to drain from SQ.",
+      "test_evidence": "Phase B1 Focused Test 1 & 5 (verification/s1_m5_b1_tb.cpp:1051-1093, 1228-1230), Core streaming scenarios",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_DEPENDENT_ALU_CHAIN",
+      "number": 17,
+      "description": "Speculative load wakes dependent ALU chain; violation squashes entire dependent chain without PRF corruption.",
+      "test_evidence": "Phase B1 Directed Scenarios 21-24 in verification/s1_m5_b1_tb.cpp:985-992",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_DEPENDENT_BRANCH",
+      "number": 18,
+      "description": "Speculative load feeds conditional branch; violation squashes branch and restores checkpoint cleanly.",
+      "test_evidence": "Phase B1 Directed Scenarios 21-24 in verification/s1_m5_b1_tb.cpp:985-992 and Core Scenario 2 across Phase B1-B4",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_YOUNGER_STORE_SAFE",
+      "number": 19,
+      "description": "Speculative load followed by younger store; violation squashes younger store before it drains to memory.",
+      "test_evidence": "Phase B1 randomized torture reference model checks (0 state mismatches across 50,000 ops) in verification/s1_m5_b1_tb.cpp:1235-1295, M3 Test 36",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_FAULTING_SPEC_LOAD",
+      "number": 20,
+      "description": "Load raises Load Page Fault (Cause 13) speculatively; violation occurs; violation suppresses fault; re-executes conservatively.",
+      "test_evidence": "Phase B1 Directed Scenarios 29-32 in verification/s1_m5_b1_tb.cpp:1003-1010",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_EXCEPTION_VIOLATION_SAME",
+      "number": 21,
+      "description": "Load has both exception and violation; memory violation takes strict precedence.",
+      "test_evidence": "Phase B1 Directed Scenarios 29-32 in verification/s1_m5_b1_tb.cpp:1003-1010 and fursoy_s1_rob.sv priority logic",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_MMIO_EXCLUSION",
+      "number": 22,
+      "description": "MMIO load never issues speculatively past unresolved store; executes strictly at ROB head with empty SQ.",
+      "test_evidence": "Phase B1 Focused Test 4 in verification/s1_m5_b1_tb.cpp:1182-1226 (spec_delta == 0)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_LR_EXCLUSION",
+      "number": 23,
+      "description": "LR.W/D never issues speculatively past unresolved store; executes non-speculatively.",
+      "test_evidence": "M3 Directed Test 41 (verification/s1_m3_tb.cpp) and fursoy_s1_lsu_queues.sv non-speculative gating",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_SC_AMO_EXCLUSION",
+      "number": 24,
+      "description": "SC and AMO execute non-speculatively at ROB head with empty SQ.",
+      "test_evidence": "M3 Directed Tests 44 & 58 (verification/s1_m3_tb.cpp)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_REPLAY_SAFE_D0_CONSUME",
+      "number": 25,
+      "description": "One-shot replay_safe token consumed atomically at Stage D0 for matching PC; travels with dynamic uop; forward progress guaranteed.",
+      "test_evidence": "Phase B1 Directed Scenarios 33-36 in verification/s1_m5_b1_tb.cpp:1012-1019, Phase B4 Core Scenario 3 (verification/s1_m5_b4_tb.cpp:757-793)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_REPEATED_ALIAS_LOOP",
+      "number": 26,
+      "description": "Livelock test verifies zero infinite replay loops under continuous adversarial aliasing.",
+      "test_evidence": "Phase B1 Directed Scenarios 33-36 in verification/s1_m5_b1_tb.cpp:1012-1019 and Phase B4 Core Scenario 3",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_BRANCH_RECOVER_VIOLAT",
+      "number": 27,
+      "description": "Concurrent branch recovery and memory violation notification arbitrated cleanly.",
+      "test_evidence": "Phase B1 Same-Cycle Adversarial Race Testing (verification/s1_m5_b1_tb.cpp:1036-1043), Phase B3 Core Scenario 2, Phase B4 Core Scenario 2",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_FULL_FLUSH_CONCURRENT",
+      "number": 28,
+      "description": "Full architectural flush concurrent with violation set clears violation bit safely.",
+      "test_evidence": "M1 Substrate Directed Test 22 & 25, Phase B4 IntIQ Unit Test 11 (verification/s1_m5_b4_intiq_unit_tb.cpp)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_FQ16_WRAP_FULL_FLUSH",
+      "number": 29,
+      "description": "FQ16 verifies 16-entry fill, empty, wrap, and single-cycle flush without pointer corruption.",
+      "test_evidence": "Phase B2 FQ Unit Test Suite (verification/s1_m5_b2_fq_unit_tb.cpp:21-277, 13 scenarios + 50,000 ops torture)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_MEMIQ16_FULL_DRAIN",
+      "number": 30,
+      "description": "MemIQ16 verifies 16-entry fill, backpressure, and drain without deadlock.",
+      "test_evidence": "Phase B3 MemIQ Unit Test Suite (verification/s1_m5_b3_memiq_unit_tb.cpp, 14 scenarios + 154,123 accepted ops across 3 seeds), Phase B3 Core Scenario 1",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_OLDEST_READY_WRAP",
+      "number": 31,
+      "description": "Oldest-ready selection verifies correct age priority across circular ROB wrapping.",
+      "test_evidence": "Phase B4 IntIQ Unit Test 8 (verification/s1_m5_b4_intiq_unit_tb.cpp:269-307), Test 3 (strict no-age-inversion), and Phase B4 Core Scenario 4",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_HPM_SELECTOR_MAPPING",
+      "number": 32,
+      "description": "All 48 event sources verifiable across all 29 programmable mhpmeventN selectors; privilege mode checks verified.",
+      "test_evidence": "Phase A Directed Tests 1-5 (26 sub-scenarios in verification/s1_m5_phase_a_tb.cpp:603-838)",
+      "status": "PASS"
+    },
+    {
+      "id": "PROP_CPI_CONSERVATION",
+      "number": 33,
+      "description": "Master 8-category cycle conservation identity sum(C_k) == delta(mcycle) verified over every interval.",
+      "test_evidence": "Phase A Test 6 (verification/s1_m5_phase_a_tb.cpp:840-874), hardware assertion in rtl/core/fursoy_s1_hpm.sv:180-184, and continuous runtime assertions across all Phase A/B1/B2/B3/B4 testbenches",
+      "status": "PASS"
+    }
+  ],
+  "final_milestone_disposition": "MILESTONE 5 FORMALLY FROZEN AND READY FOR MILESTONE 6 TRANSITION"
+}

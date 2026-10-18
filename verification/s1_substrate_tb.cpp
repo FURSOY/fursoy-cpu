@@ -77,6 +77,12 @@ public:
 
         dut->flush_valid_i = 0;
         dut->retire_ready_i = 1;
+
+        dut->lsu_retire0_allow_i = 1;
+        dut->lsu_retire1_allow_i = 1;
+        dut->lsu_violation_valid_i = 0;
+        dut->lsu_violation_rob_idx_i = 0;
+        dut->lsu_violation_rob_epoch_i = 0;
     }
 
     void update_comp_epochs() {

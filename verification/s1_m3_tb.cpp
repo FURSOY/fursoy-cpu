@@ -470,7 +470,7 @@ public:
                   << " rd=x" << (int)dut->diag_head_rd_o
                   << " pnew=p" << (int)dut->diag_head_pnew_o
                   << " is_br=" << (int)dut->diag_head_is_branch_o << "\n";
-        std::cerr << "MemIQ free: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_mem_iq__DOT__free_count << "/12\n";
+        std::cerr << "MemIQ free: " << (16 - (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_mem_iq__DOT__count) << "/16\n";
         std::cerr << "LQ free: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__lq_free_count << "/16\n";
         std::cerr << "SQ free: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_free_count << "/16\n";
         std::cerr << "SQ drain_head: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_drain_head_q
@@ -2140,7 +2140,7 @@ bool test_48_int_mem_1slot_both_accepted(CoreTB& tb) {
     for (int i = 0; i < 15; i++) {
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 11 + (i % 15), 10, 0, i, true, 0x104 + i*4);
     }
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 15; i++) {
         tb.dispatch1(UOP_LOAD, MEM_LD, 2, 10, 0, i*8, true, 0x204 + i*4);
     }
     tb.wait_cycles(2);
@@ -2168,7 +2168,7 @@ bool test_49_mem_int_1slot_both_accepted(CoreTB& tb) {
     for (int i = 0; i < 15; i++) {
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 11 + (i % 15), 10, 0, i, true, 0x104 + i*4);
     }
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 15; i++) {
         tb.dispatch1(UOP_LOAD, MEM_LD, 2, 10, 0, i*8, true, 0x204 + i*4);
     }
     tb.wait_cycles(2);
@@ -2193,7 +2193,7 @@ bool test_50_int_mem_memiq_1free_accepted(CoreTB& tb) {
     tb.wait_until_quiescent(20);
 
     tb.dispatch1(UOP_DIV, D_DIV, 10, 0, 0, 100, true, 0x100);
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 15; i++) {
         tb.dispatch1(UOP_LOAD, MEM_LD, 2, 10, 0, i*8, true, 0x204 + i*4);
     }
     tb.wait_cycles(2);
@@ -2243,7 +2243,7 @@ bool test_52_mem_mem_1free_lane0_only(CoreTB& tb) {
     tb.wait_until_quiescent(20);
 
     tb.dispatch1(UOP_DIV, D_DIV, 10, 0, 0, 100, true, 0x100);
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 15; i++) {
         tb.dispatch1(UOP_LOAD, MEM_LD, 2, 10, 0, i*8, true, 0x204 + i*4);
     }
     tb.wait_cycles(2);
