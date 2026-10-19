@@ -677,6 +677,7 @@ package fursoy_s1_pkg;
     localparam int unsigned ITLB_BASE_ENTRIES   = 64; // 64 base page entries (4-way, 16 sets)
     localparam int unsigned ITLB_SUPER_ENTRIES  = 8;  // 8 superpage CAM entries
     localparam int unsigned ITRT_DEPTH          = 2;  // Instruction Translation Request Table
+    localparam int unsigned L1I_NLP_PAGE_LINE_LIMIT = 63; // Line 63 within 4 KiB page triggers silent prefetch abort (§7.3)
 
     typedef logic [FETCH_QUEUE_IDX_W-1:0] fetch_queue_idx_t;
 

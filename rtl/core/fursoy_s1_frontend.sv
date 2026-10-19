@@ -589,6 +589,9 @@ module fursoy_s1_frontend
         .stall_f3_i               (stall_downstream),
         .redirect_flush_i         (any_redirect || fence_i_frontend_purge),
         .l1i_inval_all_i          (fence_i_l1i_inval),
+        .sfence_vma_i             (sfence_vma_valid_i),
+        .fq_free_count_i          (fq_free_count),
+        .ptw_req_active_i         (ptw_mem_req_valid_o),
 
         .f3_valid_o               (f3_valid),
         .f3_pc_o                  (f3_pc),
@@ -613,7 +616,12 @@ module fursoy_s1_frontend
         .event_l1i_hit_o          (l1i_event_hit),
         .event_l1i_miss_o         (l1i_event_miss),
         .imshr_occ_o              (l1i_imshr_occ),
-        .diag_f2_skid_valid_o     ()
+        .diag_f2_skid_valid_o     (),
+        .diag_nlp_alloc_o         (),
+        .diag_nlp_hit_o           (),
+        .diag_nlp_promote_o       (),
+        .diag_nlp_abort_page_o    (),
+        .diag_nlp_drop_resident_o ()
     );
 
     // =========================================================================

@@ -2,16 +2,30 @@
 `define FURSOY_S1_L1I_SV
 
 // =============================================================================
-// Fursoy Slice-1 Non-Blocking Level-1 Instruction Cache (L1I) — Milestone 4
+// Fursoy Slice-1 Non-Blocking Level-1 Instruction Cache (L1I) — Milestone 6 Phase C
 // =============================================================================
 // Features:
 // - 16 KiB 4-Way Set-Associative (64 Sets, 4 Ways, 64-Byte Lines, VIPT-Safe).
 // - Tree Pseudo-LRU Replacement Policy per Set.
-// - Dual Instruction MSHRs (2 Entries) eliminating redirect-under-miss starvation.
-// - Dead Refill Delivery Suppression (installs to cache, suppresses pipeline push).
-// - Stage F2 Synchronous SRAM Response Skid Buffer absorbing downstream backpressure.
-// - Single-Cycle Flash Invalidation for FENCE.I System Serialization.
-// Reference: docs/architecture/slice1-m4-frontend-v1.md Sections 3.2, 8, 16, 17, 18
+// - Conservative VIPT-Safe Next-Line Instruction Prefetcher (L1I NLP):
+//   * Dual Instruction MSHRs (IMSHR_DEPTH = 2: MSHR0 and MSHR1).
+//   * MSHR0 is strictly reserved for authoritative demand instruction misses.
+//   * MSHR1 is utilized for speculative next-line prefetching (Line_N+1 = Line_demand + 1).
+// - Gating Invariants:
+//   1. MSHR1 is completely idle (!imshr_q[1].valid);
+//   2. MSHR0 is either idle or has already completed its request handshake;
+//   3. Fetch Queue capacity is available (fq_free_count >= 2);
+//   4. Strict Same-Page Invariant: demand_paddr[11:6] != 6'b111111 (line 63 silent abort);
+//   5. Candidate line must miss in L1I tag directory (!tag_hit) before emitting bus read.
+// - Demand Collision & Promotion Invariant (§7.2, Rule P2-5):
+//   * Demand fetch matching in-flight MSHR1 promotes MSHR1 to demand without duplicate bus read.
+//   * Forwards returning DRAM burst data directly to Stage F3 / Fetch Queue upon arrival.
+// - Pipeline Redirect & Flush Safety (§7.2):
+//   * Redirect flush marks in-flight prefetch as dead refill (suppresses F3 push; installs to L1I).
+//   * FENCE.I immediately purges all I-MSHR tracking and flash-invalidates L1I tags.
+//   * SFENCE.VMA / satp CSR writes invalidate active prefetch tracking cleanly.
+//   * Shared PTW walk requests take strict priority over prefetch bus requests.
+// Reference: docs/architecture/slice1-m6-frontend-opt-v1.md Section 7 & Section 10
 // =============================================================================
 
 `include "fursoy_s1_pkg.sv"
@@ -37,6 +51,9 @@ module fursoy_s1_l1i
     input  logic              stall_f3_i,           // Downstream Fetch Queue backpressure
     input  logic              redirect_flush_i,     // Pipeline flush / redirect pulse
     input  logic              l1i_inval_all_i,      // FENCE.I flash tag invalidation
+    input  logic              sfence_vma_i,         // SFENCE.VMA or satp write address translation purge
+    input  logic [4:0]        fq_free_count_i,      // Downstream Fetch Queue free slot count
+    input  logic              ptw_req_active_i,     // Shared PTW memory activity priority
 
     // -------------------------------------------------------------------------
     // Stage F3 Delivery Interface (to Instruction Alignment Stage)
@@ -71,7 +88,12 @@ module fursoy_s1_l1i
     output logic              event_l1i_hit_o,
     output logic              event_l1i_miss_o,
     output logic [1:0]        imshr_occ_o,
-    output logic              diag_f2_skid_valid_o
+    output logic              diag_f2_skid_valid_o,
+    output logic              diag_nlp_alloc_o,
+    output logic              diag_nlp_hit_o,
+    output logic              diag_nlp_promote_o,
+    output logic              diag_nlp_abort_page_o,
+    output logic              diag_nlp_drop_resident_o
 );
 
     // =========================================================================
@@ -115,11 +137,12 @@ module fursoy_s1_l1i
     logic        f2_page_fault_q;
     logic        f2_access_fault_q;
 
-    wire [5:0]  f2_set    = f2_pa_q[11:6];
-    wire [43:0] f2_tag    = f2_pa_q[55:12];
-    wire [2:0]  f2_word_idx = f2_pa_q[5:3]; // 64-bit word index within 512-bit cache line
+    wire [5:0]  f2_set       = f2_pa_q[11:6];
+    wire [43:0] f2_tag       = f2_pa_q[55:12];
+    wire [2:0]  f2_word_idx  = f2_pa_q[5:3]; // 64-bit word index within 512-bit cache line
+    wire [49:0] f2_line_addr = f2_pa_q[55:6];
 
-    // Tag comparison across all 4 ways
+    // Tag comparison across all 4 ways for Stage F2 access
     logic [L1I_WAYS-1:0] way_hit;
     always_comb begin
         for (int w = 0; w < L1I_WAYS; w++) begin
@@ -147,7 +170,7 @@ module fursoy_s1_l1i
     wire [63:0] hit_data = extract_fetch_block(data_array[f2_set][hit_way], f2_word_idx);
 
     // =========================================================================
-    // 2. Dual Instruction MSHRs (2 Entries) — Section 8.1 & 18
+    // 2. Dual Instruction MSHRs (2 Entries) & NLP Arbitration — Section 7.2
     // =========================================================================
     typedef struct packed {
         logic        valid;
@@ -157,36 +180,111 @@ module fursoy_s1_l1i
         logic [2:0]  word_idx;
         logic [5:0]  set_idx;
         logic [43:0] tag;
+        logic        req_sent;      // Bus request was granted/sent
+        logic        is_prefetch;   // Speculative NLP prefetch
+        logic        suppress_push; // Suppress pipeline delivery to Stage F3
     } imshr_entry_t;
 
     imshr_entry_t imshr_q [IMSHR_DEPTH];
 
     assign imshr_occ_o = (imshr_q[0].valid ? 2'd1 : 2'd0) + (imshr_q[1].valid ? 2'd1 : 2'd0);
 
-    wire imshr0_avail = !imshr_q[0].valid;
-    wire imshr1_avail = !imshr_q[1].valid;
-    wire [1:0] imshr_avail_count = (imshr0_avail ? 2'd1 : 2'd0) + (imshr1_avail ? 2'd1 : 2'd0);
-    wire       imshr_target      = imshr0_avail ? 1'b0 : 1'b1;
+    // Matching in-flight I-MSHR evaluation for Stage F2 access
+    wire mshr0_match = imshr_q[0].valid && (imshr_q[0].line_addr == f2_line_addr);
+    wire mshr1_match = imshr_q[1].valid && (imshr_q[1].line_addr == f2_line_addr);
 
-    // Check matching in-flight I-MSHR
-    wire [49:0] f2_line_addr = f2_pa_q[55:6];
-    logic       imshr_match;
-    logic       imshr_match_idx;
+    wire f2_miss = f2_valid_q && !cache_hit && !f2_page_fault_q && !f2_access_fault_q;
+    wire mshr1_collision = f2_miss && mshr1_match;
+
+    // -------------------------------------------------------------------------
+    // Next-Line Prefetch Candidate Evaluation (§7.1, §7.2, §7.3)
+    // -------------------------------------------------------------------------
+    // Base line address for next-line prefetch: either in-flight MSHR0 demand miss or active F2 demand access
+    wire [49:0] nlp_base_line_addr = (imshr_q[0].valid && imshr_q[0].req_sent) ? imshr_q[0].line_addr : f2_line_addr;
+    wire        nlp_trigger_valid  = (imshr_q[0].valid && imshr_q[0].req_sent) || (f2_valid_q && !f2_page_fault_q && !f2_access_fault_q);
+
+    // Strict same-page boundary: line 63 of 4 KiB page aborts silently (§7.3)
+    wire nlp_page_boundary_abort = (nlp_base_line_addr[5:0] == 6'b111111);
+
+    wire [49:0] cand_line_addr = nlp_base_line_addr + 50'd1;
+    wire [5:0]  cand_set       = cand_line_addr[5:0];
+    wire [43:0] cand_tag       = cand_line_addr[49:6]; // Same tag within same page!
+
+    // Check candidate residency in L1I tag array
+    logic cand_tag_hit;
     always_comb begin
-        imshr_match     = 1'b0;
-        imshr_match_idx = 1'b0;
-        for (int i = 0; i < IMSHR_DEPTH; i++) begin
-            if (imshr_q[i].valid && (imshr_q[i].line_addr == f2_line_addr)) begin
-                imshr_match     = 1'b1;
-                imshr_match_idx = 1'(i);
+        cand_tag_hit = 1'b0;
+        for (int w = 0; w < L1I_WAYS; w++) begin
+            if (valid_array[cand_set][w] && (tag_array[cand_set][w] == cand_tag)) begin
+                cand_tag_hit = 1'b1;
             end
         end
     end
 
-    // Section 6: Non-blocking Hit-Under-Miss and dual MSHR flow
-    wire f2_miss = f2_valid_q && !cache_hit && !f2_page_fault_q && !f2_access_fault_q;
-    wire mshr_exhausted_stall = f2_miss && (imshr_avail_count == 0);
-    wire secondary_miss_stall = f2_miss && imshr_match;
+    wire cand_mshr0_match = imshr_q[0].valid && (imshr_q[0].line_addr == cand_line_addr);
+    wire cand_mshr1_match = imshr_q[1].valid && (imshr_q[1].line_addr == cand_line_addr);
+    wire cand_already_resident = cand_tag_hit || cand_mshr0_match || cand_mshr1_match;
+
+    // Gating conditions for MSHR1 prefetch allocation (§7.2)
+    wire mshr0_idle_or_sent = !imshr_q[0].valid || imshr_q[0].req_sent;
+
+    // Bus request triggers
+    wire mshr0_fresh_req = !redirect_flush_i && f2_miss && !mshr0_match && !mshr1_match && !imshr_q[0].valid;
+    wire mshr0_retry_req = !redirect_flush_i && imshr_q[0].valid && !imshr_q[0].req_sent;
+
+    wire nlp_alloc_eligible = nlp_trigger_valid &&
+                              !nlp_page_boundary_abort && !cand_already_resident &&
+                              !imshr_q[1].valid && mshr0_idle_or_sent &&
+                              (fq_free_count_i >= 5'd2) &&
+                              !redirect_flush_i && !l1i_inval_all_i && !sfence_vma_i &&
+                              !ptw_req_active_i &&
+                              !mshr0_fresh_req;
+
+    wire mshr1_retry_req = !redirect_flush_i && !sfence_vma_i && imshr_q[1].valid && !imshr_q[1].req_sent && !ptw_req_active_i && !mshr0_fresh_req && !mshr0_retry_req;
+    wire mshr1_fresh_req = !redirect_flush_i && !sfence_vma_i && nlp_alloc_eligible;
+
+    // -------------------------------------------------------------------------
+    // External Bus Read Request Arbitration (Strict Demand Prioritization)
+    // -------------------------------------------------------------------------
+    logic        bus_req_valid;
+    logic [49:0] bus_req_addr;
+    logic [1:0]  bus_req_tag;
+
+    always_comb begin
+        bus_req_valid = 1'b0;
+        bus_req_addr  = '0;
+        bus_req_tag   = 2'd0;
+
+        if (mshr0_fresh_req) begin
+            bus_req_valid = 1'b1;
+            bus_req_addr  = f2_line_addr;
+            bus_req_tag   = 2'd0;
+        end else if (mshr0_retry_req) begin
+            bus_req_valid = 1'b1;
+            bus_req_addr  = imshr_q[0].line_addr;
+            bus_req_tag   = 2'd0;
+        end else if (mshr1_retry_req) begin
+            bus_req_valid = 1'b1;
+            bus_req_addr  = imshr_q[1].line_addr;
+            bus_req_tag   = 2'd1;
+        end else if (mshr1_fresh_req) begin
+            bus_req_valid = 1'b1;
+            bus_req_addr  = cand_line_addr;
+            bus_req_tag   = 2'd1;
+        end
+    end
+
+    assign bus_rd_req_valid_o = bus_req_valid;
+    assign bus_rd_req_addr_o  = bus_req_addr;
+    assign bus_rd_req_tag_o   = bus_req_tag;
+
+    // -------------------------------------------------------------------------
+    // Pipeline Stall & Hold Generation
+    // -------------------------------------------------------------------------
+    wire secondary_miss_stall = f2_miss && (mshr0_match || mshr1_match);
+    wire mshr_exhausted_stall = f2_miss && !mshr0_match && !mshr1_match && imshr_q[0].valid;
+    wire bus_not_ready_stall  = mshr0_fresh_req && !bus_rd_req_ready_i;
+    wire f2_stall_condition   = secondary_miss_stall || mshr_exhausted_stall || bus_not_ready_stall;
 
     // =========================================================================
     // 3. Stage F2 Synchronous Skid Buffer (Section 3.2 & 17)
@@ -202,33 +300,13 @@ module fursoy_s1_l1i
 
     skid_entry_t f2_skid_q;
     assign diag_f2_skid_valid_o = f2_skid_q.valid;
-    wire f2_hold = f2_skid_q.valid || secondary_miss_stall || mshr_exhausted_stall;
-    wire f2_stall_upstream = f2_skid_q.valid || stall_f3_i || secondary_miss_stall || mshr_exhausted_stall;
-    assign f2_stall_f0_o = f2_stall_upstream;
-    assign f2_stall_f1_o = f2_stall_upstream;
 
-    assign l1i_ready_o = !f2_stall_upstream;
+    wire f2_hold           = f2_skid_q.valid || f2_stall_condition;
+    wire f2_stall_upstream = f2_skid_q.valid || stall_f3_i || f2_stall_condition;
+    assign f2_stall_f0_o   = f2_stall_upstream;
+    assign f2_stall_f1_o   = f2_stall_upstream;
 
-    // Bus Read Request Arbitration
-    logic imshr_bus_req_valid;
-    logic [1:0] imshr_bus_req_tag;
-    always_comb begin
-        imshr_bus_req_valid = 1'b0;
-        imshr_bus_req_tag   = 2'd0;
-        for (int i = 0; i < IMSHR_DEPTH; i++) begin
-            if (imshr_q[i].valid) begin
-                imshr_bus_req_valid = 1'b1;
-                imshr_bus_req_tag   = 2'(i);
-                break;
-            end
-        end
-    end
-
-    // Refill bus signals
-    assign bus_rd_req_valid_o = (!redirect_flush_i && f2_valid_q && !cache_hit && !f2_page_fault_q && !f2_access_fault_q &&
-                                 !imshr_match && (imshr_avail_count > 0));
-    assign bus_rd_req_addr_o  = f2_line_addr;
-    assign bus_rd_req_tag_o   = {1'b0, imshr_target};
+    assign l1i_ready_o     = !f2_stall_upstream;
 
     // Delivery Candidate: either from F2 Skid Buffer, from F2 cache hit, or from arriving refill
     logic        emerging_valid;
@@ -274,14 +352,28 @@ module fursoy_s1_l1i
             end
         end
 
-        // Check if arriving refill has live waiter
-        if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid && imshr_q[bus_rd_rsp_tag_i[0]].waiter_valid) begin
-            emerging_valid      = 1'b1;
-            emerging_pc         = imshr_q[bus_rd_rsp_tag_i[0]].orig_pc;
-            emerging_data       = extract_fetch_block(bus_rd_rsp_data_i, imshr_q[bus_rd_rsp_tag_i[0]].word_idx);
-            emerging_exc_valid  = bus_rd_rsp_error_i;
-            emerging_exc_cause  = bus_rd_rsp_error_i ? 5'd1 : 5'd0;
-            emerging_fault_addr = imshr_q[bus_rd_rsp_tag_i[0]].orig_pc;
+        // Check if arriving refill has live waiter or matches demand collision
+        if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid) begin
+            if (bus_rd_rsp_tag_i[0] == 1'b0) begin
+                if (imshr_q[0].waiter_valid) begin
+                    emerging_valid      = 1'b1;
+                    emerging_pc         = imshr_q[0].orig_pc;
+                    emerging_data       = extract_fetch_block(bus_rd_rsp_data_i, imshr_q[0].word_idx);
+                    emerging_exc_valid  = bus_rd_rsp_error_i;
+                    emerging_exc_cause  = bus_rd_rsp_error_i ? 5'd1 : 5'd0;
+                    emerging_fault_addr = imshr_q[0].orig_pc;
+                end
+            end else begin
+                // MSHR1: delivers if waiter_valid is set (promoted) OR collision occurs on same cycle
+                if ((imshr_q[1].waiter_valid && !imshr_q[1].suppress_push) || mshr1_collision) begin
+                    emerging_valid      = 1'b1;
+                    emerging_pc         = imshr_q[1].waiter_valid ? imshr_q[1].orig_pc : f2_pc_q;
+                    emerging_data       = extract_fetch_block(bus_rd_rsp_data_i, imshr_q[1].waiter_valid ? imshr_q[1].word_idx : f2_word_idx);
+                    emerging_exc_valid  = (!imshr_q[1].is_prefetch || mshr1_collision) ? bus_rd_rsp_error_i : 1'b0;
+                    emerging_exc_cause  = emerging_exc_valid ? 5'd1 : 5'd0;
+                    emerging_fault_addr = emerging_pc;
+                end
+            end
         end
     end
 
@@ -304,9 +396,14 @@ module fursoy_s1_l1i
         end
     end
 
-    // Observability Events
-    assign event_l1i_hit_o  = f2_valid_q && !f2_page_fault_q && !f2_access_fault_q && cache_hit;
-    assign event_l1i_miss_o = f2_valid_q && !f2_page_fault_q && !f2_access_fault_q && !cache_hit;
+    // Observability & Diagnostics
+    assign event_l1i_hit_o          = f2_valid_q && !f2_page_fault_q && !f2_access_fault_q && cache_hit;
+    assign event_l1i_miss_o         = f2_valid_q && !f2_page_fault_q && !f2_access_fault_q && !cache_hit;
+    assign diag_nlp_alloc_o         = mshr1_fresh_req;
+    assign diag_nlp_hit_o           = event_l1i_hit_o;
+    assign diag_nlp_promote_o       = mshr1_collision && imshr_q[1].is_prefetch;
+    assign diag_nlp_abort_page_o    = nlp_trigger_valid && nlp_page_boundary_abort && !imshr_q[1].valid;
+    assign diag_nlp_drop_resident_o = nlp_trigger_valid && !nlp_page_boundary_abort && cand_already_resident && !imshr_q[1].valid;
 
     // =========================================================================
     // 4. Sequential State Management (Arrays, MSHRs, Skid Buffer)
@@ -334,7 +431,7 @@ module fursoy_s1_l1i
             end
         end else begin
             // -----------------------------------------------------------------
-            // A. FENCE.I Flash Invalidation
+            // A. FENCE.I Flash Invalidation & SFENCE.VMA Translation Purge
             // -----------------------------------------------------------------
             if (l1i_inval_all_i) begin
                 for (int s = 0; s < L1I_SETS; s++) begin
@@ -342,17 +439,32 @@ module fursoy_s1_l1i
                         valid_array[s][w] <= 1'b0;
                     end
                 end
+                imshr_q[0].valid <= 1'b0;
+                imshr_q[1].valid <= 1'b0;
+            end else begin
+                if (sfence_vma_i) begin
+                    // SFENCE.VMA purges active speculative prefetch tracking (§7.4)
+                    if (imshr_q[1].valid && imshr_q[1].is_prefetch) begin
+                        imshr_q[1].valid <= 1'b0;
+                    end
+                end
+                if (redirect_flush_i) begin
+                    imshr_q[0].waiter_valid  <= 1'b0;
+                    imshr_q[1].waiter_valid  <= 1'b0;
+                    imshr_q[1].suppress_push <= 1'b1;
+                end
             end
 
             // -----------------------------------------------------------------
             // B. Skid Buffer Operation & Backpressure Management
             // -----------------------------------------------------------------
             if (redirect_flush_i) begin
-                f2_skid_q   <= '0;
-                f2_valid_q  <= 1'b0;
+                f2_skid_q  <= '0;
+                f2_valid_q <= 1'b0;
             end else begin
                 // If refill arrives on the same cycle as an F2 hit, capture hit in skid buffer
-                if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid && imshr_q[bus_rd_rsp_tag_i[0]].waiter_valid &&
+                if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid &&
+                    (imshr_q[bus_rd_rsp_tag_i[0]].waiter_valid || (bus_rd_rsp_tag_i[0] == 1'b1 && mshr1_collision)) &&
                     f2_valid_q && cache_hit && !f2_skid_q.valid) begin
                     f2_skid_q.valid           <= 1'b1;
                     f2_skid_q.pc              <= f2_pc_q;
@@ -361,7 +473,6 @@ module fursoy_s1_l1i
                     f2_skid_q.exception_cause <= 5'd0;
                     f2_skid_q.fault_addr      <= 64'd0;
                 end else if (stall_f3_i) begin
-                    // If downstream stalled and emerging data is valid, capture into skid buffer!
                     if (emerging_valid && !f2_skid_q.valid) begin
                         f2_skid_q.valid           <= 1'b1;
                         f2_skid_q.pc              <= emerging_pc;
@@ -371,7 +482,6 @@ module fursoy_s1_l1i
                         f2_skid_q.fault_addr      <= emerging_fault_addr;
                     end
                 end else begin
-                    // Downstream unblocked: skid buffer drains
                     if (f2_skid_q.valid) begin
                         f2_skid_q <= '0;
                     end
@@ -392,25 +502,46 @@ module fursoy_s1_l1i
             end
 
             // -----------------------------------------------------------------
-            // D. I-MSHR Waiter Invalidation on Redirect / Flush
+            // D. MSHR0 Allocation & Request Handshake (Demand Miss)
             // -----------------------------------------------------------------
-            if (redirect_flush_i) begin
-                for (int i = 0; i < IMSHR_DEPTH; i++) begin
-                    imshr_q[i].waiter_valid <= 1'b0;
-                end
+            if (mshr0_fresh_req) begin
+                imshr_q[0].valid         <= 1'b1;
+                imshr_q[0].line_addr     <= f2_line_addr;
+                imshr_q[0].waiter_valid  <= 1'b1;
+                imshr_q[0].orig_pc       <= f2_pc_q;
+                imshr_q[0].word_idx      <= f2_word_idx;
+                imshr_q[0].set_idx       <= f2_set;
+                imshr_q[0].tag           <= f2_tag;
+                imshr_q[0].req_sent      <= bus_rd_req_ready_i;
+                imshr_q[0].is_prefetch   <= 1'b0;
+                imshr_q[0].suppress_push <= 1'b0;
+            end else if (mshr0_retry_req && bus_rd_req_ready_i) begin
+                imshr_q[0].req_sent      <= 1'b1;
             end
 
             // -----------------------------------------------------------------
-            // E. Allocate I-MSHR on Cache Miss
+            // E. MSHR1 Allocation, Handshake, & Demand Promotion (NLP Prefetch)
             // -----------------------------------------------------------------
-            if (!redirect_flush_i && f2_valid_q && !cache_hit && !f2_page_fault_q && !f2_access_fault_q && !imshr_match && (imshr_avail_count > 0)) begin
-                imshr_q[imshr_target].valid        <= 1'b1;
-                imshr_q[imshr_target].line_addr    <= f2_line_addr;
-                imshr_q[imshr_target].waiter_valid <= 1'b1;
-                imshr_q[imshr_target].orig_pc      <= f2_pc_q;
-                imshr_q[imshr_target].word_idx     <= f2_word_idx;
-                imshr_q[imshr_target].set_idx      <= f2_set;
-                imshr_q[imshr_target].tag          <= f2_tag;
+            if (mshr1_collision && imshr_q[1].is_prefetch) begin
+                // Demand Miss Collision: promote speculative prefetch to demand status (§7.2, Rule P2-5)
+                imshr_q[1].is_prefetch   <= 1'b0;
+                imshr_q[1].suppress_push <= 1'b0;
+                imshr_q[1].waiter_valid  <= 1'b1;
+                imshr_q[1].orig_pc       <= f2_pc_q;
+                imshr_q[1].word_idx      <= f2_word_idx;
+            end else if (mshr1_fresh_req) begin
+                imshr_q[1].valid         <= 1'b1;
+                imshr_q[1].line_addr     <= cand_line_addr;
+                imshr_q[1].waiter_valid  <= 1'b0;
+                imshr_q[1].orig_pc       <= 64'd0;
+                imshr_q[1].word_idx      <= 3'd0;
+                imshr_q[1].set_idx       <= cand_set;
+                imshr_q[1].tag           <= cand_tag;
+                imshr_q[1].req_sent      <= bus_rd_req_ready_i;
+                imshr_q[1].is_prefetch   <= 1'b1;
+                imshr_q[1].suppress_push <= 1'b1;
+            end else if (mshr1_retry_req && bus_rd_req_ready_i) begin
+                imshr_q[1].req_sent      <= 1'b1;
             end
 
             // -----------------------------------------------------------------
@@ -423,7 +554,9 @@ module fursoy_s1_l1i
                     // Install line into L1I Cache Array using 3-bit Tree-PLRU
                     logic [1:0] victim_way;
                     logic [3:0] valids;
-                    for (int w = 0; w < L1I_WAYS; w++) valids[w] = valid_array[imshr_q[bus_rd_rsp_tag_i[0]].set_idx][w];
+                    for (int w = 0; w < L1I_WAYS; w++) begin
+                        valids[w] = valid_array[imshr_q[bus_rd_rsp_tag_i[0]].set_idx][w];
+                    end
                     victim_way = plru_victim(plru_array[imshr_q[bus_rd_rsp_tag_i[0]].set_idx], valids);
 
                     valid_array[imshr_q[bus_rd_rsp_tag_i[0]].set_idx][victim_way] <= 1'b1;
