@@ -71,13 +71,16 @@ module fursoy_s1_lsu
     input  logic [63:0]       uop1_pc_i,
 
     // -------------------------------------------------------------------------
-    // PRF Read Port 4 (Base) & Port 5 (Store Data) Operands
+    // PRF Read Port 4 (Base), Port 5 (Store Data) & Port 6 (AGU1 Base) Operands
     // -------------------------------------------------------------------------
     output preg_t             r4_paddr_o,
     input  logic [63:0]       r4_data_i,
 
     output preg_t             r5_paddr_o,
     input  logic [63:0]       r5_data_i,
+
+    output preg_t             r6_paddr_o,
+    input  logic [63:0]       r6_data_i,
 
     // -------------------------------------------------------------------------
     // Writeback Snoop Buses for Tag Wakeup & Store Data Capture
@@ -97,6 +100,12 @@ module fursoy_s1_lsu
     input  logic              wb2_comp_exception_i,
     input  preg_t             wb2_pnew_i,
     input  logic [63:0]       wb2_data_i,
+
+    input  logic              wb3_valid_i,
+    input  logic              wb3_comp_ack_i,
+    input  logic              wb3_comp_exception_i,
+    input  preg_t             wb3_pnew_i,
+    input  logic [63:0]       wb3_data_i,
 
     // -------------------------------------------------------------------------
     // In-Order Store Retirement Handshake at ROB Head
@@ -118,6 +127,18 @@ module fursoy_s1_lsu
     output logic [4:0]        p2_comp_cause_o,
     output logic [63:0]       p2_wb_data_o,
     input  logic              p2_comp_ack_i,
+
+    // -------------------------------------------------------------------------
+    // Port 3 Validated Writeback Output (to M1 Substrate & PRF W3)
+    // -------------------------------------------------------------------------
+    output logic              p3_comp_valid_o,
+    output rob_idx_t          p3_comp_rob_idx_o,
+    output rob_epoch_t        p3_comp_epoch_o,
+    output preg_t             p3_comp_preg_o,
+    output logic              p3_comp_exception_o,
+    output logic [4:0]        p3_comp_cause_o,
+    output logic [63:0]       p3_wb_data_o,
+    input  logic              p3_comp_ack_i,
 
     // -------------------------------------------------------------------------
     // External Memory Interconnect & Translation Interface
@@ -232,12 +253,19 @@ module fursoy_s1_lsu
                                      (!uop1_is_store || (!uop0_is_store && sq_ready[0]));
 
     // =========================================================================
-    // 1. Memory Issue Queue (MemIQ)
+    // 1. Memory Issue Queue (MemIQ) — Dual-Issue Arbitration
     // =========================================================================
-    logic         memiq_issue_valid;
+    logic         memiq_issue0_valid;
     /* verilator lint_off UNUSEDSIGNAL */
-    memiq_entry_t memiq_issue_uop;
+    memiq_entry_t memiq_issue0_uop;
     /* verilator lint_on UNUSEDSIGNAL */
+
+    logic         memiq_issue1_valid;
+    /* verilator lint_off UNUSEDSIGNAL */
+    memiq_entry_t memiq_issue1_uop;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    wire lsu_queues_port3_busy;
 
     fursoy_s1_mem_iq u_mem_iq (
         .clk_i              (clk_i),
@@ -299,9 +327,17 @@ module fursoy_s1_lsu
         .wb2_comp_exception_i(wb2_comp_exception_i),
         .wb2_pnew_i         (wb2_pnew_i),
 
+        .wb3_valid_i        (wb3_valid_i),
+        .wb3_comp_ack_i     (wb3_comp_ack_i),
+        .wb3_comp_exception_i(wb3_comp_exception_i),
+        .wb3_pnew_i         (wb3_pnew_i),
+
         .port2_busy_i       (1'b0),
-        .issue_valid_o      (memiq_issue_valid),
-        .issue_uop_o        (memiq_issue_uop),
+        .port3_busy_i       (lsu_queues_port3_busy),
+        .issue0_valid_o     (memiq_issue0_valid),
+        .issue0_uop_o       (memiq_issue0_uop),
+        .issue1_valid_o     (memiq_issue1_valid),
+        .issue1_uop_o       (memiq_issue1_uop),
 
         /* verilator lint_off PINCONNECTEMPTY */
         .diag_valid_mask_o  (),
@@ -311,58 +347,106 @@ module fursoy_s1_lsu
         /* verilator lint_on PINCONNECTEMPTY */
     );
 
-    assign event_load_issued_o = memiq_issue_valid && (memiq_issue_uop.uop_class == UOP_LOAD);
+    assign event_load_issued_o = (memiq_issue0_valid && (memiq_issue0_uop.uop_class == UOP_LOAD)) ||
+                                 (memiq_issue1_valid && (memiq_issue1_uop.uop_class == UOP_LOAD));
     assign memiq_ready_o       = memiq_ready;
     assign lq_ready_o          = lq_ready;
     assign sq_ready_o          = sq_ready;
     assign event_dtlb_miss_o   = ptw_req_valid_o && ptw_req_ready_i;
 
-    // Drive PRF Read Port 4 (Base Address)
-    assign r4_paddr_o = memiq_issue_uop.prs1;
+    // Drive PRF Read Port 4 (Port 2 Base Address) & Port 6 (Port 3 Base Address)
+    assign r4_paddr_o = memiq_issue0_uop.prs1;
+    assign r6_paddr_o = memiq_issue1_uop.prs1;
     // Drive PRF Read Port 5 (Store Data)
     assign r5_paddr_o = uop0_is_store ? uop0_prs2_i : uop1_prs2_i; // Monitored during dispatch
 
-    // Read Operand Forwarding for Base Address
-    logic [63:0] agu_base_operand;
+    // Read Operand Forwarding for Port 2 Base Address
+    logic [63:0] agu0_base_operand;
     always_comb begin
-        if (memiq_issue_uop.prs1 == 7'd0) begin
-            agu_base_operand = 64'd0;
-        end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == memiq_issue_uop.prs1)) begin
-            agu_base_operand = wb2_data_i;
-        end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == memiq_issue_uop.prs1)) begin
-            agu_base_operand = wb1_data_i;
-        end else if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == memiq_issue_uop.prs1)) begin
-            agu_base_operand = wb0_data_i;
+        if (memiq_issue0_uop.prs1 == 7'd0) begin
+            agu0_base_operand = 64'd0;
+        end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == memiq_issue0_uop.prs1)) begin
+            agu0_base_operand = wb3_data_i;
+        end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == memiq_issue0_uop.prs1)) begin
+            agu0_base_operand = wb2_data_i;
+        end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == memiq_issue0_uop.prs1)) begin
+            agu0_base_operand = wb1_data_i;
+        end else if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == memiq_issue0_uop.prs1)) begin
+            agu0_base_operand = wb0_data_i;
         end else begin
-            agu_base_operand = r4_data_i;
+            agu0_base_operand = r4_data_i;
+        end
+    end
+
+    // Read Operand Forwarding for Port 3 Base Address
+    logic [63:0] agu1_base_operand;
+    always_comb begin
+        if (memiq_issue1_uop.prs1 == 7'd0) begin
+            agu1_base_operand = 64'd0;
+        end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == memiq_issue1_uop.prs1)) begin
+            agu1_base_operand = wb3_data_i;
+        end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == memiq_issue1_uop.prs1)) begin
+            agu1_base_operand = wb2_data_i;
+        end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == memiq_issue1_uop.prs1)) begin
+            agu1_base_operand = wb1_data_i;
+        end else if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == memiq_issue1_uop.prs1)) begin
+            agu1_base_operand = wb0_data_i;
+        end else begin
+            agu1_base_operand = r6_data_i;
         end
     end
 
     // =========================================================================
-    // 2. Port 2 Address Generation Unit (AGU)
+    // 2. Dual Address Generation Units (Port 2 AGU0 & Port 3 AGU1)
     // =========================================================================
-    logic [63:0] agu_ea;
+    // Port 2 AGU0: Loads, Stores, AMOs, Fences
+    logic [63:0] agu0_ea;
     /* verilator lint_off UNUSEDSIGNAL */
-    logic [2:0]  agu_byte_offset;
-    logic [5:0]  agu_line_offset;
+    logic [2:0]  agu0_byte_offset;
+    logic [5:0]  agu0_line_offset;
     /* verilator lint_on UNUSEDSIGNAL */
-    logic [7:0]  agu_byte_mask;
-    logic        agu_align_fault;
-    logic [4:0]  agu_exc_cause;
+    logic [7:0]  agu0_byte_mask;
+    logic        agu0_align_fault;
+    logic [4:0]  agu0_exc_cause;
 
-    fursoy_s1_agu u_agu (
-        .valid_i        (memiq_issue_valid),
-        .sub_op_i       (memiq_issue_uop.sub_op),
-        .size_i         (memiq_issue_uop.size),
-        .base_i         (agu_base_operand),
-        .imm_i          (memiq_issue_uop.imm),
-        .is_store_i     ((memiq_issue_uop.uop_class == UOP_STORE) || (memiq_issue_uop.uop_class == UOP_AMO)),
-        .ea_o           (agu_ea),
-        .byte_offset_o  (agu_byte_offset),
-        .line_offset_o  (agu_line_offset),
-        .byte_mask_o    (agu_byte_mask),
-        .align_fault_o  (agu_align_fault),
-        .exc_cause_o    (agu_exc_cause)
+    fursoy_s1_agu u_agu0 (
+        .valid_i        (memiq_issue0_valid),
+        .sub_op_i       (memiq_issue0_uop.sub_op),
+        .size_i         (memiq_issue0_uop.size),
+        .base_i         (agu0_base_operand),
+        .imm_i          (memiq_issue0_uop.imm),
+        .is_store_i     ((memiq_issue0_uop.uop_class == UOP_STORE) || (memiq_issue0_uop.uop_class == UOP_AMO) || (memiq_issue0_uop.uop_class == UOP_FENCE)),
+        .ea_o           (agu0_ea),
+        .byte_offset_o  (agu0_byte_offset),
+        .line_offset_o  (agu0_line_offset),
+        .byte_mask_o    (agu0_byte_mask),
+        .align_fault_o  (agu0_align_fault),
+        .exc_cause_o    (agu0_exc_cause)
+    );
+
+    // Port 3 AGU1: Loads strictly (§5.1, PROP_M7_03)
+    logic [63:0] agu1_ea;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [2:0]  agu1_byte_offset;
+    logic [5:0]  agu1_line_offset;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic [7:0]  agu1_byte_mask;
+    logic        agu1_align_fault;
+    logic [4:0]  agu1_exc_cause;
+
+    fursoy_s1_agu u_agu1 (
+        .valid_i        (memiq_issue1_valid),
+        .sub_op_i       (memiq_issue1_uop.sub_op),
+        .size_i         (memiq_issue1_uop.size),
+        .base_i         (agu1_base_operand),
+        .imm_i          (memiq_issue1_uop.imm),
+        .is_store_i     (1'b0),
+        .ea_o           (agu1_ea),
+        .byte_offset_o  (agu1_byte_offset),
+        .line_offset_o  (agu1_line_offset),
+        .byte_mask_o    (agu1_byte_mask),
+        .align_fault_o  (agu1_align_fault),
+        .exc_cause_o    (agu1_exc_cause)
     );
 
     // =========================================================================
@@ -573,24 +657,24 @@ module fursoy_s1_lsu
         .uop1_replay_safe_i         (uop1_replay_safe_i),
         .uop1_pc_i                  (uop1_pc_i),
 
-        .agu_valid_i                (memiq_issue_valid),
-        .agu_is_store_i             ((memiq_issue_uop.uop_class == UOP_STORE) || (memiq_issue_uop.uop_class == UOP_AMO)),
-        .agu_lq_idx_i               (memiq_issue_uop.lq_idx),
-        .agu_sq_idx_i               (memiq_issue_uop.sq_idx),
-        .agu_sub_op_i               (memiq_issue_uop.sub_op),
-        .agu_size_i                 (memiq_issue_uop.size),
-        .agu_sign_ext_i             (memiq_issue_uop.sign_ext),
-        .agu_va_i                   (agu_ea),
-        .agu_byte_mask_i            (agu_byte_mask),
-        .agu_align_fault_i          (agu_align_fault),
-        .agu_exc_cause_i            (agu_exc_cause),
+        .agu_valid_i                (memiq_issue0_valid),
+        .agu_is_store_i             ((memiq_issue0_uop.uop_class == UOP_STORE) || (memiq_issue0_uop.uop_class == UOP_AMO) || (memiq_issue0_uop.uop_class == UOP_FENCE)),
+        .agu_lq_idx_i               (memiq_issue0_uop.lq_idx),
+        .agu_sq_idx_i               (memiq_issue0_uop.sq_idx),
+        .agu_sub_op_i               (memiq_issue0_uop.sub_op),
+        .agu_size_i                 (memiq_issue0_uop.size),
+        .agu_sign_ext_i             (memiq_issue0_uop.sign_ext),
+        .agu_va_i                   (agu0_ea),
+        .agu_byte_mask_i            (agu0_byte_mask),
+        .agu_align_fault_i          (agu0_align_fault),
+        .agu_exc_cause_i            (agu0_exc_cause),
 
-        // Base translation: identity map with variable-latency miss boundary on unmapped test pages
-        .dtlb_hit_i                 (!((agu_ea[55:12] == 44'h3D) ||
-                                       (agu_ea[55:12] == 44'h70) ||
-                                       (agu_ea[55:12] == 44'h71) ||
-                                       (agu_ea[55:12] == 44'h72))),
-        .dtlb_pa_i                  (agu_ea[55:0]),
+        // Base translation for Port 2: identity map with variable-latency miss boundary on unmapped test pages
+        .dtlb_hit_i                 (!((agu0_ea[55:12] == 44'h3D) ||
+                                       (agu0_ea[55:12] == 44'h70) ||
+                                       (agu0_ea[55:12] == 44'h71) ||
+                                       (agu0_ea[55:12] == 44'h72))),
+        .dtlb_pa_i                  (agu0_ea[55:0]),
         .dtlb_page_fault_i          (1'b0),
         .dtlb_access_fault_i        (1'b0),
         .dtlb_miss_alloc_o          (trt_alloc_req),
@@ -600,6 +684,24 @@ module fursoy_s1_lsu
         .dtlb_miss_rob_idx_o        (trt_alloc_rob_idx),
         .dtlb_miss_rob_epoch_o      (trt_alloc_rob_epoch),
         .trt_assigned_tr_id_i       (trt_assigned_tr_id),
+
+        // Port 3 AGU Delivery
+        .agu1_valid_i               (memiq_issue1_valid),
+        .agu1_lq_idx_i              (memiq_issue1_uop.lq_idx),
+        .agu1_va_i                  (agu1_ea),
+        .agu1_byte_mask_i           (agu1_byte_mask),
+        .agu1_align_fault_i         (agu1_align_fault),
+        .agu1_exc_cause_i           (agu1_exc_cause),
+
+        // Base translation for Port 3
+        .dtlb1_hit_i                (!((agu1_ea[55:12] == 44'h3D) ||
+                                       (agu1_ea[55:12] == 44'h70) ||
+                                       (agu1_ea[55:12] == 44'h71) ||
+                                       (agu1_ea[55:12] == 44'h72))),
+        .dtlb1_pa_i                 (agu1_ea[55:0]),
+        .dtlb1_page_fault_i         (1'b0),
+        .dtlb1_access_fault_i       (1'b0),
+        .port3_busy_o               (lsu_queues_port3_busy),
 
         .trt_delivery_valid_i       (trt_delivery_valid),
         .trt_delivery_is_store_i    (trt_delivery_is_store),
@@ -622,6 +724,11 @@ module fursoy_s1_lsu
         .wb2_comp_exception_i       (wb2_comp_exception_i),
         .wb2_pnew_i                 (wb2_pnew_i),
         .wb2_data_i                 (wb2_data_i),
+        .wb3_valid_i                (wb3_valid_i),
+        .wb3_comp_ack_i             (wb3_comp_ack_i),
+        .wb3_comp_exception_i       (wb3_comp_exception_i),
+        .wb3_pnew_i                 (wb3_pnew_i),
+        .wb3_data_i                 (wb3_data_i),
 
         .l1d_load_req_valid_o       (l1d_load_req_valid),
         .l1d_load_req_lq_idx_o      (l1d_load_req_lq_idx),
@@ -670,6 +777,15 @@ module fursoy_s1_lsu
         .comp_cause_o               (p2_comp_cause_o),
         .wb_data_o                  (p2_wb_data_o),
         .comp_ack_i                 (p2_comp_ack_i),
+
+        .p3_comp_valid_o            (p3_comp_valid_o),
+        .p3_comp_rob_idx_o          (p3_comp_rob_idx_o),
+        .p3_comp_epoch_o            (p3_comp_epoch_o),
+        .p3_comp_preg_o             (p3_comp_preg_o),
+        .p3_comp_exception_o        (p3_comp_exception_o),
+        .p3_comp_cause_o            (p3_comp_cause_o),
+        .p3_wb_data_o               (p3_wb_data_o),
+        .p3_comp_ack_i              (p3_comp_ack_i),
 
         .event_load_fwd_exact_o     (event_load_fwd_exact_o),
         .event_load_fwd_partial_o   (event_load_fwd_partial_o),

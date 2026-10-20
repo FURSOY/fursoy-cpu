@@ -140,11 +140,11 @@ module fursoy_s1_core
     output logic [PRF_COUNT-1:0]   prf_ready_o,
 
     // Writeback Probes for Verification Observability
-    output logic [2:0]             comp_valid_o,
-    output rob_idx_t               comp_rob_idx_o       [2:0],
-    output rob_epoch_t             comp_epoch_o         [2:0],
-    output preg_t                  comp_preg_o          [2:0],
-    output logic [2:0]             comp_ack_o,
+    output logic [3:0]             comp_valid_o,
+    output rob_idx_t               comp_rob_idx_o       [3:0],
+    output rob_epoch_t             comp_epoch_o         [3:0],
+    output preg_t                  comp_preg_o          [3:0],
+    output logic [3:0]             comp_ack_o,
 
     // Direct Read Probe Port into PRF Data Storage (for Testbench Assertions)
     input  preg_t                  probe_paddr_i,
@@ -337,14 +337,14 @@ module fursoy_s1_core
     logic [1:0]     int_rename_ack;
 
     // Writeback & Completion Bus
-    logic [2:0]     int_comp_valid;
-    rob_idx_t       int_comp_rob_idx       [2:0];
-    rob_epoch_t     int_comp_epoch         [2:0];
-    preg_t          int_comp_preg          [2:0];
-    logic [2:0]     int_comp_branch_mispred;
-    logic [2:0]     int_comp_exception;
-    logic [4:0]     int_comp_cause         [2:0];
-    logic [2:0]     int_comp_ack;
+    logic [3:0]     int_comp_valid;
+    rob_idx_t       int_comp_rob_idx       [3:0];
+    rob_epoch_t     int_comp_epoch         [3:0];
+    preg_t          int_comp_preg          [3:0];
+    logic [3:0]     int_comp_branch_mispred;
+    logic [3:0]     int_comp_exception;
+    logic [4:0]     int_comp_cause         [3:0];
+    logic [3:0]     int_comp_ack;
 
     // Branch Recovery Handshake
     logic           int_recover_valid;

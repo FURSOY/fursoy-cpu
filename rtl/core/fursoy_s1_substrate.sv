@@ -83,15 +83,15 @@ module fursoy_s1_substrate
     // -------------------------------------------------------------------------
     // Execution Units Writeback / Completion Interface
     // -------------------------------------------------------------------------
-    // 3 ports (Port 0: ALU0/BR, Port 1: ALU1/MULDIV, Port 2: AGU/LSU)
-    input  logic [2:0]             comp_valid_i,
-    input  rob_idx_t               comp_rob_idx_i        [2:0],
-    input  rob_epoch_t             comp_epoch_i          [2:0],
-    input  preg_t                  comp_preg_i           [2:0],
-    input  logic [2:0]             comp_branch_mispred_i,
-    input  logic [2:0]             comp_exception_i,
-    input  logic [4:0]             comp_cause_i          [2:0],
-    output logic [2:0]             comp_ack_o,
+    // 4 ports (Port 0: ALU0/BR, Port 1: ALU1/MULDIV, Port 2: AGU0/LSU, Port 3: AGU1/Load)
+    input  logic [3:0]             comp_valid_i,
+    input  rob_idx_t               comp_rob_idx_i        [3:0],
+    input  rob_epoch_t             comp_epoch_i          [3:0],
+    input  preg_t                  comp_preg_i           [3:0],
+    input  logic [3:0]             comp_branch_mispred_i,
+    input  logic [3:0]             comp_exception_i,
+    input  logic [4:0]             comp_cause_i          [3:0],
+    output logic [3:0]             comp_ack_o,
 
     // -------------------------------------------------------------------------
     // Branch Misprediction Recovery Request Interface
@@ -217,7 +217,7 @@ module fursoy_s1_substrate
     rob_idx_t        rob_alloc_idx [1:0];
     rob_epoch_t      rob_alloc_epoch [1:0];
     logic [1:0]      rob_alloc_ready;
-    logic [2:0]      rob_comp_ack;
+    logic [3:0]      rob_comp_ack;
     rob_idx_t        rob_head;
     /* verilator lint_off UNUSEDSIGNAL */
     rob_idx_t        rob_tail;

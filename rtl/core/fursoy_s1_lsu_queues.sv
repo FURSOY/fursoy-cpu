@@ -102,6 +102,27 @@ module fursoy_s1_lsu_queues
     output rob_epoch_t        dtlb_miss_rob_epoch_o,
     input  tr_id_t            trt_assigned_tr_id_i,
 
+    // -------------------------------------------------------------------------
+    // Port 3 AGU Address Generation Delivery Interface (Loads Strictly)
+    // -------------------------------------------------------------------------
+    input  logic              agu1_valid_i,
+    input  lq_idx_t           agu1_lq_idx_i,
+    input  logic [63:0]       agu1_va_i,
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic [7:0]        agu1_byte_mask_i,
+    /* verilator lint_on UNUSEDSIGNAL */
+    input  logic              agu1_align_fault_i,
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic [4:0]        agu1_exc_cause_i,
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // DTLB Translation Hit/Miss for Port 3
+    input  logic              dtlb1_hit_i,
+    input  logic [55:0]       dtlb1_pa_i,
+    input  logic              dtlb1_page_fault_i,
+    input  logic              dtlb1_access_fault_i,
+    output logic              port3_busy_o,
+
     // Translation Delivery from TRT (Asynchronous PTW Response)
     input  logic              trt_delivery_valid_i,
     input  logic              trt_delivery_is_store_i,
@@ -127,6 +148,11 @@ module fursoy_s1_lsu_queues
     input  logic              wb2_comp_exception_i,
     input  preg_t             wb2_pnew_i,
     input  logic [63:0]       wb2_data_i,
+    input  logic              wb3_valid_i,
+    input  logic              wb3_comp_ack_i,
+    input  logic              wb3_comp_exception_i,
+    input  preg_t             wb3_pnew_i,
+    input  logic [63:0]       wb3_data_i,
 
     // -------------------------------------------------------------------------
     // L1D Cache Interface
@@ -194,6 +220,18 @@ module fursoy_s1_lsu_queues
     output logic [63:0]       wb_data_o,
     input  logic              comp_ack_i,
 
+    // -------------------------------------------------------------------------
+    // Port 3 Writeback & Completion Interface (to M1 Substrate & PRF W3)
+    // -------------------------------------------------------------------------
+    output logic              p3_comp_valid_o,
+    output rob_idx_t          p3_comp_rob_idx_o,
+    output rob_epoch_t        p3_comp_epoch_o,
+    output preg_t             p3_comp_preg_o,
+    output logic              p3_comp_exception_o,
+    output logic [4:0]        p3_comp_cause_o,
+    output logic [63:0]       p3_wb_data_o,
+    input  logic              p3_comp_ack_i,
+
     // Observability & Telemetry (Milestone 5)
     output logic              event_load_fwd_exact_o,
     output logic              event_load_fwd_partial_o,
@@ -243,6 +281,16 @@ module fursoy_s1_lsu_queues
     logic        m3_viol_valid_q;
     rob_idx_t    m3_viol_rob_idx_q;
     rob_epoch_t  m3_viol_rob_epoch_q;
+
+    // Milestone 7 Dual-AGU: Port 3 DTLB Miss Retry Tracking
+    logic        p3_dtlb_retry_q;
+    lq_idx_t     p3_retry_lq_idx_q;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [63:0] p3_retry_va_q;
+    logic [7:0]  p3_retry_byte_mask_q;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    assign port3_busy_o = p3_dtlb_retry_q;
 
     assign lsu_violation_valid_o     = m3_viol_valid_q;
     assign lsu_violation_rob_idx_o   = m3_viol_rob_idx_q;
@@ -818,9 +866,8 @@ module fursoy_s1_lsu_queues
     wire store_draining  = l1d_store_drain_valid_o && !sq_q[sq_drain_head_q].is_sc && !sq_q[sq_drain_head_q].is_fence;
 
     // =========================================================================
-    // 5. Port 2 Completion Arbitrer (Loads & Bifurcated Stores)
+    // 5. Port 2 & Port 3 Completion Arbiters (Dual Completion)
     // =========================================================================
-    // Priority: Exceptional Store > Forwarded Load > Cache/Refill Load > Normal Store
     logic        p2_comp_valid;
     rob_idx_t    p2_comp_rob_idx;
     rob_epoch_t  p2_comp_epoch;
@@ -832,146 +879,277 @@ module fursoy_s1_lsu_queues
     sq_idx_t     p2_cleared_sq_idx;
     logic        p2_clear_lq, p2_clear_sq;
 
+    logic        p3_comp_valid;
+    rob_idx_t    p3_comp_rob_idx;
+    rob_epoch_t  p3_comp_epoch;
+    preg_t       p3_comp_preg;
+    logic        p3_comp_exception;
+    logic [4:0]  p3_comp_cause;
+    logic [63:0] p3_comp_data;
+    lq_idx_t     p3_cleared_lq_idx;
+    logic        p3_clear_lq;
+
     logic        sc_ok;
-    logic        has_conflicting_store;
+
+    // Load completion candidate evaluations
+    logic        lq_ready_comp   [LQ_DEPTH];
+    rob_idx_t    lq_comp_rob_idx [LQ_DEPTH];
+    rob_epoch_t  lq_comp_epoch   [LQ_DEPTH];
+    preg_t       lq_comp_preg    [LQ_DEPTH];
+    logic        lq_comp_exc     [LQ_DEPTH];
+    logic [4:0]  lq_comp_cause   [LQ_DEPTH];
+    logic [63:0] lq_comp_data    [LQ_DEPTH];
 
     always_comb begin
-        p2_comp_valid         = 1'b0;
-        p2_comp_rob_idx       = '0;
-        p2_comp_epoch         = '0;
-        p2_comp_preg          = '0;
-        p2_comp_exception     = 1'b0;
-        p2_comp_cause         = 5'd0;
-        p2_comp_data          = 64'd0;
-        p2_cleared_lq_idx     = '0;
-        p2_cleared_sq_idx     = '0;
-        p2_clear_lq           = 1'b0;
-        p2_clear_sq           = 1'b0;
-        sc_ok                 = 1'b0;
-        has_conflicting_store = 1'b0;
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            lq_ready_comp[l]   = 1'b0;
+            lq_comp_rob_idx[l] = lq_q[l].rob_idx;
+            lq_comp_epoch[l]   = lq_q[l].rob_epoch;
+            lq_comp_preg[l]    = lq_q[l].pnew;
+            lq_comp_exc[l]     = 1'b0;
+            lq_comp_cause[l]   = 5'd0;
+            lq_comp_data[l]    = 64'd0;
 
-        // Path 1: Exceptional Store (Bifurcated Immediate Completion, Section 5.2)
-        // Faulting stores complete IMMEDIATELY to ROB without waiting for data!
-        for (int s = 0; s < SQ_DEPTH; s++) begin
-            if (sq_q[s].valid && sq_q[s].exception_pending && !sq_q[s].completed) begin
-                p2_comp_valid     = 1'b1;
-                p2_comp_rob_idx   = sq_q[s].rob_idx;
-                p2_comp_epoch     = sq_q[s].rob_epoch;
-                p2_comp_preg      = 7'd0;
-                p2_comp_exception = 1'b1;
-                p2_comp_cause     = sq_q[s].exc_cause;
-                p2_comp_data      = 64'd0;
-                p2_cleared_sq_idx = 4'(s);
-                p2_clear_sq       = 1'b1;
-                break;
+            if (lq_q[l].valid && (lq_q[l].align_fault || lq_q[l].page_fault || lq_q[l].access_fault) && !lq_q[l].completed) begin
+                lq_ready_comp[l] = 1'b1;
+                lq_comp_exc[l]   = 1'b1;
+                lq_comp_cause[l] = lq_q[l].align_fault ? 5'd4 : (lq_q[l].page_fault ? 5'd15 : 5'd5);
+                lq_comp_data[l]  = 64'd0;
+            end else if (disambig_lq_valid && fwd_success && (4'(l) == disambig_lq_idx)) begin
+                lq_ready_comp[l] = 1'b1;
+                lq_comp_data[l]  = fwd_data;
+            end else if (lq_q[l].valid && lq_q[l].completed && !lq_q[l].wb_done && !lq_q[l].align_fault) begin
+                lq_ready_comp[l] = 1'b1;
+                lq_comp_data[l]  = lq_q[l].result_data;
             end
         end
+    end
 
-        // Path 2: Misaligned / Exceptional Load
-        if (!p2_comp_valid) begin
-            for (int l = 0; l < LQ_DEPTH; l++) begin
-                if (lq_q[l].valid && (lq_q[l].align_fault || lq_q[l].page_fault || lq_q[l].access_fault) && !lq_q[l].completed) begin
-                    p2_comp_valid     = 1'b1;
-                    p2_comp_rob_idx   = lq_q[l].rob_idx;
-                    p2_comp_epoch     = lq_q[l].rob_epoch;
-                    p2_comp_preg      = lq_q[l].pnew;
-                    p2_comp_exception = 1'b1;
-                    p2_comp_cause     = lq_q[l].align_fault ? 5'd4 : (lq_q[l].page_fault ? 5'd13 : 5'd5);
-                    p2_comp_data      = 64'd0; // Faulting loads do NOT write PRF (Section 3.2)
-                    p2_cleared_lq_idx = 4'(l);
-                    p2_clear_lq       = 1'b1;
-                    break;
-                end
-            end
-        end
+    // Scan for two oldest ready loads by rob_dist
+    logic       has_l0, has_l1;
+    lq_idx_t    cand_l0, cand_l1;
+    logic [5:0] dist_l0, dist_l1;
+    logic [5:0] comp_l_dist;
 
-        // Path 3: Store-to-Load Forwarding Completion (1-cycle hit)
-        if (!p2_comp_valid && disambig_lq_valid && fwd_success) begin
-            p2_comp_valid     = 1'b1;
-            p2_comp_rob_idx   = lq_q[disambig_lq_idx].rob_idx;
-            p2_comp_epoch     = lq_q[disambig_lq_idx].rob_epoch;
-            p2_comp_preg      = lq_q[disambig_lq_idx].pnew;
-            p2_comp_exception = 1'b0;
-            p2_comp_cause     = 5'd0;
-            p2_comp_data      = fwd_data;
-            p2_cleared_lq_idx = disambig_lq_idx;
-            p2_clear_lq       = 1'b1;
-        end
+    always_comb begin
+        has_l0      = 1'b0;
+        has_l1      = 1'b0;
+        cand_l0     = '0;
+        cand_l1     = '0;
+        dist_l0     = '1;
+        dist_l1     = '1;
+        comp_l_dist = '0;
 
-        // Path 4: Completed L1D Hit / Refill Load
-        if (!p2_comp_valid) begin
-            for (int l = 0; l < LQ_DEPTH; l++) begin
-                if (lq_q[l].valid && lq_q[l].completed && !lq_q[l].wb_done && !lq_q[l].align_fault) begin
-                    p2_comp_valid     = 1'b1;
-                    p2_comp_rob_idx   = lq_q[l].rob_idx;
-                    p2_comp_epoch     = lq_q[l].rob_epoch;
-                    p2_comp_preg      = lq_q[l].pnew;
-                    p2_comp_exception = 1'b0;
-                    p2_comp_cause     = 5'd0;
-                    p2_comp_data      = lq_q[l].result_data;
-                    p2_cleared_lq_idx = 4'(l);
-                    p2_clear_lq       = 1'b1;
-                    break;
-                end
-            end
-        end
-
-        // Path 5: Successful Normal Store Completion (Section 5.2)
-        // store_success_complete = pa_valid && data_valid && !exception_pending
-        if (!p2_comp_valid) begin
-            for (int s = 0; s < SQ_DEPTH; s++) begin
-                if (sq_q[s].valid && sq_q[s].pa_valid && sq_q[s].data_valid &&
-                    !sq_q[s].exception_pending && !sq_q[s].completed) begin
-                    if (sq_q[s].is_fence && ((sq_drain_head_q != 4'(s)) || !l1d_quiescent_i)) begin
-                        continue;
-                    end
-                    if (sq_q[s].is_sc && (sq_q[s].rob_idx != rob_head_i)) begin
-                        continue;
-                    end
-                    if (sq_q[s].is_amo && ((sq_drain_head_q != 4'(s)) || (sq_q[s].rob_idx != rob_head_i))) begin
-                        continue;
-                    end
-                    p2_comp_valid     = 1'b1;
-                    p2_comp_rob_idx   = sq_q[s].rob_idx;
-                    p2_comp_epoch     = sq_q[s].rob_epoch;
-                    p2_comp_exception = 1'b0;
-                    p2_comp_cause     = 5'd0;
-                    p2_cleared_sq_idx = 4'(s);
-                    p2_clear_sq       = 1'b1;
-                    if (sq_q[s].is_sc) begin
-                        has_conflicting_store = 1'b0;
-                        for (int os = 0; os < SQ_DEPTH; os++) begin
-                            if (sq_q[os].valid && (4'(os) != 4'(s)) && !sq_q[os].is_sc && !sq_q[os].is_fence) begin
-                                if (rob_dist(sq_q[os].rob_idx, rob_head_i) < rob_dist(sq_q[s].rob_idx, rob_head_i)) begin
-                                    has_conflicting_store = 1'b1;
-                                end
-                            end
-                        end
-
-                        sc_ok = res_valid_q && !has_conflicting_store &&
-                                (res_pa_q == sq_q[s].pa) && (res_size_q == sq_q[s].size);
-                        p2_comp_preg = sq_q[s].pnew;
-                        p2_comp_data = sc_ok ? 64'd0 : 64'd1;
-                    end else if (sq_q[s].is_amo) begin
-                        p2_comp_preg = sq_q[s].pnew;
-                        p2_comp_data = 64'd100;
-                    end else begin
-                        p2_comp_preg = 7'd0; // Stores have no PRF destination
-                        p2_comp_data = 64'd0;
-                    end
-                    break;
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            if (lq_ready_comp[l]) begin
+                comp_l_dist = rob_dist(lq_q[l].rob_idx, rob_head_i);
+                if (!has_l0 || (comp_l_dist < dist_l0)) begin
+                    has_l1  = has_l0;
+                    cand_l1 = cand_l0;
+                    dist_l1 = dist_l0;
+                    has_l0  = 1'b1;
+                    cand_l0 = 4'(l);
+                    dist_l0 = comp_l_dist;
+                end else if (!has_l1 || (comp_l_dist < dist_l1)) begin
+                    has_l1  = 1'b1;
+                    cand_l1 = 4'(l);
+                    dist_l1 = comp_l_dist;
                 end
             end
         end
     end
 
-    assign comp_valid_o     = p2_comp_valid && !flush_valid_i;
-    assign comp_rob_idx_o   = p2_comp_rob_idx;
-    assign comp_epoch_o     = p2_comp_epoch;
-    assign comp_preg_o      = p2_comp_preg;
-    assign comp_exception_o = p2_comp_exception;
-    assign comp_cause_o     = p2_comp_cause;
-    assign wb_data_o        = p2_comp_data;
+    // Scan for oldest ready store by rob_dist (Path 1 exceptional or Path 5 normal)
+    logic        has_store;
+    sq_idx_t     cand_store;
+    logic [5:0]  dist_store;
+    logic        store_is_exc;
+    logic [4:0]  store_exc_cause;
+    preg_t       store_preg;
+    logic [63:0] store_data;
+    logic        store_sc_ok;
+    logic [5:0]  comp_s_dist;
+    logic        has_conflict;
+    logic        sc_ok_val;
+
+    always_comb begin
+        has_store       = 1'b0;
+        cand_store      = '0;
+        dist_store      = '1;
+        store_is_exc    = 1'b0;
+        store_exc_cause = 5'd0;
+        store_preg      = 7'd0;
+        store_data      = 64'd0;
+        store_sc_ok     = 1'b0;
+        comp_s_dist     = '0;
+        has_conflict    = 1'b0;
+        sc_ok_val       = 1'b0;
+
+        for (int s = 0; s < SQ_DEPTH; s++) begin
+            if (sq_q[s].valid) begin
+                comp_s_dist = rob_dist(sq_q[s].rob_idx, rob_head_i);
+                if (sq_q[s].exception_pending && !sq_q[s].completed) begin
+                    if (!has_store || (comp_s_dist < dist_store)) begin
+                        has_store       = 1'b1;
+                        cand_store      = 4'(s);
+                        dist_store      = comp_s_dist;
+                        store_is_exc    = 1'b1;
+                        store_exc_cause = sq_q[s].exc_cause;
+                        store_preg      = 7'd0;
+                        store_data      = 64'd0;
+                        store_sc_ok     = 1'b0;
+                    end
+                end else if (sq_q[s].pa_valid && sq_q[s].data_valid && !sq_q[s].exception_pending && !sq_q[s].completed) begin
+                    if (sq_q[s].is_fence && ((sq_drain_head_q != 4'(s)) || !l1d_quiescent_i)) continue;
+                    if (sq_q[s].is_sc && (sq_q[s].rob_idx != rob_head_i)) continue;
+                    if (sq_q[s].is_amo && ((sq_drain_head_q != 4'(s)) || (sq_q[s].rob_idx != rob_head_i))) continue;
+
+                    if (!has_store || (comp_s_dist < dist_store)) begin
+                        has_conflict = 1'b0;
+                        sc_ok_val    = 1'b0;
+                        if (sq_q[s].is_sc) begin
+                            for (int os = 0; os < SQ_DEPTH; os++) begin
+                                if (sq_q[os].valid && (4'(os) != 4'(s)) && !sq_q[os].is_sc && !sq_q[os].is_fence) begin
+                                    if (rob_dist(sq_q[os].rob_idx, rob_head_i) < rob_dist(sq_q[s].rob_idx, rob_head_i)) begin
+                                        has_conflict = 1'b1;
+                                    end
+                                end
+                            end
+                            sc_ok_val = res_valid_q && !has_conflict &&
+                                        (res_pa_q == sq_q[s].pa) && (res_size_q == sq_q[s].size);
+                        end
+
+                        has_store       = 1'b1;
+                        cand_store      = 4'(s);
+                        dist_store      = comp_s_dist;
+                        store_is_exc    = 1'b0;
+                        store_exc_cause = 5'd0;
+                        store_sc_ok     = sc_ok_val;
+                        if (sq_q[s].is_sc) begin
+                            store_preg = sq_q[s].pnew;
+                            store_data = sc_ok_val ? 64'd0 : 64'd1;
+                        end else if (sq_q[s].is_amo) begin
+                            store_preg = sq_q[s].pnew;
+                            store_data = 64'd100;
+                        end else begin
+                            store_preg = 7'd0;
+                            store_data = 64'd0;
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    // Dual-Completion Assignment Matrix (Table 5.2 / Section 5.1)
+    always_comb begin
+        p2_comp_valid     = 1'b0;
+        p2_comp_rob_idx   = '0;
+        p2_comp_epoch     = '0;
+        p2_comp_preg      = 7'd0;
+        p2_comp_exception = 1'b0;
+        p2_comp_cause     = 5'd0;
+        p2_comp_data      = 64'd0;
+        p2_clear_lq       = 1'b0;
+        p2_cleared_lq_idx = '0;
+        p2_clear_sq       = 1'b0;
+        p2_cleared_sq_idx = '0;
+        sc_ok             = 1'b0;
+
+        p3_comp_valid     = 1'b0;
+        p3_comp_rob_idx   = '0;
+        p3_comp_epoch     = '0;
+        p3_comp_preg      = 7'd0;
+        p3_comp_exception = 1'b0;
+        p3_comp_cause     = 5'd0;
+        p3_comp_data      = 64'd0;
+        p3_clear_lq       = 1'b0;
+        p3_cleared_lq_idx = '0;
+
+        if (has_store && has_l0) begin
+            // Case 1: 1 Store + 1 Load ready -> Store to Port 2, Load to Port 3
+            p2_comp_valid     = 1'b1;
+            p2_comp_rob_idx   = sq_q[cand_store].rob_idx;
+            p2_comp_epoch     = sq_q[cand_store].rob_epoch;
+            p2_comp_preg      = store_preg;
+            p2_comp_exception = store_is_exc;
+            p2_comp_cause     = store_exc_cause;
+            p2_comp_data      = store_data;
+            p2_clear_sq       = 1'b1;
+            p2_cleared_sq_idx = cand_store;
+            sc_ok             = store_sc_ok;
+
+            p3_comp_valid     = 1'b1;
+            p3_comp_rob_idx   = lq_comp_rob_idx[cand_l0];
+            p3_comp_epoch     = lq_comp_epoch[cand_l0];
+            p3_comp_preg      = lq_comp_preg[cand_l0];
+            p3_comp_exception = lq_comp_exc[cand_l0];
+            p3_comp_cause     = lq_comp_cause[cand_l0];
+            p3_comp_data      = lq_comp_data[cand_l0];
+            p3_clear_lq       = 1'b1;
+            p3_cleared_lq_idx = cand_l0;
+        end else if (has_store) begin
+            // Single ready store -> Port 2
+            p2_comp_valid     = 1'b1;
+            p2_comp_rob_idx   = sq_q[cand_store].rob_idx;
+            p2_comp_epoch     = sq_q[cand_store].rob_epoch;
+            p2_comp_preg      = store_preg;
+            p2_comp_exception = store_is_exc;
+            p2_comp_cause     = store_exc_cause;
+            p2_comp_data      = store_data;
+            p2_clear_sq       = 1'b1;
+            p2_cleared_sq_idx = cand_store;
+            sc_ok             = store_sc_ok;
+        end else if (has_l0 && has_l1) begin
+            // Case 2: 2 Loads ready -> older to Port 2, younger to Port 3
+            p2_comp_valid     = 1'b1;
+            p2_comp_rob_idx   = lq_comp_rob_idx[cand_l0];
+            p2_comp_epoch     = lq_comp_epoch[cand_l0];
+            p2_comp_preg      = lq_comp_preg[cand_l0];
+            p2_comp_exception = lq_comp_exc[cand_l0];
+            p2_comp_cause     = lq_comp_cause[cand_l0];
+            p2_comp_data      = lq_comp_data[cand_l0];
+            p2_clear_lq       = 1'b1;
+            p2_cleared_lq_idx = cand_l0;
+
+            p3_comp_valid     = 1'b1;
+            p3_comp_rob_idx   = lq_comp_rob_idx[cand_l1];
+            p3_comp_epoch     = lq_comp_epoch[cand_l1];
+            p3_comp_preg      = lq_comp_preg[cand_l1];
+            p3_comp_exception = lq_comp_exc[cand_l1];
+            p3_comp_cause     = lq_comp_cause[cand_l1];
+            p3_comp_data      = lq_comp_data[cand_l1];
+            p3_clear_lq       = 1'b1;
+            p3_cleared_lq_idx = cand_l1;
+        end else if (has_l0) begin
+            // Single ready load -> Port 2
+            p2_comp_valid     = 1'b1;
+            p2_comp_rob_idx   = lq_comp_rob_idx[cand_l0];
+            p2_comp_epoch     = lq_comp_epoch[cand_l0];
+            p2_comp_preg      = lq_comp_preg[cand_l0];
+            p2_comp_exception = lq_comp_exc[cand_l0];
+            p2_comp_cause     = lq_comp_cause[cand_l0];
+            p2_comp_data      = lq_comp_data[cand_l0];
+            p2_clear_lq       = 1'b1;
+            p2_cleared_lq_idx = cand_l0;
+        end
+    end
+
+    assign comp_valid_o        = p2_comp_valid && !flush_valid_i;
+    assign comp_rob_idx_o      = p2_comp_rob_idx;
+    assign comp_epoch_o        = p2_comp_epoch;
+    assign comp_preg_o         = p2_comp_preg;
+    assign comp_exception_o    = p2_comp_exception;
+    assign comp_cause_o        = p2_comp_cause;
+    assign wb_data_o           = p2_comp_data;
+
+    assign p3_comp_valid_o     = p3_comp_valid && !flush_valid_i;
+    assign p3_comp_rob_idx_o   = p3_comp_rob_idx;
+    assign p3_comp_epoch_o     = p3_comp_epoch;
+    assign p3_comp_preg_o      = p3_comp_preg;
+    assign p3_comp_exception_o = p3_comp_exception;
+    assign p3_comp_cause_o     = p3_comp_cause;
+    assign p3_wb_data_o        = p3_comp_data;
 
     // (Retirement matching block moved to section above)
 
@@ -1021,64 +1199,119 @@ module fursoy_s1_lsu_queues
                     end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == sq_q[s].prs2) && (wb2_pnew_i != 7'd0)) begin
                         sq_q[s].data       <= wb2_data_i;
                         sq_q[s].data_valid <= 1'b1;
+                    end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == sq_q[s].prs2) && (wb3_pnew_i != 7'd0)) begin
+                        sq_q[s].data       <= wb3_data_i;
+                        sq_q[s].data_valid <= 1'b1;
                     end
                 end
             end
 
             // -----------------------------------------------------------------
-            // B. AGU Address Delivery & DTLB Query Handling
+            // B. AGU Address Delivery & DTLB Query Handling (Dual AGU)
             // -----------------------------------------------------------------
-            if (agu_valid_i && !flush_valid_i) begin
-                if (agu_is_store_i) begin
-                    sq_q[agu_sq_idx_i].va          <= agu_va_i;
-                    sq_q[agu_sq_idx_i].mask        <= agu_byte_mask_i;
-                    sq_q[agu_sq_idx_i].align_fault <= agu_align_fault_i;
-                    if (agu_align_fault_i) begin
-                        sq_q[agu_sq_idx_i].exception_pending <= 1'b1;
-                        sq_q[agu_sq_idx_i].exc_cause         <= agu_exc_cause_i;
-                        sq_q[agu_sq_idx_i].pa_valid          <= 1'b1;
-                    end else if (dtlb_hit_i) begin
-                        sq_q[agu_sq_idx_i].pa        <= dtlb_pa_i;
-                        sq_q[agu_sq_idx_i].pa_valid  <= 1'b1;
-                        sq_q[agu_sq_idx_i].is_mmio   <= !is_dram_pa(dtlb_pa_i);
-                        if (dtlb_page_fault_i || dtlb_access_fault_i) begin
+            // Evaluate Port 2 AGU0 Miss
+            begin : b_agu_eval
+                logic agu0_dtlb_miss;
+                agu0_dtlb_miss = agu_valid_i && !flush_valid_i && !agu_align_fault_i && !dtlb_hit_i;
+
+                // 1. Port 2 AGU Delivery (Loads or Stores)
+                if (agu_valid_i && !flush_valid_i) begin
+                    if (agu_is_store_i) begin
+                        sq_q[agu_sq_idx_i].va          <= agu_va_i;
+                        sq_q[agu_sq_idx_i].mask        <= agu_byte_mask_i;
+                        sq_q[agu_sq_idx_i].align_fault <= agu_align_fault_i;
+                        if (agu_align_fault_i) begin
                             sq_q[agu_sq_idx_i].exception_pending <= 1'b1;
-                            sq_q[agu_sq_idx_i].exc_cause         <= dtlb_page_fault_i ? 5'd15 : 5'd7;
+                            sq_q[agu_sq_idx_i].exc_cause         <= agu_exc_cause_i;
+                            sq_q[agu_sq_idx_i].pa_valid          <= 1'b1;
+                        end else if (dtlb_hit_i) begin
+                            sq_q[agu_sq_idx_i].pa        <= dtlb_pa_i;
+                            sq_q[agu_sq_idx_i].pa_valid  <= 1'b1;
+                            sq_q[agu_sq_idx_i].is_mmio   <= !is_dram_pa(dtlb_pa_i);
+                            if (dtlb_page_fault_i || dtlb_access_fault_i) begin
+                                sq_q[agu_sq_idx_i].exception_pending <= 1'b1;
+                                sq_q[agu_sq_idx_i].exc_cause         <= dtlb_page_fault_i ? 5'd15 : 5'd7;
+                            end
+                        end else begin
+                            // DTLB Miss on Port 2 Store: Always takes priority for TRT Allocation
+                            sq_q[agu_sq_idx_i].wait_translation <= 1'b1;
+                            sq_q[agu_sq_idx_i].tr_id            <= trt_assigned_tr_id_i;
+                            dtlb_miss_alloc_o    <= 1'b1;
+                            dtlb_miss_is_store_o <= 1'b1;
+                            dtlb_miss_q_idx_o    <= agu_sq_idx_i;
+                            dtlb_miss_vpn_o      <= agu_va_i[38:12];
+                            dtlb_miss_rob_idx_o  <= sq_q[agu_sq_idx_i].rob_idx;
+                            dtlb_miss_rob_epoch_o<= sq_q[agu_sq_idx_i].rob_epoch;
                         end
                     end else begin
-                        // DTLB Miss: Request TRT Allocation
-                        sq_q[agu_sq_idx_i].wait_translation <= 1'b1;
-                        sq_q[agu_sq_idx_i].tr_id            <= trt_assigned_tr_id_i;
-                        dtlb_miss_alloc_o    <= 1'b1;
-                        dtlb_miss_is_store_o <= 1'b1;
-                        dtlb_miss_q_idx_o    <= agu_sq_idx_i;
-                        dtlb_miss_vpn_o      <= agu_va_i[38:12];
-                        dtlb_miss_rob_idx_o  <= sq_q[agu_sq_idx_i].rob_idx;
-                        dtlb_miss_rob_epoch_o<= sq_q[agu_sq_idx_i].rob_epoch;
+                        // Port 2 Load
+                        lq_q[agu_lq_idx_i].va          <= agu_va_i;
+                        lq_q[agu_lq_idx_i].align_fault <= agu_align_fault_i;
+                        if (agu_align_fault_i) begin
+                            lq_q[agu_lq_idx_i].pa_valid  <= 1'b1;
+                        end else if (dtlb_hit_i) begin
+                            lq_q[agu_lq_idx_i].pa        <= dtlb_pa_i;
+                            lq_q[agu_lq_idx_i].pa_valid  <= 1'b1;
+                            lq_q[agu_lq_idx_i].page_fault<= dtlb_page_fault_i;
+                            lq_q[agu_lq_idx_i].access_fault<= dtlb_access_fault_i;
+                            lq_q[agu_lq_idx_i].is_mmio   <= !is_dram_pa(dtlb_pa_i);
+                        end else begin
+                            // DTLB Miss on Port 2 Load: Always takes priority for TRT Allocation
+                            lq_q[agu_lq_idx_i].wait_translation <= 1'b1;
+                            lq_q[agu_lq_idx_i].tr_id            <= trt_assigned_tr_id_i;
+                            dtlb_miss_alloc_o    <= 1'b1;
+                            dtlb_miss_is_store_o <= 1'b0;
+                            dtlb_miss_q_idx_o    <= agu_lq_idx_i;
+                            dtlb_miss_vpn_o      <= agu_va_i[38:12];
+                            dtlb_miss_rob_idx_o  <= lq_q[agu_lq_idx_i].rob_idx;
+                            dtlb_miss_rob_epoch_o<= lq_q[agu_lq_idx_i].rob_epoch;
+                        end
                     end
-                end else begin
-                    // Load
-                    lq_q[agu_lq_idx_i].va          <= agu_va_i;
-                    lq_q[agu_lq_idx_i].align_fault <= agu_align_fault_i;
-                    if (agu_align_fault_i) begin
-                        lq_q[agu_lq_idx_i].pa_valid  <= 1'b1;
-                    end else if (dtlb_hit_i) begin
-                        lq_q[agu_lq_idx_i].pa        <= dtlb_pa_i;
-                        lq_q[agu_lq_idx_i].pa_valid  <= 1'b1;
-                        lq_q[agu_lq_idx_i].page_fault<= dtlb_page_fault_i;
-                        lq_q[agu_lq_idx_i].access_fault<= dtlb_access_fault_i;
-                        lq_q[agu_lq_idx_i].is_mmio   <= !is_dram_pa(dtlb_pa_i);
+                end
+
+                // 2. Port 3 AGU Delivery (Loads Strictly)
+                if (agu1_valid_i && !flush_valid_i) begin
+                    lq_q[agu1_lq_idx_i].va          <= agu1_va_i;
+                    lq_q[agu1_lq_idx_i].align_fault <= agu1_align_fault_i;
+                    if (agu1_align_fault_i) begin
+                        lq_q[agu1_lq_idx_i].pa_valid  <= 1'b1;
+                    end else if (dtlb1_hit_i) begin
+                        lq_q[agu1_lq_idx_i].pa        <= dtlb1_pa_i;
+                        lq_q[agu1_lq_idx_i].pa_valid  <= 1'b1;
+                        lq_q[agu1_lq_idx_i].page_fault<= dtlb1_page_fault_i;
+                        lq_q[agu1_lq_idx_i].access_fault<= dtlb1_access_fault_i;
+                        lq_q[agu1_lq_idx_i].is_mmio   <= !is_dram_pa(dtlb1_pa_i);
                     end else begin
-                        // DTLB Miss
-                        lq_q[agu_lq_idx_i].wait_translation <= 1'b1;
-                        lq_q[agu_lq_idx_i].tr_id            <= trt_assigned_tr_id_i;
-                        dtlb_miss_alloc_o    <= 1'b1;
-                        dtlb_miss_is_store_o <= 1'b0;
-                        dtlb_miss_q_idx_o    <= agu_lq_idx_i;
-                        dtlb_miss_vpn_o      <= agu_va_i[38:12];
-                        dtlb_miss_rob_idx_o  <= lq_q[agu_lq_idx_i].rob_idx;
-                        dtlb_miss_rob_epoch_o<= lq_q[agu_lq_idx_i].rob_epoch;
+                        // Port 3 DTLB Miss: Check if Port 2 also missed
+                        if (agu0_dtlb_miss) begin
+                            // Concurrent miss: Port 2 takes priority; Port 3 stalls and retries in Cycle 1
+                            p3_dtlb_retry_q      <= 1'b1;
+                            p3_retry_lq_idx_q    <= agu1_lq_idx_i;
+                            p3_retry_va_q        <= agu1_va_i;
+                            p3_retry_byte_mask_q <= agu1_byte_mask_i;
+                        end else begin
+                            // Port 2 did not miss: Port 3 allocates into TRT directly in Cycle 0
+                            lq_q[agu1_lq_idx_i].wait_translation <= 1'b1;
+                            lq_q[agu1_lq_idx_i].tr_id            <= trt_assigned_tr_id_i;
+                            dtlb_miss_alloc_o    <= 1'b1;
+                            dtlb_miss_is_store_o <= 1'b0;
+                            dtlb_miss_q_idx_o    <= agu1_lq_idx_i;
+                            dtlb_miss_vpn_o      <= agu1_va_i[38:12];
+                            dtlb_miss_rob_idx_o  <= lq_q[agu1_lq_idx_i].rob_idx;
+                            dtlb_miss_rob_epoch_o<= lq_q[agu1_lq_idx_i].rob_epoch;
+                        end
                     end
+                end else if (p3_dtlb_retry_q && !flush_valid_i) begin
+                    // 3. Port 3 DTLB Miss Retry Execution in Cycle 1 (§5.3.1)
+                    lq_q[p3_retry_lq_idx_q].wait_translation <= 1'b1;
+                    lq_q[p3_retry_lq_idx_q].tr_id            <= trt_assigned_tr_id_i;
+                    dtlb_miss_alloc_o    <= 1'b1;
+                    dtlb_miss_is_store_o <= 1'b0;
+                    dtlb_miss_q_idx_o    <= p3_retry_lq_idx_q;
+                    dtlb_miss_vpn_o      <= p3_retry_va_q[38:12];
+                    dtlb_miss_rob_idx_o  <= lq_q[p3_retry_lq_idx_q].rob_idx;
+                    dtlb_miss_rob_epoch_o<= lq_q[p3_retry_lq_idx_q].rob_epoch;
+                    p3_dtlb_retry_q      <= 1'b0;
                 end
             end
 
@@ -1207,12 +1440,23 @@ module fursoy_s1_lsu_queues
                         end
                     end
                 end
+
+                if (p3_comp_valid && p3_comp_ack_i) begin
+                    if (p3_clear_lq) begin
+                        lq_q[p3_cleared_lq_idx].wb_done <= 1'b1;
+                    end
+                end
             end
 
             // -----------------------------------------------------------------
             // I. Branch Recovery Squash (Section 5.4)
             // -----------------------------------------------------------------
             if (recover_valid_i) begin
+                if (p3_dtlb_retry_q && (rob_dist(lq_q[p3_retry_lq_idx_q].rob_idx, rob_head_i) >
+                                        rob_dist(recover_rob_idx_i, rob_head_i))) begin
+                    p3_dtlb_retry_q <= 1'b0;
+                end
+
                 // Squash younger loads
                 for (int l = 0; l < LQ_DEPTH; l++) begin
                     if (lq_q[l].valid) begin
@@ -1238,6 +1482,7 @@ module fursoy_s1_lsu_queues
             // J. Full Architectural Flush Protocol (Section 5.4)
             // -----------------------------------------------------------------
             if (flush_valid_i) begin
+                p3_dtlb_retry_q <= 1'b0;
                 for (int l = 0; l < LQ_DEPTH; l++) lq_q[l].valid <= 1'b0;
                 // Uncommitted stores are wiped; committed stores PERSIST!
                 for (int s = 0; s < SQ_DEPTH; s++) begin

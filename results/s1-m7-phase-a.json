@@ -1,0 +1,54 @@
+{
+  "timestamp_utc": "2026-10-20T16:33:16.209696+00:00",
+  "phase": "M7 Phase A: Dual-AGU & Issue Queue Expansion (Port 2 + Port 3)",
+  "production_rtl_manifest_sha256": "8c53e566fa83df6d694a286982a2ccfc66050ea29cf0af56a9b5b2ff2d0f91e5",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m7-multibank-l1d-v1.md",
+    "version": "1.1",
+    "sha256": "c8ae7b5b19672db9dcacb3daa7113cb8251c7e14b857cc79f5aef3a6a91d79c9"
+  },
+  "unit_verification": {
+    "directed_scenarios": 11,
+    "directed_total": 11,
+    "total_accepted_ops": 75000,
+    "seeds": [
+      {
+        "seed": 42,
+        "accepted_ops": 25000,
+        "cycles": 76783,
+        "mismatches": 0,
+        "status": "pass"
+      },
+      {
+        "seed": 20260920,
+        "accepted_ops": 25000,
+        "cycles": 153732,
+        "mismatches": 0,
+        "status": "pass"
+      },
+      {
+        "seed": 20261009,
+        "accepted_ops": 25000,
+        "cycles": 230961,
+        "mismatches": 0,
+        "status": "pass"
+      }
+    ],
+    "properties": {
+      "PROP_M7_01": "pass",
+      "PROP_M7_02": "pass",
+      "PROP_M7_03": "pass",
+      "PROP_M7_04": "pass",
+      "PROP_M7_05": "pass",
+      "PROP_M7_06": "pass",
+      "PROP_M7_07": "pass",
+      "PROP_M7_08": "pass",
+      "PROP_M7_09": "pass",
+      "PROP_M7_10": "pass",
+      "DTLB_CONCURRENT_MISS": "pass"
+    },
+    "status": "pass"
+  },
+  "elapsed_seconds": 4.91,
+  "overall_status": "PASS"
+}

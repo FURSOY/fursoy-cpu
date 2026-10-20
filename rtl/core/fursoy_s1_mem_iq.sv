@@ -70,7 +70,7 @@ module fursoy_s1_mem_iq
     input  logic [63:0]       uop1_pc_i,
     input  logic              uop1_replay_safe_i,
 
-    // Validated Writeback Tag Snoop for Wakeup (WB0, WB1, WB2)
+    // Validated Writeback Tag Snoop for Wakeup (WB0, WB1, WB2, WB3)
     input  logic              wb0_valid_i,
     input  logic              wb0_comp_ack_i,
     input  preg_t             wb0_pnew_i,
@@ -84,12 +84,22 @@ module fursoy_s1_mem_iq
     input  logic              wb2_comp_exception_i,
     input  preg_t             wb2_pnew_i,
 
-    // Port 2 AGU Stall / Hold
-    input  logic              port2_busy_i,
+    input  logic              wb3_valid_i,
+    input  logic              wb3_comp_ack_i,
+    input  logic              wb3_comp_exception_i,
+    input  preg_t             wb3_pnew_i,
 
-    // Port 2 Issue Output
-    output logic              issue_valid_o,
-    output memiq_entry_t      issue_uop_o,
+    // Port 2 & Port 3 AGU Stall / Hold
+    input  logic              port2_busy_i,
+    input  logic              port3_busy_i,
+
+    // Port 2 Issue Output (AGU0: Loads, Stores, AMOs, Fences)
+    output logic              issue0_valid_o,
+    output memiq_entry_t      issue0_uop_o,
+
+    // Port 3 Issue Output (AGU1: Loads strictly)
+    output logic              issue1_valid_o,
+    output memiq_entry_t      issue1_uop_o,
 
     // Diagnostics
     output logic [MEM_IQ_DEPTH-1:0] diag_valid_mask_o,
@@ -122,37 +132,146 @@ module fursoy_s1_mem_iq
     end
 
     // -------------------------------------------------------------------------
-    // Oldest-Ready Arbiter via wrap-safe rob_dist
+    // Oldest-Ready Arbiter via wrap-safe rob_dist & Dual-Issue Selection Matrix
+    // Reference: docs/architecture/slice1-m7-multibank-l1d-v1.md Section 5.2
     // -------------------------------------------------------------------------
-    logic [3:0] sel_slot;
-    logic       sel_valid;
-    logic [5:0] min_dist;
+    logic [3:0] cand0_slot, cand1_slot;
+    logic       cand0_valid, cand1_valid;
+    logic [5:0] cand0_dist, cand1_dist;
     logic [5:0] d;
 
     always_comb begin
-        sel_slot  = 4'd0;
-        sel_valid = 1'b0;
-        min_dist  = 6'd63;
-        d         = 6'd0;
+        cand0_slot  = 4'd0;
+        cand0_valid = 1'b0;
+        cand0_dist  = 6'd63;
 
+        cand1_slot  = 4'd0;
+        cand1_valid = 1'b0;
+        cand1_dist  = 6'd63;
+        d           = 6'd0;
+
+        // Step 1: Scan for oldest ready entry (cand0)
         for (int i = 0; i < MEM_IQ_DEPTH; i++) begin
             if (can_issue[i]) begin
                 d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                if (!sel_valid || (d < min_dist)) begin
-                    min_dist  = d;
-                    sel_slot  = 4'(i);
-                    sel_valid = 1'b1;
+                if (!cand0_valid || (d < cand0_dist)) begin
+                    cand0_dist  = d;
+                    cand0_slot  = 4'(i);
+                    cand0_valid = 1'b1;
+                end
+            end
+        end
+
+        // Step 2: Scan for second-oldest ready entry (cand1)
+        if (cand0_valid) begin
+            for (int i = 0; i < MEM_IQ_DEPTH; i++) begin
+                if ((4'(i) != cand0_slot) && can_issue[i]) begin
+                    d = rob_dist(entries_q[i].rob_idx, rob_head_i);
+                    if (!cand1_valid || (d < cand1_dist)) begin
+                        cand1_dist  = d;
+                        cand1_slot  = 4'(i);
+                        cand1_valid = 1'b1;
+                    end
                 end
             end
         end
     end
 
-    wire sel_squashed = recover_valid_i && (rob_dist(entries_q[sel_slot].rob_idx, rob_head_i) >
-                                            rob_dist(recover_rob_idx_i, rob_head_i));
-    wire issue_fire   = sel_valid && !port2_busy_i && !flush_valid_i && !sel_squashed;
+    // Step 3: Port Assignment following Section 5.2 & Table 5.2
+    logic       sel_p2_valid, sel_p3_valid;
+    logic [3:0] sel_p2_slot,  sel_p3_slot;
+    logic       cand0_is_load, cand0_is_store, cand0_is_ser;
+    logic       cand1_is_load, cand1_is_store, cand1_is_ser;
 
-    assign issue_valid_o = issue_fire;
-    assign issue_uop_o   = entries_q[sel_slot];
+    always_comb begin
+        sel_p2_valid   = 1'b0;
+        sel_p2_slot    = 4'd0;
+        sel_p3_valid   = 1'b0;
+        sel_p3_slot    = 4'd0;
+        cand0_is_load  = 1'b0;
+        cand0_is_store = 1'b0;
+        cand0_is_ser   = 1'b0;
+        cand1_is_load  = 1'b0;
+        cand1_is_store = 1'b0;
+        cand1_is_ser   = 1'b0;
+
+        if (cand0_valid && cand1_valid) begin
+            cand0_is_load  = (entries_q[cand0_slot].uop_class == UOP_LOAD);
+            cand0_is_store = (entries_q[cand0_slot].uop_class == UOP_STORE);
+            cand0_is_ser   = (entries_q[cand0_slot].uop_class == UOP_AMO) || (entries_q[cand0_slot].uop_class == UOP_FENCE);
+
+            cand1_is_load  = (entries_q[cand1_slot].uop_class == UOP_LOAD);
+            cand1_is_store = (entries_q[cand1_slot].uop_class == UOP_STORE);
+            cand1_is_ser   = (entries_q[cand1_slot].uop_class == UOP_AMO) || (entries_q[cand1_slot].uop_class == UOP_FENCE);
+
+            if (cand0_is_ser) begin
+                // Row 5: AMO / FENCE (A0) issues strictly as singleton on Port 2
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand0_slot;
+                sel_p3_valid = 1'b0;
+            end else if (cand0_is_store && cand1_is_load) begin
+                // Row 3: Store (cand0) + Load (cand1) -> Store to Port 2, Load to Port 3
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand0_slot;
+                sel_p3_valid = 1'b1;
+                sel_p3_slot  = cand1_slot;
+            end else if (cand0_is_load && cand1_is_store) begin
+                // Row 2: Load (cand0) + Store (cand1) -> Store to Port 2, Load to Port 3
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand1_slot;
+                sel_p3_valid = 1'b1;
+                sel_p3_slot  = cand0_slot;
+            end else if (cand0_is_load && cand1_is_load) begin
+                // Row 1: Dual Loads -> Older load to Port 2, younger load to Port 3
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand0_slot;
+                sel_p3_valid = 1'b1;
+                sel_p3_slot  = cand1_slot;
+            end else if (cand0_is_store && (cand1_is_store || cand1_is_ser)) begin
+                // Row 4: Two stores -> Only older store to Port 2 (stores strictly single-issue)
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand0_slot;
+                sel_p3_valid = 1'b0;
+            end else if (cand0_is_load && cand1_is_ser) begin
+                // Load older than serialized AMO/FENCE -> Load to Port 2, AMO remains queued
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand0_slot;
+                sel_p3_valid = 1'b0;
+            end else begin
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand0_slot;
+                sel_p3_valid = 1'b0;
+            end
+        end else if (cand0_valid) begin
+            // Case 4: Single ready candidate
+            cand0_is_load = (entries_q[cand0_slot].uop_class == UOP_LOAD);
+            if (cand0_is_load && port2_busy_i && !port3_busy_i) begin
+                // Port 2 backpressured: Load issues to Port 3
+                sel_p3_valid = 1'b1;
+                sel_p3_slot  = cand0_slot;
+            end else begin
+                // Normal single issue to Port 2
+                sel_p2_valid = 1'b1;
+                sel_p2_slot  = cand0_slot;
+            end
+        end
+    end
+
+    // Squash checks
+    wire p2_squashed = recover_valid_i && sel_p2_valid &&
+                       (rob_dist(entries_q[sel_p2_slot].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire p3_squashed = recover_valid_i && sel_p3_valid &&
+                       (rob_dist(entries_q[sel_p3_slot].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+
+    // Issue fires
+    wire issue0_fire = sel_p2_valid && !port2_busy_i && !flush_valid_i && !p2_squashed;
+    wire issue1_fire = sel_p3_valid && !port3_busy_i && !flush_valid_i && !p3_squashed;
+
+    assign issue0_valid_o = issue0_fire;
+    assign issue0_uop_o   = entries_q[sel_p2_slot];
+
+    assign issue1_valid_o = issue1_fire;
+    assign issue1_uop_o   = entries_q[sel_p3_slot];
 
     // -------------------------------------------------------------------------
     // Occupancy, Capacity & Allocation Slots Finder (Accounting for Same-Cycle Deallocation)
@@ -173,7 +292,9 @@ module fursoy_s1_mem_iq
 
         for (int i = 0; i < MEM_IQ_DEPTH; i++) begin
             if (entries_q[i].valid) count = count + 5'd1;
-            slot_free[i] = !entries_q[i].valid || (issue_fire && (4'(i) == sel_slot));
+            slot_free[i] = !entries_q[i].valid ||
+                           (issue0_fire && (4'(i) == sel_p2_slot)) ||
+                           (issue1_fire && (4'(i) == sel_p3_slot));
             if (slot_free[i]) begin
                 free_count = free_count + 5'd1;
                 if (!slot0_found) begin
@@ -217,8 +338,9 @@ module fursoy_s1_mem_iq
     // -------------------------------------------------------------------------
     wire wb0_match = wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i != 7'd0);
     wire wb1_match = wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i != 7'd0);
-    // Port 2 faulting loads do NOT wake dependent uops (Section 3.2, 17.3)
+    // Faulting loads do NOT wake dependent uops (Section 3.2, 17.3)
     wire wb2_match = wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i != 7'd0);
+    wire wb3_match = wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i != 7'd0);
 
     always_ff @(posedge clk_i) begin
         if (rst_i || flush_valid_i) begin
@@ -233,7 +355,8 @@ module fursoy_s1_mem_iq
                     if (!entries_q[i].prs1_ready) begin
                         if ((wb0_match && (wb0_pnew_i == entries_q[i].prs1)) ||
                             (wb1_match && (wb1_pnew_i == entries_q[i].prs1)) ||
-                            (wb2_match && (wb2_pnew_i == entries_q[i].prs1))) begin
+                            (wb2_match && (wb2_pnew_i == entries_q[i].prs1)) ||
+                            (wb3_match && (wb3_pnew_i == entries_q[i].prs1))) begin
                             entries_q[i].prs1_ready <= 1'b1;
                         end
                     end
@@ -241,17 +364,20 @@ module fursoy_s1_mem_iq
                     if (!entries_q[i].prs2_ready) begin
                         if ((wb0_match && (wb0_pnew_i == entries_q[i].prs2)) ||
                             (wb1_match && (wb1_pnew_i == entries_q[i].prs2)) ||
-                            (wb2_match && (wb2_pnew_i == entries_q[i].prs2))) begin
+                            (wb2_match && (wb2_pnew_i == entries_q[i].prs2)) ||
+                            (wb3_match && (wb3_pnew_i == entries_q[i].prs2))) begin
                             entries_q[i].prs2_ready <= 1'b1;
                         end
                     end
                 end
             end
 
-            // 2. Issue Deallocation / Mark Issued
-            if (issue_fire) begin
-                // Once issued to Port 2 AGU, entry has launched into LQ/SQ
-                entries_q[sel_slot].valid <= 1'b0;
+            // 2. Issue Deallocation
+            if (issue0_fire) begin
+                entries_q[sel_p2_slot].valid <= 1'b0;
+            end
+            if (issue1_fire) begin
+                entries_q[sel_p3_slot].valid <= 1'b0;
             end
 
             // 3. Branch Recovery Squash
@@ -279,12 +405,14 @@ module fursoy_s1_mem_iq
                 entries_q[alloc_slot0].prs1_ready   <= uop0_prs1_ready_i || (uop0_prs1_i == 7'd0) ||
                     (wb0_match && (wb0_pnew_i == uop0_prs1_i)) ||
                     (wb1_match && (wb1_pnew_i == uop0_prs1_i)) ||
-                    (wb2_match && (wb2_pnew_i == uop0_prs1_i));
+                    (wb2_match && (wb2_pnew_i == uop0_prs1_i)) ||
+                    (wb3_match && (wb3_pnew_i == uop0_prs1_i));
                 entries_q[alloc_slot0].prs2         <= uop0_prs2_i;
                 entries_q[alloc_slot0].prs2_ready   <= uop0_prs2_ready_i || (uop0_prs2_i == 7'd0) ||
                     (wb0_match && (wb0_pnew_i == uop0_prs2_i)) ||
                     (wb1_match && (wb1_pnew_i == uop0_prs2_i)) ||
-                    (wb2_match && (wb2_pnew_i == uop0_prs2_i));
+                    (wb2_match && (wb2_pnew_i == uop0_prs2_i)) ||
+                    (wb3_match && (wb3_pnew_i == uop0_prs2_i));
                 entries_q[alloc_slot0].pnew         <= uop0_pnew_i;
                 entries_q[alloc_slot0].rob_idx      <= uop0_rob_idx_i;
                 entries_q[alloc_slot0].rob_epoch    <= uop0_rob_epoch_i;
@@ -306,12 +434,14 @@ module fursoy_s1_mem_iq
                 entries_q[alloc_slot1_eff].prs1_ready   <= uop1_prs1_ready_i || (uop1_prs1_i == 7'd0) ||
                     (wb0_match && (wb0_pnew_i == uop1_prs1_i)) ||
                     (wb1_match && (wb1_pnew_i == uop1_prs1_i)) ||
-                    (wb2_match && (wb2_pnew_i == uop1_prs1_i));
+                    (wb2_match && (wb2_pnew_i == uop1_prs1_i)) ||
+                    (wb3_match && (wb3_pnew_i == uop1_prs1_i));
                 entries_q[alloc_slot1_eff].prs2         <= uop1_prs2_i;
                 entries_q[alloc_slot1_eff].prs2_ready   <= uop1_prs2_ready_i || (uop1_prs2_i == 7'd0) ||
                     (wb0_match && (wb0_pnew_i == uop1_prs2_i)) ||
                     (wb1_match && (wb1_pnew_i == uop1_prs2_i)) ||
-                    (wb2_match && (wb2_pnew_i == uop1_prs2_i));
+                    (wb2_match && (wb2_pnew_i == uop1_prs2_i)) ||
+                    (wb3_match && (wb3_pnew_i == uop1_prs2_i));
                 entries_q[alloc_slot1_eff].pnew         <= uop1_pnew_i;
                 entries_q[alloc_slot1_eff].rob_idx      <= uop1_rob_idx_i;
                 entries_q[alloc_slot1_eff].rob_epoch    <= uop1_rob_epoch_i;
@@ -330,9 +460,14 @@ module fursoy_s1_mem_iq
         if (!rst_i && !flush_valid_i) begin
             assert (count <= 5'd16)
                 else $fatal(1, "[MEMIQ_ASSERTION_FAILED] MemIQ occupancy count exceeded 16: %0d", count);
-            if (count == 5'd16 && !issue_fire) begin
+            if (count == 5'd16 && !issue0_fire && !issue1_fire) begin
                 assert (!alloc0_fire && !alloc1_fire)
                     else $fatal(1, "[MEMIQ_ASSERTION_FAILED] Allocation accepted into full MemIQ without issue deallocation!");
+            end
+            // PROP_M7_03: Store uop is never selected for issue on Port 3 (load-only restriction)
+            if (issue1_fire) begin
+                assert (entries_q[sel_p3_slot].uop_class == UOP_LOAD)
+                    else $fatal(1, "[MEMIQ_ASSERTION_FAILED] PROP_M7_03 Violated: Non-load uop issued to Port 3!");
             end
         end
     end

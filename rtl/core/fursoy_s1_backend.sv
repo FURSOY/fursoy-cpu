@@ -98,15 +98,15 @@ module fursoy_s1_backend
     // -------------------------------------------------------------------------
     // M1 Completion Interface
     // -------------------------------------------------------------------------
-    output logic [2:0]        comp_valid_o,
-    output rob_idx_t          comp_rob_idx_o       [2:0],
-    output rob_epoch_t        comp_epoch_o         [2:0],
-    output preg_t             comp_preg_o          [2:0],
-    output logic [2:0]        comp_branch_mispred_o,
-    output logic [2:0]        comp_exception_o,
-    output logic [4:0]        comp_cause_o         [2:0],
+    output logic [3:0]        comp_valid_o,
+    output rob_idx_t          comp_rob_idx_o       [3:0],
+    output rob_epoch_t        comp_epoch_o         [3:0],
+    output preg_t             comp_preg_o          [3:0],
+    output logic [3:0]        comp_branch_mispred_o,
+    output logic [3:0]        comp_exception_o,
+    output logic [4:0]        comp_cause_o         [3:0],
     /* verilator lint_off UNUSEDSIGNAL */
-    input  logic [2:0]        comp_ack_i,
+    input  logic [3:0]        comp_ack_i,
     /* verilator lint_on UNUSEDSIGNAL */
 
     // Testbench / Diagnostics Read Probe Port
@@ -277,9 +277,9 @@ module fursoy_s1_backend
     logic [1:0] int_dispatch_ready;
     logic [1:0] mem_dispatch_ready;
 
-    // PRF Port 4 & 5 read wires for LSU
-    preg_t      r4_paddr, r5_paddr;
-    logic [63:0] r4_data,  r5_data;
+    // PRF Port 4, 5 & 6 read wires for LSU
+    preg_t      r4_paddr, r5_paddr, r6_paddr;
+    logic [63:0] r4_data,  r5_data,  r6_data;
 
     // Port 2 LSU Completion wires
     logic        p2_comp_valid;
@@ -289,6 +289,15 @@ module fursoy_s1_backend
     logic        p2_comp_exception;
     logic [4:0]  p2_comp_cause;
     logic [63:0] p2_wb_data;
+
+    // Port 3 LSU Completion wires
+    logic        p3_comp_valid;
+    rob_idx_t    p3_comp_rob_idx;
+    rob_epoch_t  p3_comp_epoch;
+    preg_t       p3_comp_preg;
+    logic        p3_comp_exception;
+    logic [4:0]  p3_comp_cause;
+    logic [63:0] p3_wb_data;
 
     // Dispatch Interface Readiness Combiner
     wire uop0_is_mem = (uop0_class_i == UOP_LOAD) || (uop0_class_i == UOP_STORE) ||
@@ -381,6 +390,11 @@ module fursoy_s1_backend
         .wb2_comp_ack_i     (comp_ack_i[2]),
         .wb2_comp_exception_i (p2_comp_exception),
         .wb2_pnew_i         (p2_comp_preg),
+
+        .wb3_valid_i        (p3_comp_valid),
+        .wb3_comp_ack_i     (comp_ack_i[3]),
+        .wb3_comp_exception_i (p3_comp_exception),
+        .wb3_pnew_i         (p3_comp_preg),
 
         .can_issue_mul_i    (can_issue_mul),
         .can_issue_alu1_i   (can_issue_alu1),
@@ -481,12 +495,20 @@ module fursoy_s1_backend
         .r4_data_o      (r4_data),
         .r5_paddr_i     (r5_paddr),
         .r5_data_o      (r5_data),
+        .r6_paddr_i     (r6_paddr),
+        .r6_data_o      (r6_data),
 
         .w2_valid_i     (p2_comp_valid),
         .w2_comp_ack_i  (comp_ack_i[2]),
         .w2_comp_exception_i (p2_comp_exception),
         .w2_paddr_i     (p2_comp_preg),
         .w2_data_i      (p2_wb_data),
+
+        .w3_valid_i     (p3_comp_valid),
+        .w3_comp_ack_i  (comp_ack_i[3]),
+        .w3_comp_exception_i (p3_comp_exception),
+        .w3_paddr_i     (p3_comp_preg),
+        .w3_data_i      (p3_wb_data),
 
         .probe_paddr_i  (probe_paddr_i),
         .probe_pdata_o  (probe_pdata_o)
@@ -510,10 +532,17 @@ module fursoy_s1_backend
         input logic        wb2_ack,
         input logic        wb2_exc,
         input preg_t       wb2_p,
-        input logic [63:0] wb2_d
+        input logic [63:0] wb2_d,
+        input logic        wb3_v,
+        input logic        wb3_ack,
+        input logic        wb3_exc,
+        input preg_t       wb3_p,
+        input logic [63:0] wb3_d
     );
         if (prs == 7'd0) begin
             return 64'd0;
+        end else if (wb3_v && wb3_ack && !wb3_exc && (wb3_p == prs)) begin
+            return wb3_d;
         end else if (wb2_v && wb2_ack && !wb2_exc && (wb2_p == prs)) begin
             return wb2_d;
         end else if (wb1_v && wb1_ack && (wb1_p == prs)) begin
@@ -531,12 +560,12 @@ module fursoy_s1_backend
         if ((rf0_uop_q.uop_class == UOP_ALU_INT) && (rf0_uop_q.sub_op == ALU_AUIPC)) begin
             p0_op_a = rf0_uop_q.pc;
         end else begin
-            p0_op_a = get_operand(rf0_uop_q.prs1, r0_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
+            p0_op_a = get_operand(rf0_uop_q.prs1, r0_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
         if (rf0_uop_q.use_imm && (rf0_uop_q.uop_class != UOP_BRANCH)) begin
             p0_op_b = rf0_uop_q.imm;
         end else begin
-            p0_op_b = get_operand(rf0_uop_q.prs2, r1_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
+            p0_op_b = get_operand(rf0_uop_q.prs2, r1_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
     end
 
@@ -546,12 +575,12 @@ module fursoy_s1_backend
         if ((rf1_uop_q.uop_class == UOP_ALU_INT) && (rf1_uop_q.sub_op == ALU_AUIPC)) begin
             p1_op_a = rf1_uop_q.pc;
         end else begin
-            p1_op_a = get_operand(rf1_uop_q.prs1, r2_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
+            p1_op_a = get_operand(rf1_uop_q.prs1, r2_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
         if (rf1_uop_q.use_imm) begin
             p1_op_b = rf1_uop_q.imm;
         end else begin
-            p1_op_b = get_operand(rf1_uop_q.prs2, r3_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data);
+            p1_op_b = get_operand(rf1_uop_q.prs2, r3_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
     end
 
@@ -908,6 +937,8 @@ module fursoy_s1_backend
         .r4_data_i               (r4_data),
         .r5_paddr_o              (r5_paddr),
         .r5_data_i               (r5_data),
+        .r6_paddr_o              (r6_paddr),
+        .r6_data_i               (r6_data),
 
         .wb0_valid_i             (p0_wb_valid),
         .wb0_comp_ack_i          (comp_ack_i[0]),
@@ -925,6 +956,12 @@ module fursoy_s1_backend
         .wb2_pnew_i              (p2_comp_preg),
         .wb2_data_i              (p2_wb_data),
 
+        .wb3_valid_i             (p3_comp_valid),
+        .wb3_comp_ack_i          (comp_ack_i[3]),
+        .wb3_comp_exception_i    (p3_comp_exception),
+        .wb3_pnew_i              (p3_comp_preg),
+        .wb3_data_i              (p3_wb_data),
+
         .retire_valid_i          (retire_valid_i),
         .retire_pnew_i           (retire_pnew_i),
         .retire_pc_i             (retire_pc_i),
@@ -939,6 +976,15 @@ module fursoy_s1_backend
         .p2_comp_cause_o         (p2_comp_cause),
         .p2_wb_data_o            (p2_wb_data),
         .p2_comp_ack_i           (comp_ack_i[2]),
+
+        .p3_comp_valid_o         (p3_comp_valid),
+        .p3_comp_rob_idx_o       (p3_comp_rob_idx),
+        .p3_comp_epoch_o         (p3_comp_epoch),
+        .p3_comp_preg_o          (p3_comp_preg),
+        .p3_comp_exception_o     (p3_comp_exception),
+        .p3_comp_cause_o         (p3_comp_cause),
+        .p3_wb_data_o            (p3_wb_data),
+        .p3_comp_ack_i           (comp_ack_i[3]),
 
         .bus_rd_req_valid_o      (bus_rd_req_valid_o),
         .bus_rd_req_addr_o       (bus_rd_req_addr_o),
@@ -999,7 +1045,7 @@ module fursoy_s1_backend
     assign event_issue_port1_mul_o = is1_valid && !is1_squashed && is1_is_mul;
     assign event_issue_port1_div_o = is1_valid && !is1_squashed && is1_is_div;
     assign event_issue_port1_alu_o = is1_valid && !is1_squashed && !is1_is_mul && !is1_is_div;
-    assign event_issue_port2_agu_o = u_lsu.memiq_issue_valid;
+    assign event_issue_port2_agu_o = u_lsu.memiq_issue0_valid;
 
     assign event_intiq_empty_o     = (diag_ready_p0_o == 16'd0) && (diag_ready_p1_o == 16'd0);
     assign event_memiq_empty_o     = (memiq_diag_ready == '0);
@@ -1024,7 +1070,7 @@ module fursoy_s1_backend
     assign comp_exception_o[1]      = 1'b0;
     assign comp_cause_o[1]          = 5'd0;
 
-    // Port 2 (LSU) Completion
+    // Port 2 (LSU AGU0) Completion
     assign comp_valid_o[2]          = p2_comp_valid && !flush_valid_i;
     assign comp_rob_idx_o[2]        = p2_comp_rob_idx;
     assign comp_epoch_o[2]          = p2_comp_epoch;
@@ -1032,6 +1078,15 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[2] = 1'b0;
     assign comp_exception_o[2]      = p2_comp_exception;
     assign comp_cause_o[2]          = p2_comp_cause;
+
+    // Port 3 (LSU AGU1) Completion (§5.1, PROP_M7_10)
+    assign comp_valid_o[3]          = p3_comp_valid && !flush_valid_i;
+    assign comp_rob_idx_o[3]        = p3_comp_rob_idx;
+    assign comp_epoch_o[3]          = p3_comp_epoch;
+    assign comp_preg_o[3]           = p3_comp_preg;
+    assign comp_branch_mispred_o[3] = 1'b0;
+    assign comp_exception_o[3]      = p3_comp_exception;
+    assign comp_cause_o[3]          = p3_comp_cause;
 
     // -------------------------------------------------------------------------
     // 7. Lifetime-Gated Branch Recovery Interface (Section 2.4.3)
