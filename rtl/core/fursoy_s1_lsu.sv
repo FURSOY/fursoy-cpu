@@ -554,21 +554,38 @@ module fursoy_s1_lsu
         .recover_rob_idx_i          (recover_rob_idx_i),
         .rob_head_i                 (rob_head_i),
 
-        .load_req_valid_i           (l1d_load_req_valid),
-        .load_req_lq_idx_i          (l1d_load_req_lq_idx),
-        .load_req_pa_i              (l1d_load_req_pa),
-        .load_req_size_i            (l1d_load_req_size),
-        .load_req_sign_ext_i        (l1d_load_req_sign_ext),
-        .load_req_pnew_i            (l1d_load_req_pnew),
-        .load_req_rob_idx_i         (l1d_load_req_rob_idx),
-        .load_req_rob_epoch_i       (l1d_load_req_rob_epoch),
-        .load_req_ready_o           (l1d_load_req_ready),
+        .load0_req_valid_i          (l1d_load_req_valid),
+        .load0_req_lq_idx_i         (l1d_load_req_lq_idx),
+        .load0_req_pa_i             (l1d_load_req_pa),
+        .load0_req_size_i           (l1d_load_req_size),
+        .load0_req_sign_ext_i       (l1d_load_req_sign_ext),
+        .load0_req_pnew_i           (l1d_load_req_pnew),
+        .load0_req_rob_idx_i        (l1d_load_req_rob_idx),
+        .load0_req_rob_epoch_i      (l1d_load_req_rob_epoch),
+        .load0_req_ready_o          (l1d_load_req_ready),
 
-        .load_rsp_valid_o           (l1d_load_rsp_valid),
-        .load_rsp_lq_idx_o          (l1d_load_rsp_lq_idx),
-        .load_rsp_hit_o             (l1d_load_rsp_hit),
-        .load_rsp_data_o            (l1d_load_rsp_data),
-        .load_rsp_mshr_id_o         (l1d_load_rsp_mshr_id),
+        .load0_rsp_valid_o          (l1d_load_rsp_valid),
+        .load0_rsp_lq_idx_o         (l1d_load_rsp_lq_idx),
+        .load0_rsp_hit_o            (l1d_load_rsp_hit),
+        .load0_rsp_data_o           (l1d_load_rsp_data),
+        .load0_rsp_mshr_id_o        (l1d_load_rsp_mshr_id),
+
+        .load1_req_valid_i          (1'b0),
+        .load1_req_lq_idx_i         ('0),
+        .load1_req_pa_i             ('0),
+        .load1_req_size_i           (MEM_SIZE_DOUBLE),
+        .load1_req_sign_ext_i       (1'b0),
+        .load1_req_pnew_i           ('0),
+        .load1_req_rob_idx_i        ('0),
+        .load1_req_rob_epoch_i      ('0),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .load1_req_ready_o          (),
+        .load1_rsp_valid_o          (),
+        .load1_rsp_lq_idx_o         (),
+        .load1_rsp_hit_o            (),
+        .load1_rsp_data_o           (),
+        .load1_rsp_mshr_id_o        (),
+        /* verilator lint_on PINCONNECTEMPTY */
 
         .store_drain_valid_i        (l1d_store_drain_valid),
         .store_drain_sq_idx_i       (l1d_store_drain_sq_idx),
@@ -589,6 +606,12 @@ module fursoy_s1_lsu
         .event_l1d_miss_o           (event_l1d_miss_o),
         .mshr_occ_o                 (event_l1d_mshr_occ_o),
         .wbb_full_o                 (event_l1d_wbb_full_o),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .event_bank_access_count_o  (),
+        .event_bank_conflict_o      (),
+        .event_bank_broadcast_o     (),
+        .event_store_drain_concurrent_o(),
+        /* verilator lint_on PINCONNECTEMPTY */
 
         .bus_rd_req_valid_o         (bus_rd_req_valid_o),
         .bus_rd_req_addr_o          (bus_rd_req_addr_o),
@@ -608,7 +631,18 @@ module fursoy_s1_lsu
 
         .dcache_clean_all_req_i     (dcache_clean_all_req_i),
         .dcache_clean_all_done_o    (dcache_clean_all_done_o),
-        .l1d_quiescent_o            (l1d_quiescent)
+        .l1d_quiescent_o            (l1d_quiescent),
+
+        .snoop_req_valid_i          (1'b0),
+        .snoop_req_addr_i           ('0),
+        .snoop_req_type_i           ('0),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .snoop_req_ready_o          (),
+        .snoop_rsp_valid_o          (),
+        .snoop_rsp_has_data_o       (),
+        .snoop_rsp_data_o           (),
+        .snoop_rsp_was_dirty_o      ()
+        /* verilator lint_on PINCONNECTEMPTY */
     );
 
     // =========================================================================

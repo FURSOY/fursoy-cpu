@@ -2,18 +2,29 @@
 `define FURSOY_S1_L1D_SV
 
 // =============================================================================
-// Fursoy Slice-1 Non-Blocking L1 Data Cache (L1D) Subsystem — Milestone 3
+// Fursoy Slice-1 4-Banked Non-Blocking L1 Data Cache (L1D) Subsystem — Milestone 7
 // =============================================================================
-// Reference: docs/architecture/slice1-m3-memory-v1.md Sections 8, 9, 10, 11
+// Reference: docs/architecture/slice1-m7-multibank-l1d-v1.md Sections 6, 8, 9, 10
 //
 // Key Architectural Features:
 // - 16 KiB 4-Way Set-Associative (64 sets x 64 B line = 4096 B/way, VIPT synonym safe).
-// - Physically tagged, write-back, write-allocate, non-blocking.
-// - Strict Arbitration Priority: Refill Install > Committed Store Drain > Speculative Load Issue.
+// - 4 independent single-port 64-bit SRAM banks (Bank 0: DW0/DW4, Bank 1: DW1/DW5,
+//   Bank 2: DW2/DW6, Bank 3: DW3/DW7; 4 KiB/bank, 16 KiB total data array).
+// - Bank Addressing: Bank_ID = PA[4:3], Sub-DW = PA[5], Set_Index = PA[11:6], Line_Offset = PA[2:0].
+// - Register-based Tag arrays (64x4x44 bits) providing multi-ported parallel read access
+//   for AGU0, AGU1, and snoop without tag bank conflicts.
+// - 2-Cycle Multi-Beat Refill Sequence: Beat 0 writes lower 256b (DW0..3) across Banks 0..3;
+//   Beat 1 writes upper 256b (DW4..7) across Banks 0..3; pipeline stalls for exactly 2 cycles.
+// - Age-Aware Dynamic Bank Conflict Resolution:
+//     * Different banks: concurrent access without stall.
+//     * Same bank, identical DW: broadcast read data to both AGU0 and AGU1 with zero stall.
+//     * Same bank, distinct DWs: older uop wins by circular ROB distance (rob_dist),
+//       younger stalls in Stage M1 and replays; replaying Port 3 has anti-starvation priority.
+//     * Store drain strictly wins priority over colliding load on same bank.
+// - Dual-miss MSHR arbitration: AGU0 allocates MSHR in cycle 0; AGU1 stalls in M1 and allocates in cycle 1.
 // - 4 MSHRs with per-waiter active descriptors and selective waiter squash.
-// - Multi-waiter secondary load miss and committed store drain merging.
 // - 2-entry Writeback Buffer (WBB) with pre-reservation at miss allocation time.
-// - Authoritative newest dirty copy owner in WBB with associative snooping.
+// - Protocol-neutral coherent snoop interface (SNOOP_INV, SNOOP_READ, SNOOP_CLEAN_INV).
 // =============================================================================
 
 `include "fursoy_s1_pkg.sv"
@@ -29,27 +40,47 @@ module fursoy_s1_l1d
     input  rob_idx_t          rob_head_i,
 
     // -------------------------------------------------------------------------
-    // Core Speculative Load Request Interface (Priority 3)
+    // Core Speculative Load Request Interface — Port 2 / AGU0 (Priority 5)
     // -------------------------------------------------------------------------
-    input  logic              load_req_valid_i,
-    input  lq_idx_t           load_req_lq_idx_i,
-    input  logic [55:0]       load_req_pa_i,
-    input  mem_size_t         load_req_size_i,
-    input  logic              load_req_sign_ext_i,
-    input  preg_t             load_req_pnew_i,
-    input  rob_idx_t          load_req_rob_idx_i,
-    input  rob_epoch_t        load_req_rob_epoch_i,
-    output logic              load_req_ready_o,
+    input  logic              load0_req_valid_i,
+    input  lq_idx_t           load0_req_lq_idx_i,
+    input  logic [55:0]       load0_req_pa_i,
+    input  mem_size_t         load0_req_size_i,
+    input  logic              load0_req_sign_ext_i,
+    input  preg_t             load0_req_pnew_i,
+    input  rob_idx_t          load0_req_rob_idx_i,
+    input  rob_epoch_t        load0_req_rob_epoch_i,
+    output logic              load0_req_ready_o,
 
-    // Immediate Hit Response on Same/Next Cycle
-    output logic              load_rsp_valid_o,
-    output lq_idx_t           load_rsp_lq_idx_o,
-    output logic              load_rsp_hit_o,
-    output logic [63:0]       load_rsp_data_o,
-    output mshr_idx_t         load_rsp_mshr_id_o,
+    // Immediate Hit Response for Port 2 / AGU0
+    output logic              load0_rsp_valid_o,
+    output lq_idx_t           load0_rsp_lq_idx_o,
+    output logic              load0_rsp_hit_o,
+    output logic [63:0]       load0_rsp_data_o,
+    output mshr_idx_t         load0_rsp_mshr_id_o,
 
     // -------------------------------------------------------------------------
-    // Core Committed Store Drain Request Interface (Priority 2)
+    // Core Speculative Load Request Interface — Port 3 / AGU1 (Priority 6)
+    // -------------------------------------------------------------------------
+    input  logic              load1_req_valid_i,
+    input  lq_idx_t           load1_req_lq_idx_i,
+    input  logic [55:0]       load1_req_pa_i,
+    input  mem_size_t         load1_req_size_i,
+    input  logic              load1_req_sign_ext_i,
+    input  preg_t             load1_req_pnew_i,
+    input  rob_idx_t          load1_req_rob_idx_i,
+    input  rob_epoch_t        load1_req_rob_epoch_i,
+    output logic              load1_req_ready_o,
+
+    // Immediate Hit Response for Port 3 / AGU1
+    output logic              load1_rsp_valid_o,
+    output lq_idx_t           load1_rsp_lq_idx_o,
+    output logic              load1_rsp_hit_o,
+    output logic [63:0]       load1_rsp_data_o,
+    output mshr_idx_t         load1_rsp_mshr_id_o,
+
+    // -------------------------------------------------------------------------
+    // Core Committed Store Drain Request Interface (Priority 3)
     // -------------------------------------------------------------------------
     input  logic              store_drain_valid_i,
     input  sq_idx_t           store_drain_sq_idx_i,
@@ -97,11 +128,28 @@ module fursoy_s1_l1d
     // Quiescence Diagnostics (for FENCE serialization)
     output logic              l1d_quiescent_o,
 
-    // Observability & Telemetry (Milestone 5)
+    // Observability & Telemetry (Milestone 5 & Milestone 7)
     output logic              event_l1d_hit_o,
     output logic              event_l1d_miss_o,
     output logic [2:0]        mshr_occ_o,
-    output logic              wbb_full_o
+    output logic              wbb_full_o,
+    output logic [1:0]        event_bank_access_count_o,
+    output logic              event_bank_conflict_o,
+    output logic              event_bank_broadcast_o,
+    output logic              event_store_drain_concurrent_o,
+
+    // -------------------------------------------------------------------------
+    // External Coherence Snoop Channels (Milestone 7 Section 8.2)
+    // -------------------------------------------------------------------------
+    input  logic              snoop_req_valid_i,
+    input  logic [49:0]       snoop_req_addr_i,     // PA[55:6] 64-byte line address
+    input  logic [1:0]        snoop_req_type_i,     // 2'b00: SNOOP_INV, 2'b01: SNOOP_READ, 2'b10: SNOOP_CLEAN_INV
+    output logic              snoop_req_ready_o,
+
+    output logic              snoop_rsp_valid_o,
+    output logic              snoop_rsp_has_data_o, // 1 = Dirty line returned
+    output logic [511:0]      snoop_rsp_data_o,     // 64-byte payload
+    output logic              snoop_rsp_was_dirty_o
 );
 
     // =========================================================================
@@ -109,12 +157,36 @@ module fursoy_s1_l1d
     // =========================================================================
     // Physical Tag: PA[55:12] (44 bits)
     // Set Index:   PA[11:6]  (6 bits)
-    // Line Offset: PA[5:0]   (6 bits)
+    // Sub-DW:      PA[5]     (1 bit: 0 = DW0..3, 1 = DW4..7)
+    // Bank ID:     PA[4:3]   (2 bits: Bank 0 = DW0/4, Bank 1 = DW1/5, Bank 2 = DW2/6, Bank 3 = DW3/7)
+    // Byte Offset: PA[2:0]   (3 bits)
     logic [43:0]  tag_array   [L1D_SETS][L1D_WAYS];
     logic         valid_array [L1D_SETS][L1D_WAYS];
     logic         dirty_array [L1D_SETS][L1D_WAYS];
-    logic [511:0] data_array  [L1D_SETS][L1D_WAYS];
     logic [1:0]   lru_array   [L1D_SETS]; // Pseudo-LRU replacement pointer
+
+    // 4 Independent Physical 64-bit SRAM Banks (§6.1, §9.1)
+    // Bank dimension: 64 sets x 4 ways x 2 DWs = 512 entries x 64 bits = 4 KiB/bank (16 KiB total)
+    logic [63:0] bank_data [4][L1D_SETS][L1D_WAYS][2];
+
+    // Helper: read full 512-bit cache line across all 4 banks
+    function automatic logic [511:0] read_cache_line(
+        input logic [5:0] set_idx,
+        input logic [1:0] way_idx
+    );
+        logic [511:0] line;
+        // Sub-DW 0: DW0..DW3
+        line[63:0]    = bank_data[0][set_idx][way_idx][0];
+        line[127:64]  = bank_data[1][set_idx][way_idx][0];
+        line[191:128] = bank_data[2][set_idx][way_idx][0];
+        line[255:192] = bank_data[3][set_idx][way_idx][0];
+        // Sub-DW 1: DW4..DW7
+        line[319:256] = bank_data[0][set_idx][way_idx][1];
+        line[383:320] = bank_data[1][set_idx][way_idx][1];
+        line[447:384] = bank_data[2][set_idx][way_idx][1];
+        line[511:448] = bank_data[3][set_idx][way_idx][1];
+        return line;
+    endfunction
 
     // =========================================================================
     // Writeback Buffer (WBB, 2 Entries) — Section 10
@@ -127,7 +199,8 @@ module fursoy_s1_l1d
     wire [1:0] wbb_avail_count = (wbb_slot0_avail ? 2'd1 : 2'd0) + (wbb_slot1_avail ? 2'd1 : 2'd0);
     wire [1:0] wbb_free_count  = (!wbb_q[0].valid ? 2'd1 : 2'd0) + (!wbb_q[1].valid ? 2'd1 : 2'd0);
     wire       store_wbb_target = wbb_slot0_avail ? 1'b0 : 1'b1;
-    wire       load_wbb_target  = wbb_slot0_avail ? 1'b0 : 1'b1;
+    wire       load0_wbb_target = wbb_slot0_avail ? 1'b0 : 1'b1;
+    wire       load1_wbb_target = wbb_slot0_avail ? 1'b0 : 1'b1;
 
     // WBB Associative Snoop for Loads and Stores (Section 10.2)
     function automatic logic check_wbb_hit(
@@ -150,13 +223,11 @@ module fursoy_s1_l1d
     mshr_entry_t mshr_q [MSHR_DEPTH];
     mshr_waiter_t mshr_waiters_q [MSHR_DEPTH][LQ_DEPTH];
 
-    assign event_l1d_hit_o  = load_req_valid_i && load_accept && (load_cache_hit || load_wbb_hit);
-    assign event_l1d_miss_o = load_req_valid_i && load_accept && !(load_cache_hit || load_wbb_hit);
-    assign mshr_occ_o       = (mshr_q[0].valid ? 3'd1 : 3'd0) +
-                              (mshr_q[1].valid ? 3'd1 : 3'd0) +
-                              (mshr_q[2].valid ? 3'd1 : 3'd0) +
-                              (mshr_q[3].valid ? 3'd1 : 3'd0);
-    assign wbb_full_o       = wbb_q[0].valid && wbb_q[1].valid;
+    assign mshr_occ_o = (mshr_q[0].valid ? 3'd1 : 3'd0) +
+                        (mshr_q[1].valid ? 3'd1 : 3'd0) +
+                        (mshr_q[2].valid ? 3'd1 : 3'd0) +
+                        (mshr_q[3].valid ? 3'd1 : 3'd0);
+    assign wbb_full_o = wbb_q[0].valid && wbb_q[1].valid;
 
     // MSHR Free Count & Slot Allocator
     logic [2:0] mshr_free_count;
@@ -208,6 +279,7 @@ module fursoy_s1_l1d
     logic [1:0]   clean_way_q;
 
     assign dcache_clean_all_done_o = (clean_state_q == CLEAN_DONE);
+
     function automatic logic check_cache_hit(
         input logic [5:0]  set_idx,
         input logic [43:0] tag,
@@ -223,7 +295,7 @@ module fursoy_s1_l1d
         return 1'b0;
     endfunction
 
-    // Extract 64-bit word from 512-bit cache line
+    // Extract 64-bit word from 512-bit cache line (for WBB snooping)
     function automatic logic [63:0] extract_word_from_line(
         input logic [511:0] line_data,
         /* verilator lint_off UNUSEDSIGNAL */
@@ -244,7 +316,7 @@ module fursoy_s1_l1d
         endcase
     endfunction
 
-    // Merge store byte write into 512-bit cache line
+    // Merge store byte write into 512-bit line (for WBB hits)
     function automatic logic [511:0] merge_store_to_line(
         input logic [511:0] old_line,
         input logic [5:0]   byte_offset,
@@ -281,14 +353,55 @@ module fursoy_s1_l1d
         return new_line;
     endfunction
 
+    // Format sub-word load result according to size, sign extension and byte offset
+    function automatic logic [63:0] format_load_result_func(
+        input logic [63:0] raw_word,
+        input logic [2:0]  byte_offset,
+        input mem_size_t   size,
+        input logic        sign_ext
+    );
+        logic [63:0] shifted;
+        shifted = raw_word >> (byte_offset * 8);
+        case (size)
+            MEM_SIZE_BYTE:   return sign_ext ? {{56{shifted[7]}}, shifted[7:0]} : {56'd0, shifted[7:0]};
+            MEM_SIZE_HALF:   return sign_ext ? {{48{shifted[15]}}, shifted[15:0]} : {48'd0, shifted[15:0]};
+            MEM_SIZE_WORD:   return sign_ext ? {{32{shifted[31]}}, shifted[31:0]} : {32'd0, shifted[31:0]};
+            MEM_SIZE_DOUBLE: return shifted;
+            default:         return shifted;
+        endcase
+    endfunction
+
+    // Check natural alignment
+    function automatic logic is_naturally_misaligned(
+        /* verilator lint_off UNUSEDSIGNAL */
+        input logic [55:0] pa,
+        /* verilator lint_on UNUSEDSIGNAL */
+        input mem_size_t   size
+    );
+        case (size)
+            MEM_SIZE_HALF:   return pa[0];
+            MEM_SIZE_WORD:   return (pa[1:0] != 2'b00);
+            MEM_SIZE_DOUBLE: return (pa[2:0] != 3'b000);
+            default:         return 1'b0;
+        endcase
+    endfunction
+
     // =========================================================================
-    // Refill Service Pipeline & Multi-Waiter Drain Engine
+    // 2-Cycle Multi-Beat Refill Sequence Pipeline (§6.3, P0-1, PROP_M7_16)
     // =========================================================================
-    // When refill returns from bus:
-    // 1. Installs line into cache set and replacement way.
+    // Cycle 1 (Beat 0): Write DW0..3 (PA[5] == 0) across Banks 0..3.
+    // Cycle 2 (Beat 1): Write DW4..7 (PA[5] == 1) across Banks 0..3, update tags.
+    // Pipeline is interlocked for exactly 2 cycles.
+    logic        refill_busy_q;
+    mshr_idx_t   refill_tag_q;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [511:0]refill_data_q;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    wire refill_arriving = bus_rd_rsp_valid_i && mshr_q[bus_rd_rsp_tag_i].valid;
+    wire cache_busy_refill = refill_arriving || refill_busy_q;
+
     // Multi-MSHR Concurrent Waiter Drain Engine
-    // Each MSHR stores its refill line in mshr_q[m].victim_data upon bus response arrival.
-    // Combinational arbiter selects the first MSHR in MSHR_DRAIN_WAITERS with an active waiter.
     logic [1:0] drain_mshr_idx;
     logic [3:0] drain_waiter_idx;
     logic       drain_found;
@@ -297,7 +410,6 @@ module fursoy_s1_l1d
         drain_mshr_idx   = 2'd0;
         drain_waiter_idx = 4'd0;
         drain_found      = 1'b0;
-
         for (int m = 0; m < MSHR_DEPTH; m++) begin
             if (!drain_found && mshr_q[m].valid && (mshr_q[m].state == MSHR_DRAIN_WAITERS)) begin
                 for (int w = 0; w < LQ_DEPTH; w++) begin
@@ -310,9 +422,6 @@ module fursoy_s1_l1d
             end
         end
     end
-
-    // Refill Arriving
-    wire refill_arriving = bus_rd_rsp_valid_i && mshr_q[bus_rd_rsp_tag_i].valid;
 
     // Drain Engine State Delivery
     always_comb begin
@@ -327,7 +436,7 @@ module fursoy_s1_l1d
         if (drain_found) begin
             raw_word = extract_word_from_line(mshr_q[drain_mshr_idx].victim_data,
                                               mshr_waiters_q[drain_mshr_idx][drain_waiter_idx].line_offset);
-            refill_comp_data_o = format_load_result(
+            refill_comp_data_o = format_load_result_func(
                 raw_word,
                 mshr_waiters_q[drain_mshr_idx][drain_waiter_idx].line_offset[2:0],
                 mshr_waiters_q[drain_mshr_idx][drain_waiter_idx].size,
@@ -339,19 +448,45 @@ module fursoy_s1_l1d
     end
 
     // =========================================================================
-    // Arbitration Priority Implementation (Section 8.2)
-    // Priority 1: Refill Install
-    // Priority 2: Committed Store Drain
-    // Priority 3: Speculative Load Issue
+    // External Coherence Snoop Evaluation (§6.3, §8.2, §8.3)
+    // Priority: Snoop Invalidate > Refill Install > Store Drain > Snoop Dirty Readout
     // =========================================================================
+    wire [5:0]  snoop_set  = snoop_req_addr_i[5:0];
+    wire [43:0] snoop_tag  = snoop_req_addr_i[49:6];
+    logic [1:0] snoop_hit_way;
+    wire        snoop_cache_hit = snoop_req_valid_i && check_cache_hit(snoop_set, snoop_tag, snoop_hit_way);
 
-    // Refill Install has top priority (1-cycle cache write array occupancy)
-    wire cache_busy_refill = refill_arriving;
+    wbb_idx_t   snoop_wbb_idx;
+    wire        snoop_wbb_hit   = snoop_req_valid_i && check_wbb_hit(snoop_req_addr_i, snoop_wbb_idx);
 
-    // Store Drain Evaluation (Priority 2)
-    wire [5:0]  store_set  = store_drain_pa_i[11:6];
-    wire [43:0] store_tag  = store_drain_pa_i[55:12];
-    wire [49:0] store_line = store_drain_pa_i[55:6];
+    wire snoop_is_dirty = (snoop_cache_hit && dirty_array[snoop_set][snoop_hit_way]) ||
+                          (snoop_wbb_hit && wbb_q[snoop_wbb_idx].dirty);
+
+    assign snoop_req_ready_o    = 1'b1; // Unthrottled acceptance per §8.2
+    assign snoop_rsp_valid_o    = snoop_req_valid_i;
+    assign snoop_rsp_was_dirty_o= snoop_is_dirty;
+    assign snoop_rsp_has_data_o = snoop_is_dirty && (snoop_req_type_i != 2'b00); // SNOOP_READ or SNOOP_CLEAN_INV
+
+    always_comb begin
+        snoop_rsp_data_o = 512'd0;
+        if (snoop_cache_hit && snoop_rsp_has_data_o) begin
+            snoop_rsp_data_o = read_cache_line(snoop_set, snoop_hit_way);
+        end else if (snoop_wbb_hit && snoop_rsp_has_data_o) begin
+            snoop_rsp_data_o = wbb_q[snoop_wbb_idx].data;
+        end
+    end
+
+    // Snoop dirty readout claims all 4 banks if snoop_rsp_has_data_o from cache
+    wire snoop_claims_banks = snoop_cache_hit && snoop_rsp_has_data_o;
+
+    // =========================================================================
+    // Store Drain Request Evaluation (Priority 3)
+    // =========================================================================
+    wire [5:0]  store_set     = store_drain_pa_i[11:6];
+    wire [43:0] store_tag     = store_drain_pa_i[55:12];
+    wire [49:0] store_line    = store_drain_pa_i[55:6];
+    wire [1:0]  store_bank    = store_drain_pa_i[4:3];
+    wire        store_sub_dw  = store_drain_pa_i[5];
 
     logic [1:0] store_cache_hit_way;
     wire store_cache_hit = check_cache_hit(store_set, store_tag, store_cache_hit_way);
@@ -364,7 +499,7 @@ module fursoy_s1_l1d
     mshr_idx_t store_mshr_match_idx;
     wire store_mshr_match = check_mshr_match(store_line, store_mshr_match_idx);
 
-    // Check for ways in store_set currently reserved by in-flight MSHRs
+    // Reserved ways in store_set by in-flight MSHRs
     logic [3:0] store_set_mshr_reserved_ways;
     always_comb begin
         store_set_mshr_reserved_ways = 4'b0;
@@ -375,7 +510,7 @@ module fursoy_s1_l1d
         end
     end
 
-    // Select candidate victim way starting from LRU pointer, skipping in-flight reserved ways
+    // Candidate victim way for store miss allocation
     logic [1:0] store_victim_way;
     always_comb begin
         logic       found_invalid;
@@ -407,96 +542,276 @@ module fursoy_s1_l1d
                                  !store_in_wbb &&
                                  (!store_victim_is_dirty || (wbb_avail_count > 0));
 
-    // Store can drain if cache hit, WBB hit, matching MSHR, or can allocate MSHR
-    wire store_can_drain = store_drain_valid_i && !cache_busy_refill &&
+    wire store_can_drain = store_drain_valid_i && !cache_busy_refill && !snoop_claims_banks &&
                            (store_cache_hit || store_wbb_hit || store_mshr_match || store_can_alloc_mshr);
 
     assign store_drain_ready_o = store_can_drain;
     assign store_drain_done_o  = store_drain_valid_i && !cache_busy_refill && (store_cache_hit || store_wbb_hit);
 
-    // Load Request Evaluation (Priority 3)
-    wire [5:0]  load_set  = load_req_pa_i[11:6];
-    wire [43:0] load_tag  = load_req_pa_i[55:12];
-    wire [49:0] load_line = load_req_pa_i[55:6];
+    // Store Drain claims its target bank if it hits in cache
+    wire store_claims_bank = store_can_drain && store_cache_hit;
+    wire [1:0] store_claimed_bank = store_bank;
 
-    logic [1:0] load_cache_hit_way;
-    wire load_cache_hit = check_cache_hit(load_set, load_tag, load_cache_hit_way);
+    // =========================================================================
+    // Dual Load Evaluation (Port 2 / AGU0 & Port 3 / AGU1)
+    // =========================================================================
+    wire [5:0]  load0_set    = load0_req_pa_i[11:6];
+    wire [43:0] load0_tag    = load0_req_pa_i[55:12];
+    wire [49:0] load0_line   = load0_req_pa_i[55:6];
+    wire [1:0]  load0_bank   = load0_req_pa_i[4:3];
+    wire        load0_sub_dw = load0_req_pa_i[5];
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [2:0]  load0_dw     = load0_req_pa_i[5:3];
+    /* verilator lint_on UNUSEDSIGNAL */
 
-    wbb_idx_t load_wbb_idx;
-    wire load_wbb_hit = check_wbb_hit(load_line, load_wbb_idx);
+    wire [5:0]  load1_set    = load1_req_pa_i[11:6];
+    wire [43:0] load1_tag    = load1_req_pa_i[55:12];
+    wire [49:0] load1_line   = load1_req_pa_i[55:6];
+    wire [1:0]  load1_bank   = load1_req_pa_i[4:3];
+    wire        load1_sub_dw = load1_req_pa_i[5];
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [2:0]  load1_dw     = load1_req_pa_i[5:3];
+    /* verilator lint_on UNUSEDSIGNAL */
 
-    mshr_idx_t load_mshr_match_idx;
-    wire load_mshr_match = check_mshr_match(load_line, load_mshr_match_idx);
+    // Cache hit checks
+    logic [1:0] load0_cache_hit_way;
+    wire load0_cache_hit = check_cache_hit(load0_set, load0_tag, load0_cache_hit_way);
 
-    // Check for ways in load_set currently reserved by in-flight MSHRs
-    logic [3:0] load_set_mshr_reserved_ways;
+    logic [1:0] load1_cache_hit_way;
+    wire load1_cache_hit = check_cache_hit(load1_set, load1_tag, load1_cache_hit_way);
+
+    // WBB hit checks
+    wbb_idx_t load0_wbb_idx;
+    wire load0_wbb_hit = check_wbb_hit(load0_line, load0_wbb_idx);
+
+    wbb_idx_t load1_wbb_idx;
+    wire load1_wbb_hit = check_wbb_hit(load1_line, load1_wbb_idx);
+
+    // MSHR match checks
+    mshr_idx_t load0_mshr_match_idx;
+    wire load0_mshr_match = check_mshr_match(load0_line, load0_mshr_match_idx);
+
+    mshr_idx_t load1_mshr_match_idx;
+    wire load1_mshr_match = check_mshr_match(load1_line, load1_mshr_match_idx);
+
+    // Misalignment traps (§10.1, PROP_M7_19)
+    wire load0_misaligned = is_naturally_misaligned(load0_req_pa_i, load0_req_size_i);
+    wire load1_misaligned = is_naturally_misaligned(load1_req_pa_i, load1_req_size_i);
+
+    // Reserved ways in load0_set
+    logic [3:0] load0_set_mshr_reserved_ways;
     always_comb begin
-        load_set_mshr_reserved_ways = 4'b0;
+        load0_set_mshr_reserved_ways = 4'b0;
         for (int m = 0; m < MSHR_DEPTH; m++) begin
-            if (mshr_q[m].valid && (mshr_q[m].line_addr[5:0] == load_set)) begin
-                load_set_mshr_reserved_ways[mshr_q[m].victim_way] = 1'b1;
+            if (mshr_q[m].valid && (mshr_q[m].line_addr[5:0] == load0_set)) begin
+                load0_set_mshr_reserved_ways[mshr_q[m].victim_way] = 1'b1;
             end
         end
     end
 
-    // Select candidate victim way starting from LRU pointer, skipping in-flight reserved ways
-    logic [1:0] load_victim_way;
+    // Candidate victim way for load0
+    logic [1:0] load0_victim_way;
     always_comb begin
         logic       found_invalid;
         logic [1:0] cand_way;
-        load_victim_way = lru_array[load_set];
-        found_invalid   = 1'b0;
-        cand_way        = 2'd0;
+        load0_victim_way = lru_array[load0_set];
+        found_invalid    = 1'b0;
+        cand_way         = 2'd0;
         for (int unsigned k = 0; k < 4; k++) begin
-            cand_way = 2'(lru_array[load_set] + 2'(k));
-            if (!load_set_mshr_reserved_ways[cand_way] && !valid_array[load_set][cand_way]) begin
-                load_victim_way = cand_way;
-                found_invalid   = 1'b1;
+            cand_way = 2'(lru_array[load0_set] + 2'(k));
+            if (!load0_set_mshr_reserved_ways[cand_way] && !valid_array[load0_set][cand_way]) begin
+                load0_victim_way = cand_way;
+                found_invalid    = 1'b1;
                 break;
             end
         end
         if (!found_invalid) begin
             for (int unsigned k = 0; k < 4; k++) begin
-                cand_way = 2'(lru_array[load_set] + 2'(k));
-                if (!load_set_mshr_reserved_ways[cand_way]) begin
-                    load_victim_way = cand_way;
+                cand_way = 2'(lru_array[load0_set] + 2'(k));
+                if (!load0_set_mshr_reserved_ways[cand_way]) begin
+                    load0_victim_way = cand_way;
                     break;
                 end
             end
         end
     end
 
-    // Can allocate new MSHR: requires free MSHR slot, unreserved way in set.
-    // If replacement victim is dirty, ALSO requires free unreserved WBB slot for pre-reservation (Section 10.1)!
-    wire load_victim_is_dirty = valid_array[load_set][load_victim_way] && dirty_array[load_set][load_victim_way];
-    wire load_can_alloc_mshr = (mshr_free_count > 0) && (load_set_mshr_reserved_ways != 4'b1111) &&
-                               (!load_victim_is_dirty || (wbb_avail_count > 0));
+    wire load0_victim_is_dirty = valid_array[load0_set][load0_victim_way] && dirty_array[load0_set][load0_victim_way];
+    wire load0_can_alloc_mshr  = (mshr_free_count > 0) && (load0_set_mshr_reserved_ways != 4'b1111) &&
+                                 (!load0_victim_is_dirty || (wbb_avail_count > 0));
 
-    // Load can accept if no higher priority request blocks and either hits or can merge/allocate MSHR
-    wire load_accept = load_req_valid_i && !cache_busy_refill && !store_can_drain &&
-                       (load_cache_hit || load_wbb_hit || load_mshr_match || load_can_alloc_mshr);
-
-    assign load_req_ready_o = load_accept;
-
-    // Load Hit Response Formatting
+    // Reserved ways in load1_set
+    logic [3:0] load1_set_mshr_reserved_ways;
     always_comb begin
-        logic [63:0] raw_word;
-        load_rsp_valid_o   = load_accept;
-        load_rsp_lq_idx_o  = load_req_lq_idx_i;
-        load_rsp_hit_o     = load_cache_hit || load_wbb_hit;
-        load_rsp_data_o    = 64'd0;
-        load_rsp_mshr_id_o = load_mshr_match ? load_mshr_match_idx : mshr_free_slot;
-        raw_word           = 64'd0;
-
-        if (load_cache_hit) begin
-            raw_word = extract_word_from_line(data_array[load_set][load_cache_hit_way], load_req_pa_i[5:0]);
-            load_rsp_data_o = format_load_result(raw_word, load_req_pa_i[2:0], load_req_size_i, load_req_sign_ext_i);
-        end else if (load_wbb_hit) begin
-            // Read directly from WBB payload buffer (Section 10.2)
-            raw_word = extract_word_from_line(wbb_q[load_wbb_idx].data, load_req_pa_i[5:0]);
-            load_rsp_data_o = format_load_result(raw_word, load_req_pa_i[2:0], load_req_size_i, load_req_sign_ext_i);
+        load1_set_mshr_reserved_ways = 4'b0;
+        for (int m = 0; m < MSHR_DEPTH; m++) begin
+            if (mshr_q[m].valid && (mshr_q[m].line_addr[5:0] == load1_set)) begin
+                load1_set_mshr_reserved_ways[mshr_q[m].victim_way] = 1'b1;
+            end
         end
     end
+
+    // Candidate victim way for load1
+    logic [1:0] load1_victim_way;
+    always_comb begin
+        logic       found_invalid;
+        logic [1:0] cand_way;
+        load1_victim_way = lru_array[load1_set];
+        found_invalid    = 1'b0;
+        cand_way         = 2'd0;
+        for (int unsigned k = 0; k < 4; k++) begin
+            cand_way = 2'(lru_array[load1_set] + 2'(k));
+            if (!load1_set_mshr_reserved_ways[cand_way] && !valid_array[load1_set][cand_way]) begin
+                load1_victim_way = cand_way;
+                found_invalid    = 1'b1;
+                break;
+            end
+        end
+        if (!found_invalid) begin
+            for (int unsigned k = 0; k < 4; k++) begin
+                cand_way = 2'(lru_array[load1_set] + 2'(k));
+                if (!load1_set_mshr_reserved_ways[cand_way]) begin
+                    load1_victim_way = cand_way;
+                    break;
+                end
+            end
+        end
+    end
+
+    wire load1_victim_is_dirty = valid_array[load1_set][load1_victim_way] && dirty_array[load1_set][load1_victim_way];
+    wire load1_can_alloc_mshr  = (mshr_free_count > 0) && (load1_set_mshr_reserved_ways != 4'b1111) &&
+                                 (!load1_victim_is_dirty || (wbb_avail_count > 0));
+
+    // =========================================================================
+    // Bank Conflict & Dynamic Age Priority Arbitration (§6.3, Table 6.3)
+    // =========================================================================
+    // 1. Store Drain vs Loads on Same Bank:
+    // Store Drain takes strict priority over colliding load; colliding load stalls in M1 (PROP_M7_15).
+    wire load0_collides_with_store = store_claims_bank && (load0_bank == store_claimed_bank);
+    wire load1_collides_with_store = store_claims_bank && (load1_bank == store_claimed_bank);
+
+    // 2. Dual Load Bank Collision:
+    wire dual_load_active    = load0_req_valid_i && load1_req_valid_i && !load0_misaligned && !load1_misaligned;
+    wire same_bank_loads     = dual_load_active && (load0_bank == load1_bank);
+    wire same_dw_loads       = same_bank_loads && (load0_req_pa_i[55:3] == load1_req_pa_i[55:3]);
+    wire bank_conflict_loads = same_bank_loads && !same_dw_loads;
+
+    // Dynamic ROB Age Priority Evaluation (PROP_M7_13)
+    wire [5:0] l0_dist = rob_dist(load0_req_rob_idx_i, rob_head_i);
+    wire [5:0] l1_dist = rob_dist(load1_req_rob_idx_i, rob_head_i);
+
+    // Anti-starvation register: tracks if Load 1 stalled in previous cycle on bank conflict
+    logic p3_bank_stall_q;
+
+    // Arbitration Winner for same-bank conflict:
+    logic l0_wins_bank;
+    always_comb begin
+        if (p3_bank_stall_q) begin
+            // Replaying Port 3 has anti-starvation priority over younger or equal Port 2 uop
+            if (l0_dist < l1_dist) begin
+                l0_wins_bank = 1'b1;
+            end else begin
+                l0_wins_bank = 1'b0;
+            end
+        end else begin
+            // Strictly older uop wins; tie broken in favor of Port 2
+            if (l0_dist <= l1_dist) begin
+                l0_wins_bank = 1'b1;
+            end else begin
+                l0_wins_bank = 1'b0;
+            end
+        end
+    end
+
+    // 3. Dual-Miss MSHR Arbitration (§6.3 4, PROP_M7_17):
+    // If both encounter a tag miss in the identical cycle: AGU0 allocates in cycle 0; AGU1 stalls and allocates in cycle 1.
+    wire load0_is_miss = load0_req_valid_i && !load0_misaligned && !load0_cache_hit && !load0_wbb_hit && !load0_mshr_match;
+    wire load1_is_miss = load1_req_valid_i && !load1_misaligned && !load1_cache_hit && !load1_wbb_hit && !load1_mshr_match;
+    wire dual_miss_collision = load0_is_miss && load1_is_miss;
+
+    // Load 0 Acceptance
+    wire load0_accept = load0_req_valid_i && !cache_busy_refill && !snoop_claims_banks &&
+                        !load0_misaligned &&
+                        !load0_collides_with_store &&
+                        !(bank_conflict_loads && !l0_wins_bank) &&
+                        (load0_cache_hit || load0_wbb_hit || load0_mshr_match || load0_can_alloc_mshr);
+
+    assign load0_req_ready_o = load0_accept;
+
+    // Load 1 Acceptance
+    wire load1_accept = load1_req_valid_i && !cache_busy_refill && !snoop_claims_banks &&
+                        !load1_misaligned &&
+                        !load1_collides_with_store &&
+                        !(bank_conflict_loads && l0_wins_bank) &&
+                        !dual_miss_collision &&
+                        (load1_cache_hit || load1_wbb_hit || load1_mshr_match || load1_can_alloc_mshr);
+
+    assign load1_req_ready_o = load1_accept;
+
+    // =========================================================================
+    // Load Hit Response Formatting (Concurrent Hits & Broadcast, PROP_M7_11, PROP_M7_12)
+    // =========================================================================
+    // Port 2 / Load 0 Response
+    always_comb begin
+        logic [63:0] raw_word;
+        load0_rsp_valid_o   = load0_accept;
+        load0_rsp_lq_idx_o  = load0_req_lq_idx_i;
+        load0_rsp_hit_o     = (load0_cache_hit || load0_wbb_hit) && !load0_misaligned;
+        load0_rsp_data_o    = 64'd0;
+        load0_rsp_mshr_id_o = load0_mshr_match ? load0_mshr_match_idx : mshr_free_slot;
+        raw_word            = 64'd0;
+
+        if (load0_cache_hit && !load0_misaligned) begin
+            raw_word = bank_data[load0_bank][load0_set][load0_cache_hit_way][load0_sub_dw];
+            load0_rsp_data_o = format_load_result_func(raw_word, load0_req_pa_i[2:0], load0_req_size_i, load0_req_sign_ext_i);
+        end else if (load0_wbb_hit && !load0_misaligned) begin
+            raw_word = extract_word_from_line(wbb_q[load0_wbb_idx].data, load0_req_pa_i[5:0]);
+            load0_rsp_data_o = format_load_result_func(raw_word, load0_req_pa_i[2:0], load0_req_size_i, load0_req_sign_ext_i);
+        end
+    end
+
+    // Port 3 / Load 1 Response
+    always_comb begin
+        logic [63:0] raw_word;
+        load1_rsp_valid_o   = load1_accept;
+        load1_rsp_lq_idx_o  = load1_req_lq_idx_i;
+        load1_rsp_hit_o     = (load1_cache_hit || load1_wbb_hit) && !load1_misaligned;
+        load1_rsp_data_o    = 64'd0;
+        load1_rsp_mshr_id_o = load1_mshr_match ? load1_mshr_match_idx :
+                              (load0_is_miss ? 2'(mshr_free_slot + 2'd1) : mshr_free_slot);
+        raw_word            = 64'd0;
+
+        if (load1_cache_hit && !load1_misaligned) begin
+            if (same_dw_loads) begin
+                // Bank Broadcast: Read data from identical bank doubleword broadcast concurrently (§6.3, PROP_M7_12)
+                raw_word = bank_data[load0_bank][load0_set][load0_cache_hit_way][load0_sub_dw];
+            end else begin
+                raw_word = bank_data[load1_bank][load1_set][load1_cache_hit_way][load1_sub_dw];
+            end
+            load1_rsp_data_o = format_load_result_func(raw_word, load1_req_pa_i[2:0], load1_req_size_i, load1_req_sign_ext_i);
+        end else if (load1_wbb_hit && !load1_misaligned) begin
+            raw_word = extract_word_from_line(wbb_q[load1_wbb_idx].data, load1_req_pa_i[5:0]);
+            load1_rsp_data_o = format_load_result_func(raw_word, load1_req_pa_i[2:0], load1_req_size_i, load1_req_sign_ext_i);
+        end
+    end
+
+    // Observability & Telemetry Events
+    assign event_l1d_hit_o  = (load0_req_valid_i && load0_accept && (load0_cache_hit || load0_wbb_hit)) ||
+                              (load1_req_valid_i && load1_accept && (load1_cache_hit || load1_wbb_hit));
+    assign event_l1d_miss_o = (load0_req_valid_i && load0_accept && !(load0_cache_hit || load0_wbb_hit)) ||
+                              (load1_req_valid_i && load1_accept && !(load1_cache_hit || load1_wbb_hit));
+
+    assign event_bank_broadcast_o = dual_load_active && same_dw_loads && load0_accept && load1_accept;
+    assign event_bank_conflict_o  = (dual_load_active && bank_conflict_loads) ||
+                                    (load0_req_valid_i && load0_collides_with_store) ||
+                                    (load1_req_valid_i && load1_collides_with_store);
+    assign event_store_drain_concurrent_o = store_can_drain &&
+                                           ((load0_req_valid_i && load0_accept && (load0_bank != store_bank)) ||
+                                            (load1_req_valid_i && load1_accept && (load1_bank != store_bank)));
+
+    assign event_bank_access_count_o = (store_claims_bank ? 2'd1 : 2'd0) +
+                                       (load0_accept && load0_cache_hit ? 2'd1 : 2'd0) +
+                                       (load1_accept && load1_cache_hit && !same_dw_loads ? 2'd1 : 2'd0);
 
     // =========================================================================
     // External Bus Interface Logic
@@ -526,7 +841,7 @@ module fursoy_s1_l1d
     logic       bus_wr_inflight_q;
     wbb_idx_t   bus_wr_inflight_slot_q;
 
-    // Launch writeback for dirty WBB entry (only if no bus write is currently in-flight)
+    // Launch writeback for dirty WBB entry
     logic bus_wr_valid;
     wbb_idx_t bus_wr_slot;
 
@@ -552,22 +867,28 @@ module fursoy_s1_l1d
     assign bus_wr_req_data_o  = wbb_q[bus_wr_slot].data;
 
     // Quiescence Diagnostics
-    assign l1d_quiescent_o = (mshr_free_count == 3'd4) && (wbb_free_count == 2'd2) && !drain_found && !bus_wr_inflight_q;
+    assign l1d_quiescent_o = (mshr_free_count == 3'd4) && (wbb_free_count == 2'd2) &&
+                             !drain_found && !bus_wr_inflight_q && !refill_busy_q;
 
     // =========================================================================
-    // Sequential State Management (Cache Arrays, MSHRs, WBB, LRU)
+    // Sequential State Management (Cache Banks, MSHRs, WBB, LRU)
     // =========================================================================
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
+            /* verilator lint_off BLKSEQ */
             for (int s = 0; s < L1D_SETS; s++) begin
-                lru_array[s] <= 2'd0;
+                lru_array[s] = 2'd0;
                 for (int w = 0; w < L1D_WAYS; w++) begin
-                    valid_array[s][w] <= 1'b0;
-                    dirty_array[s][w] <= 1'b0;
-                    tag_array[s][w]   <= '0;
-                    data_array[s][w]  <= '0;
+                    valid_array[s][w] = 1'b0;
+                    dirty_array[s][w] = 1'b0;
+                    tag_array[s][w]   = '0;
+                    for (int b = 0; b < 4; b++) begin
+                        bank_data[b][s][w][0] = 64'd0;
+                        bank_data[b][s][w][1] = 64'd0;
+                    end
                 end
             end
+            /* verilator lint_on BLKSEQ */
 
             for (int i = 0; i < MSHR_DEPTH; i++) begin
                 mshr_q[i] <= '0;
@@ -584,7 +905,20 @@ module fursoy_s1_l1d
             clean_state_q          <= CLEAN_IDLE;
             clean_set_q            <= 6'd0;
             clean_way_q            <= 2'd0;
+            refill_busy_q          <= 1'b0;
+            refill_tag_q           <= 2'd0;
+            refill_data_q          <= 512'd0;
+            p3_bank_stall_q        <= 1'b0;
         end else begin
+            // -----------------------------------------------------------------
+            // Anti-Starvation Tracking: Track Port 3 Bank Stalls (§6.3)
+            // -----------------------------------------------------------------
+            if (flush_valid_i) begin
+                p3_bank_stall_q <= 1'b0;
+            end else begin
+                p3_bank_stall_q <= load1_req_valid_i && bank_conflict_loads && l0_wins_bank;
+            end
+
             // -----------------------------------------------------------------
             // 1. Bus Writeback Response Handshake
             // -----------------------------------------------------------------
@@ -597,13 +931,11 @@ module fursoy_s1_l1d
                 end
             end else if (bus_wr_req_valid_o && bus_wr_req_ready_i) begin
                 if (bus_wr_rsp_valid_i) begin
-                    // Immediate single-cycle writeback response
                     wbb_q[bus_wr_slot].valid    <= 1'b0;
                     wbb_q[bus_wr_slot].dirty    <= 1'b0;
                     wbb_q[bus_wr_slot].draining <= 1'b0;
                     bus_wr_inflight_q           <= 1'b0;
                 end else begin
-                    // Multi-cycle writeback in-flight
                     wbb_q[bus_wr_slot].draining <= 1'b1;
                     bus_wr_inflight_q           <= 1'b1;
                     bus_wr_inflight_slot_q      <= bus_wr_slot;
@@ -627,8 +959,8 @@ module fursoy_s1_l1d
                             if (mshr_q[m].waiter_mask[w] && mshr_waiters_q[m][w].waiter_valid) begin
                                 if (rob_dist(mshr_waiters_q[m][w].rob_idx, rob_head_i) >
                                     rob_dist(recover_rob_idx_i, rob_head_i)) begin
-                                    mshr_q[m].waiter_mask[w]              <= 1'b0;
-                                    mshr_waiters_q[m][w].waiter_valid   <= 1'b0;
+                                    mshr_q[m].waiter_mask[w]            <= 1'b0;
+                                    mshr_waiters_q[m][w].waiter_valid <= 1'b0;
                                 end
                             end
                         end
@@ -636,7 +968,7 @@ module fursoy_s1_l1d
                 end
             end
 
-            // Full flush clears speculative load waiters (preserves committed store drains)
+            // Full flush clears speculative load waiters
             if (flush_valid_i) begin
                 for (int m = 0; m < MSHR_DEPTH; m++) begin
                     if (mshr_q[m].valid) begin
@@ -649,38 +981,73 @@ module fursoy_s1_l1d
             end
 
             // -----------------------------------------------------------------
-            // 4. Refill Arriving & Cache Installation (Priority 1)
+            // 4. External Coherence Snoop Tag / Cache Invalidation (§8.3)
+            // -----------------------------------------------------------------
+            if (snoop_cache_hit) begin
+                if ((snoop_req_type_i == 2'b00) || (snoop_req_type_i == 2'b10)) begin
+                    // SNOOP_INV or SNOOP_CLEAN_INV: Invalidate cache line
+                    valid_array[snoop_set][snoop_hit_way] <= 1'b0;
+                    dirty_array[snoop_set][snoop_hit_way] <= 1'b0;
+                end else if (snoop_req_type_i == 2'b01) begin
+                    // SNOOP_READ: Mark line clean after shared readout
+                    dirty_array[snoop_set][snoop_hit_way] <= 1'b0;
+                end
+            end
+
+            // -----------------------------------------------------------------
+            // 5. 2-Cycle Multi-Beat Refill Sequence (§6.3, P0-1, PROP_M7_16)
             // -----------------------------------------------------------------
             if (refill_arriving) begin
+                // Beat 0 (Cycle 1): Write lower 256 bits across Banks 0..3 (PA[5] == 0)
                 mshr_idx_t m_idx;
+                logic [5:0] set_i;
+                logic [1:0] rep_way;
+
+                m_idx   = bus_rd_rsp_tag_i;
+                set_i   = mshr_q[m_idx].line_addr[5:0];
+                rep_way = mshr_q[m_idx].victim_way;
+
+                bank_data[0][set_i][rep_way][0] <= bus_rd_rsp_data_i[63:0];   // DW0
+                bank_data[1][set_i][rep_way][0] <= bus_rd_rsp_data_i[127:64]; // DW1
+                bank_data[2][set_i][rep_way][0] <= bus_rd_rsp_data_i[191:128];// DW2
+                bank_data[3][set_i][rep_way][0] <= bus_rd_rsp_data_i[255:192];// DW3
+
+                refill_busy_q <= 1'b1;
+                refill_tag_q  <= m_idx;
+                refill_data_q <= bus_rd_rsp_data_i;
+
+                // Capture line data into MSHR storage for waiter draining
+                mshr_q[m_idx].victim_data <= bus_rd_rsp_data_i;
+            end else if (refill_busy_q) begin
+                // Beat 1 (Cycle 2): Write upper 256 bits across Banks 0..3 (PA[5] == 1), update tags
                 logic [5:0] set_i;
                 logic [43:0] tag_i;
                 logic [1:0] rep_way;
 
-                m_idx = bus_rd_rsp_tag_i;
-                set_i = mshr_q[m_idx].line_addr[5:0];
-                tag_i = mshr_q[m_idx].line_addr[49:6];
-                rep_way = mshr_q[m_idx].victim_way; // P0-4: Frozen victim way captured at miss allocation!
+                set_i   = mshr_q[refill_tag_q].line_addr[5:0];
+                tag_i   = mshr_q[refill_tag_q].line_addr[49:6];
+                rep_way = mshr_q[refill_tag_q].victim_way;
 
-                // Install newly arrived line into cache at frozen rep_way
+                bank_data[0][set_i][rep_way][1] <= refill_data_q[319:256]; // DW4
+                bank_data[1][set_i][rep_way][1] <= refill_data_q[383:320]; // DW5
+                bank_data[2][set_i][rep_way][1] <= refill_data_q[447:384]; // DW6
+                bank_data[3][set_i][rep_way][1] <= refill_data_q[511:448]; // DW7
+
                 valid_array[set_i][rep_way] <= 1'b1;
                 dirty_array[set_i][rep_way] <= 1'b0;
                 tag_array[set_i][rep_way]   <= tag_i;
-                data_array[set_i][rep_way]  <= bus_rd_rsp_data_i;
 
-                // Capture line data into MSHR storage for waiter draining
-                mshr_q[m_idx].victim_data <= bus_rd_rsp_data_i;
+                refill_busy_q <= 1'b0;
 
-                if (mshr_q[m_idx].waiter_mask != 16'd0) begin
-                    mshr_q[m_idx].state <= MSHR_DRAIN_WAITERS;
+                if (mshr_q[refill_tag_q].waiter_mask != 16'd0) begin
+                    mshr_q[refill_tag_q].state <= MSHR_DRAIN_WAITERS;
                 end else begin
-                    // No waiters to drain (e.g. store write-allocate or all waiters squashed)
-                    mshr_q[m_idx].valid <= 1'b0;
-                    mshr_q[m_idx].state <= MSHR_IDLE;
+                    mshr_q[refill_tag_q].valid <= 1'b0;
+                    mshr_q[refill_tag_q].state <= MSHR_IDLE;
                 end
             end
 
-            // Service active waiter step (drain to Port 2 writeback)
+            // Service active waiter step (drain to writeback bus)
             if (drain_found) begin
                 logic [15:0] remaining_waiters;
                 remaining_waiters = mshr_q[drain_mshr_idx].waiter_mask & ~(16'h1 << drain_waiter_idx);
@@ -706,17 +1073,21 @@ module fursoy_s1_l1d
             end
 
             // -----------------------------------------------------------------
-            // 5. Committed Store Drain Execution (Priority 2)
+            // 6. Committed Store Drain Execution (Priority 3)
             // -----------------------------------------------------------------
             if (store_can_drain) begin
                 if (store_cache_hit) begin
-                    data_array[store_set][store_cache_hit_way]  <= merge_store_to_line(
-                        data_array[store_set][store_cache_hit_way],
-                        store_drain_pa_i[5:0],
-                        store_drain_mask_i,
-                        store_drain_data_i
-                    );
+                    // Write strictly to target bank and doubleword (zero conflict on other banks!)
+                    logic [63:0] old_dw;
+                    old_dw = bank_data[store_bank][store_set][store_cache_hit_way][store_sub_dw];
+                    for (int b = 0; b < 8; b++) begin
+                        if (store_drain_mask_i[b]) begin
+                            old_dw[b*8 +: 8] = store_drain_data_i[b*8 +: 8];
+                        end
+                    end
+                    bank_data[store_bank][store_set][store_cache_hit_way][store_sub_dw] <= old_dw;
                     dirty_array[store_set][store_cache_hit_way] <= 1'b1;
+                    lru_array[store_set] <= store_cache_hit_way + 2'd1;
                 end else if (store_wbb_hit) begin
                     wbb_q[store_wbb_idx].data <= merge_store_to_line(
                         wbb_q[store_wbb_idx].data,
@@ -739,19 +1110,18 @@ module fursoy_s1_l1d
                     mshr_q[mshr_free_slot].wbb_reserved_slot   <= '0;
                     mshr_q[mshr_free_slot].victim_way          <= store_victim_way;
                     mshr_q[mshr_free_slot].victim_tag          <= tag_array[store_set][store_victim_way];
-                    mshr_q[mshr_free_slot].victim_data         <= data_array[store_set][store_victim_way];
+                    mshr_q[mshr_free_slot].victim_data         <= read_cache_line(store_set, store_victim_way);
                     mshr_q[mshr_free_slot].victim_dirty        <= store_victim_is_dirty;
 
-                    // If victim is dirty, immediately move to WBB (authoritative dirty owner, Section 10.1 & 10.2)
+                    // If victim is dirty, immediately move to WBB
                     if (store_victim_is_dirty) begin
                         wbb_q[store_wbb_target].valid      <= 1'b1;
                         wbb_q[store_wbb_target].dirty      <= 1'b1;
                         wbb_q[store_wbb_target].draining   <= 1'b0;
                         wbb_q[store_wbb_target].line_addr  <= {tag_array[store_set][store_victim_way], store_set};
-                        wbb_q[store_wbb_target].data       <= data_array[store_set][store_victim_way];
+                        wbb_q[store_wbb_target].data       <= read_cache_line(store_set, store_victim_way);
                         wbb_q[store_wbb_target].dirty_mask <= '1;
                     end
-                    // Invalidate victim way in L1D immediately to isolate replacement way from subsequent writes
                     valid_array[store_set][store_victim_way] <= 1'b0;
                     dirty_array[store_set][store_victim_way] <= 1'b0;
 
@@ -760,68 +1130,123 @@ module fursoy_s1_l1d
             end
 
             // -----------------------------------------------------------------
-            // 6. Speculative Load Issue Execution (Priority 3)
+            // 7. Load 0 Issue Execution (Port 2 / AGU0)
             // -----------------------------------------------------------------
-            if (load_accept) begin
-                if (load_cache_hit) begin
-                    // Hit: update LRU
-                    lru_array[load_set] <= load_cache_hit_way + 2'd1;
-                end else if (load_wbb_hit) begin
-                    // Hit in WBB: no state change needed
-                end else if (load_mshr_match) begin
-                    // Merge into active MSHR (Section 9.2)
-                    mshr_q[load_mshr_match_idx].waiter_mask[load_req_lq_idx_i] <= 1'b1;
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].waiter_valid <= 1'b1;
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].lq_idx       <= load_req_lq_idx_i;
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].line_offset  <= load_req_pa_i[5:0];
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].size         <= load_req_size_i;
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].sign_ext     <= load_req_sign_ext_i;
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].pnew         <= load_req_pnew_i;
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].rob_idx      <= load_req_rob_idx_i;
-                    mshr_waiters_q[load_mshr_match_idx][load_req_lq_idx_i].rob_epoch    <= load_req_rob_epoch_i;
-                end else if (load_can_alloc_mshr) begin
-                    // Allocate new MSHR (Section 9)
+            if (load0_accept) begin
+                if (load0_cache_hit) begin
+                    lru_array[load0_set] <= load0_cache_hit_way + 2'd1;
+                end else if (load0_wbb_hit) begin
+                    // Hit in WBB
+                end else if (load0_mshr_match) begin
+                    mshr_q[load0_mshr_match_idx].waiter_mask[load0_req_lq_idx_i] <= 1'b1;
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].waiter_valid <= 1'b1;
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].lq_idx       <= load0_req_lq_idx_i;
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].line_offset  <= load0_req_pa_i[5:0];
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].size         <= load0_req_size_i;
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].sign_ext     <= load0_req_sign_ext_i;
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].pnew         <= load0_req_pnew_i;
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].rob_idx      <= load0_req_rob_idx_i;
+                    mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].rob_epoch    <= load0_req_rob_epoch_i;
+                end else if (load0_can_alloc_mshr) begin
                     mshr_q[mshr_free_slot].valid               <= 1'b1;
-                    mshr_q[mshr_free_slot].line_addr           <= load_line;
+                    mshr_q[mshr_free_slot].line_addr           <= load0_line;
                     mshr_q[mshr_free_slot].state               <= MSHR_WAIT_BUS;
                     mshr_q[mshr_free_slot].bus_tag             <= mshr_free_slot;
-                    mshr_q[mshr_free_slot].waiter_mask         <= (16'd1 << load_req_lq_idx_i);
+                    mshr_q[mshr_free_slot].waiter_mask         <= (16'd1 << load0_req_lq_idx_i);
                     mshr_q[mshr_free_slot].store_drain_mask    <= 16'd0;
                     mshr_q[mshr_free_slot].wbb_has_reservation <= 1'b0;
                     mshr_q[mshr_free_slot].wbb_reserved_slot   <= '0;
-                    mshr_q[mshr_free_slot].victim_way          <= load_victim_way;
-                    mshr_q[mshr_free_slot].victim_tag          <= tag_array[load_set][load_victim_way];
-                    mshr_q[mshr_free_slot].victim_data         <= data_array[load_set][load_victim_way];
-                    mshr_q[mshr_free_slot].victim_dirty        <= load_victim_is_dirty;
+                    mshr_q[mshr_free_slot].victim_way          <= load0_victim_way;
+                    mshr_q[mshr_free_slot].victim_tag          <= tag_array[load0_set][load0_victim_way];
+                    mshr_q[mshr_free_slot].victim_data         <= read_cache_line(load0_set, load0_victim_way);
+                    mshr_q[mshr_free_slot].victim_dirty        <= load0_victim_is_dirty;
 
-                    // If victim is dirty, immediately move to WBB (authoritative dirty owner, Section 10.1 & 10.2)
-                    if (load_victim_is_dirty) begin
-                        wbb_q[load_wbb_target].valid      <= 1'b1;
-                        wbb_q[load_wbb_target].dirty      <= 1'b1;
-                        wbb_q[load_wbb_target].draining   <= 1'b0;
-                        wbb_q[load_wbb_target].line_addr  <= {tag_array[load_set][load_victim_way], load_set};
-                        wbb_q[load_wbb_target].data       <= data_array[load_set][load_victim_way];
-                        wbb_q[load_wbb_target].dirty_mask <= '1;
+                    if (load0_victim_is_dirty) begin
+                        wbb_q[load0_wbb_target].valid      <= 1'b1;
+                        wbb_q[load0_wbb_target].dirty      <= 1'b1;
+                        wbb_q[load0_wbb_target].draining   <= 1'b0;
+                        wbb_q[load0_wbb_target].line_addr  <= {tag_array[load0_set][load0_victim_way], load0_set};
+                        wbb_q[load0_wbb_target].data       <= read_cache_line(load0_set, load0_victim_way);
+                        wbb_q[load0_wbb_target].dirty_mask <= '1;
                     end
-                    // Invalidate victim way in L1D immediately to isolate replacement way from subsequent writes
-                    valid_array[load_set][load_victim_way] <= 1'b0;
-                    dirty_array[load_set][load_victim_way] <= 1'b0;
+                    valid_array[load0_set][load0_victim_way] <= 1'b0;
+                    dirty_array[load0_set][load0_victim_way] <= 1'b0;
 
-                    lru_array[load_set] <= load_victim_way + 2'd1;
+                    lru_array[load0_set] <= load0_victim_way + 2'd1;
 
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].waiter_valid <= 1'b1;
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].lq_idx       <= load_req_lq_idx_i;
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].line_offset  <= load_req_pa_i[5:0];
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].size         <= load_req_size_i;
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].sign_ext     <= load_req_sign_ext_i;
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].pnew         <= load_req_pnew_i;
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].rob_idx      <= load_req_rob_idx_i;
-                    mshr_waiters_q[mshr_free_slot][load_req_lq_idx_i].rob_epoch    <= load_req_rob_epoch_i;
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].waiter_valid <= 1'b1;
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].lq_idx       <= load0_req_lq_idx_i;
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].line_offset  <= load0_req_pa_i[5:0];
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].size         <= load0_req_size_i;
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].sign_ext     <= load0_req_sign_ext_i;
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].pnew         <= load0_req_pnew_i;
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].rob_idx      <= load0_req_rob_idx_i;
+                    mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].rob_epoch    <= load0_req_rob_epoch_i;
                 end
             end
 
             // -----------------------------------------------------------------
-            // 7. Clean-All Maintenance Sweep (FENCE.I Dirty L1D Clean)
+            // 8. Load 1 Issue Execution (Port 3 / AGU1)
+            // -----------------------------------------------------------------
+            if (load1_accept) begin
+                if (load1_cache_hit) begin
+                    lru_array[load1_set] <= load1_cache_hit_way + 2'd1;
+                end else if (load1_wbb_hit) begin
+                    // Hit in WBB
+                end else if (load1_mshr_match) begin
+                    mshr_q[load1_mshr_match_idx].waiter_mask[load1_req_lq_idx_i] <= 1'b1;
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].waiter_valid <= 1'b1;
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].lq_idx       <= load1_req_lq_idx_i;
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].line_offset  <= load1_req_pa_i[5:0];
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].size         <= load1_req_size_i;
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].sign_ext     <= load1_req_sign_ext_i;
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].pnew         <= load1_req_pnew_i;
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].rob_idx      <= load1_req_rob_idx_i;
+                    mshr_waiters_q[load1_mshr_match_idx][load1_req_lq_idx_i].rob_epoch    <= load1_req_rob_epoch_i;
+                end else if (load1_can_alloc_mshr) begin
+                    // Dual miss allocation takes next free slot if load0 also allocated
+                    mshr_idx_t l1_slot;
+                    l1_slot = (load0_is_miss && load0_accept) ? 2'(mshr_free_slot + 2'd1) : mshr_free_slot;
+
+                    mshr_q[l1_slot].valid               <= 1'b1;
+                    mshr_q[l1_slot].line_addr           <= load1_line;
+                    mshr_q[l1_slot].state               <= MSHR_WAIT_BUS;
+                    mshr_q[l1_slot].bus_tag             <= l1_slot;
+                    mshr_q[l1_slot].waiter_mask         <= (16'd1 << load1_req_lq_idx_i);
+                    mshr_q[l1_slot].store_drain_mask    <= 16'd0;
+                    mshr_q[l1_slot].wbb_has_reservation <= 1'b0;
+                    mshr_q[l1_slot].wbb_reserved_slot   <= '0;
+                    mshr_q[l1_slot].victim_way          <= load1_victim_way;
+                    mshr_q[l1_slot].victim_tag          <= tag_array[load1_set][load1_victim_way];
+                    mshr_q[l1_slot].victim_data         <= read_cache_line(load1_set, load1_victim_way);
+                    mshr_q[l1_slot].victim_dirty        <= load1_victim_is_dirty;
+
+                    if (load1_victim_is_dirty) begin
+                        wbb_q[load1_wbb_target].valid      <= 1'b1;
+                        wbb_q[load1_wbb_target].dirty      <= 1'b1;
+                        wbb_q[load1_wbb_target].draining   <= 1'b0;
+                        wbb_q[load1_wbb_target].line_addr  <= {tag_array[load1_set][load1_victim_way], load1_set};
+                        wbb_q[load1_wbb_target].data       <= read_cache_line(load1_set, load1_victim_way);
+                        wbb_q[load1_wbb_target].dirty_mask <= '1;
+                    end
+                    valid_array[load1_set][load1_victim_way] <= 1'b0;
+                    dirty_array[load1_set][load1_victim_way] <= 1'b0;
+
+                    lru_array[load1_set] <= load1_victim_way + 2'd1;
+
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].waiter_valid <= 1'b1;
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].lq_idx       <= load1_req_lq_idx_i;
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].line_offset  <= load1_req_pa_i[5:0];
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].size         <= load1_req_size_i;
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].sign_ext     <= load1_req_sign_ext_i;
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].pnew         <= load1_req_pnew_i;
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].rob_idx      <= load1_req_rob_idx_i;
+                    mshr_waiters_q[l1_slot][load1_req_lq_idx_i].rob_epoch    <= load1_req_rob_epoch_i;
+                end
+            end
+
+            // -----------------------------------------------------------------
+            // 9. Clean-All Maintenance Sweep (FENCE.I Dirty L1D Clean)
             // -----------------------------------------------------------------
             case (clean_state_q)
                 CLEAN_IDLE: begin
@@ -839,7 +1264,7 @@ module fursoy_s1_l1d
                             wbb_q[store_wbb_target].dirty       <= 1'b1;
                             wbb_q[store_wbb_target].draining    <= 1'b0;
                             wbb_q[store_wbb_target].line_addr   <= {tag_array[clean_set_q][clean_way_q], clean_set_q};
-                            wbb_q[store_wbb_target].data        <= data_array[clean_set_q][clean_way_q];
+                            wbb_q[store_wbb_target].data        <= read_cache_line(clean_set_q, clean_way_q);
                             wbb_q[store_wbb_target].dirty_mask  <= '1;
                             dirty_array[clean_set_q][clean_way_q] <= 1'b0;
 
@@ -882,19 +1307,26 @@ module fursoy_s1_l1d
             endcase
         end
     end
+
 `ifndef SYNTHESIS
-    // Simulation Assertions (Section 17.3)
+    // Simulation Assertions
     always_ff @(posedge clk_i) begin
         if (!rst_i) begin
-            // Assertion 6: MSHR must never overflow
-            if (load_req_valid_i && !load_cache_hit && !load_wbb_hit && !load_mshr_match && (mshr_free_count == 0) && load_accept) begin
-                $fatal(1, "[L1D ASSERTION FAILED] MSHR overflowed!");
+            // Assertion: MSHR must never overflow
+            if (load0_req_valid_i && !load0_cache_hit && !load0_wbb_hit && !load0_mshr_match && (mshr_free_count == 0) && load0_accept) begin
+                $fatal(1, "[L1D ASSERTION FAILED] MSHR overflowed on load0!");
             end
-            // Assertion 7: WBB must never overflow on load miss allocation
-            if (load_req_valid_i && load_can_alloc_mshr && load_victim_is_dirty && (wbb_avail_count == 0) && load_accept) begin
-                $fatal(1, "[L1D ASSERTION FAILED] WBB load allocation overflowed!");
+            if (load1_req_valid_i && !load1_cache_hit && !load1_wbb_hit && !load1_mshr_match && (mshr_free_count == 0) && load1_accept) begin
+                $fatal(1, "[L1D ASSERTION FAILED] MSHR overflowed on load1!");
             end
-            // Assertion 7b: WBB must never overflow on store miss allocation
+            // Assertion: WBB must never overflow on load miss allocation
+            if (load0_req_valid_i && load0_can_alloc_mshr && load0_victim_is_dirty && (wbb_avail_count == 0) && load0_accept) begin
+                $fatal(1, "[L1D ASSERTION FAILED] WBB load0 allocation overflowed!");
+            end
+            if (load1_req_valid_i && load1_can_alloc_mshr && load1_victim_is_dirty && (wbb_avail_count == 0) && load1_accept) begin
+                $fatal(1, "[L1D ASSERTION FAILED] WBB load1 allocation overflowed!");
+            end
+            // Assertion: WBB must never overflow on store miss allocation
             if (store_drain_valid_i && store_can_alloc_mshr && store_victim_is_dirty && (wbb_avail_count == 0) && store_can_drain) begin
                 $fatal(1, "[L1D ASSERTION FAILED] WBB store allocation overflowed!");
             end

@@ -1,0 +1,65 @@
+{
+  "milestone": "Slice-1 Milestone 7 Phase B",
+  "title": "4-Banked Synonym-Safe L1D Datapath & Bank Conflict Resolution",
+  "timestamp": "2026-10-20T17:32:18.281372+00:00",
+  "elapsed_seconds": 0.36,
+  "authoritative_specification": {
+    "document": "docs/architecture/slice1-m7-multibank-l1d-v1.md",
+    "version": "1.1",
+    "sha256": "c8ae7b5b19672db9dcacb3daa7113cb8251c7e14b857cc79f5aef3a6a91d79c9"
+  },
+  "production_rtl_manifest_sha256": "e4390576a7c65e4908b779fbcd60e127d7b0bd965d988093fd56c5143ca1eaf4",
+  "verification_summary": {
+    "directed_properties_verified": "10 / 10 PASS",
+    "total_accepted_banked_ops": 75002,
+    "multi_seed_torture_status": "PASS",
+    "overall_status": "PASS"
+  },
+  "properties": {
+    "PROP_M7_11": "pass",
+    "PROP_M7_12": "pass",
+    "PROP_M7_13": "pass",
+    "PROP_M7_14": "pass",
+    "PROP_M7_15": "pass",
+    "PROP_M7_16": "pass",
+    "PROP_M7_17": "pass",
+    "PROP_M7_18": "pass",
+    "PROP_M7_19": "pass",
+    "PROP_M7_20": "pass"
+  },
+  "seeds": [
+    {
+      "seed": 42,
+      "accepted_ops": 25001,
+      "cycles": 15942,
+      "bank_accesses": 23992,
+      "bank_conflicts": 5535,
+      "bank_broadcasts": 1009,
+      "concurrent_drains": 3322,
+      "mismatches": 0,
+      "status": "pass"
+    },
+    {
+      "seed": 20260920,
+      "accepted_ops": 25000,
+      "cycles": 15944,
+      "bank_accesses": 23922,
+      "bank_conflicts": 5395,
+      "bank_broadcasts": 1078,
+      "concurrent_drains": 3221,
+      "mismatches": 0,
+      "status": "pass"
+    },
+    {
+      "seed": 20261009,
+      "accepted_ops": 25001,
+      "cycles": 15884,
+      "bank_accesses": 23978,
+      "bank_conflicts": 5428,
+      "bank_broadcasts": 1023,
+      "concurrent_drains": 3286,
+      "mismatches": 0,
+      "status": "pass"
+    }
+  ]
+}
