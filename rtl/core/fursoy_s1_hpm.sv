@@ -7,7 +7,7 @@
 // Canonical Reference: docs/architecture/slice1-m5-performance-v1.md Section 8 & 9
 //
 // Key Features:
-// - 48 Hardware Performance Event Sources (0x01 .. 0x30).
+// - 56 Hardware Performance Event Sources (0x01 .. 0x38).
 //   (Events 0x24 and 0x27 are Phase B only and driven to zero in Phase A).
 // - Up to 29 Programmable 64-bit Performance Event Counters (hpmcounter3..31).
 // - 29 Event Selector Registers (mhpmevent3..31), storing 6-bit event IDs.
@@ -111,6 +111,15 @@ module fursoy_s1_hpm
     input  logic              ev_retire_cycles_1_i,  // 0x2E: EV_RETIRE_CYCLES_1
     input  logic              ev_retire_cycles_2_i,  // 0x2F: EV_RETIRE_CYCLES_2
     input  logic              ev_serialize_cycles_i, // 0x30: EV_SERIALIZE_CYCLES
+    // Milestone 7 Multi-Banked Memory Telemetry Events (0x31 .. 0x38, §10.2)
+    input  logic              ev_mem_dual_issue_i,         // 0x31: EV_MEM_DUAL_ISSUE / EV_LSU_DUAL_ISSUE
+    input  logic [1:0]        ev_l1d_bank_access_i,        // 0x32: EV_L1D_BANK_ACCESS
+    input  logic              ev_l1d_bank_conflict_i,      // 0x33: EV_L1D_BANK_CONFLICT
+    input  logic              ev_l1d_bank_broadcast_i,     // 0x34: EV_L1D_BANK_BROADCAST
+    input  logic              ev_store_drain_concurrent_i, // 0x35: EV_STORE_DRAIN_CONCURRENT
+    input  logic              ev_snoop_queries_i,          // 0x36: EV_SNOOP_QUERIES
+    input  logic              ev_snoop_hits_i,             // 0x37: EV_SNOOP_HITS
+    input  logic              ev_snoop_replays_i,          // 0x38: EV_SNOOP_REPLAYS
 
     // -------------------------------------------------------------------------
     // Deterministic Single-Owner CPI Classification Predicates (Section 9.1)
@@ -131,7 +140,7 @@ module fursoy_s1_hpm
     output logic [63:0]       mhpmcounter_o        [32],
     output logic [63:0]       cpi_category_o       [8],
     output logic [7:0]        cpi_active_owner_o,
-    output logic [48:1]       raw_event_pulse_o
+    output logic [56:1]       raw_event_pulse_o
 );
 
     // =========================================================================
@@ -173,9 +182,9 @@ module fursoy_s1_hpm
                                                    (pending_mispred_type_q == BR_TYPE_CORO));
 
     // =========================================================================
-    // 2. Hardware Performance Event Value Multiplexer (0x01 .. 0x30)
+    // 2. Hardware Performance Event Value Multiplexer (0x01 .. 0x38)
     // =========================================================================
-    logic [63:0] event_val [49]; // 0x00 .. 0x30
+    logic [63:0] event_val [57]; // 0x00 .. 0x38
 
     always_comb begin
         event_val[6'h00] = 64'd0;
@@ -227,11 +236,19 @@ module fursoy_s1_hpm
         event_val[6'h2E] = {63'd0, ev_retire_cycles_1_i};
         event_val[6'h2F] = {63'd0, ev_retire_cycles_2_i};
         event_val[6'h30] = {63'd0, ev_serialize_cycles_i};
+        event_val[6'h31] = {63'd0, ev_mem_dual_issue_i};
+        event_val[6'h32] = {62'd0, ev_l1d_bank_access_i};
+        event_val[6'h33] = {63'd0, ev_l1d_bank_conflict_i};
+        event_val[6'h34] = {63'd0, ev_l1d_bank_broadcast_i};
+        event_val[6'h35] = {63'd0, ev_store_drain_concurrent_i};
+        event_val[6'h36] = {63'd0, ev_snoop_queries_i};
+        event_val[6'h37] = {63'd0, ev_snoop_hits_i};
+        event_val[6'h38] = {63'd0, ev_snoop_replays_i};
     end
 
     // Raw pulse output for observability
     always_comb begin
-        for (int e = 1; e <= 48; e++) begin
+        for (int e = 1; e <= 56; e++) begin
             raw_event_pulse_o[e] = (event_val[e] != 64'd0);
         end
     end
@@ -292,7 +309,7 @@ module fursoy_s1_hpm
                     // Counter update: CSR write overrides hardware increment
                     if (cnt_we) begin
                         mhpmcounter_q[c] <= csr_wdata_i;
-                    end else if (mhpmevent_q[c] <= 6'h30) begin
+                    end else if (mhpmevent_q[c] <= 6'h38) begin
                         mhpmcounter_q[c] <= mhpmcounter_q[c] + event_val[mhpmevent_q[c]];
                     end
                 end

@@ -137,6 +137,8 @@ module fursoy_s1_l1d
     output logic              event_bank_conflict_o,
     output logic              event_bank_broadcast_o,
     output logic              event_store_drain_concurrent_o,
+    output logic              event_snoop_query_o,
+    output logic              event_snoop_hit_o,
 
     // -------------------------------------------------------------------------
     // External Coherence Snoop Channels (Milestone 7 Section 8.2)
@@ -221,6 +223,7 @@ module fursoy_s1_l1d
     // MSHR Subsystem (4 Entries) — Section 9
     // =========================================================================
     mshr_entry_t mshr_q [MSHR_DEPTH];
+    logic [MSHR_DEPTH-1:0] mshr_snoop_invalid_q;
     mshr_waiter_t mshr_waiters_q [MSHR_DEPTH][LQ_DEPTH];
 
     assign mshr_occ_o = (mshr_q[0].valid ? 3'd1 : 3'd0) +
@@ -459,13 +462,24 @@ module fursoy_s1_l1d
     wbb_idx_t   snoop_wbb_idx;
     wire        snoop_wbb_hit   = snoop_req_valid_i && check_wbb_hit(snoop_req_addr_i, snoop_wbb_idx);
 
+    /* verilator lint_off UNUSEDSIGNAL */
+    mshr_idx_t  snoop_mshr_match_idx;
+    /* verilator lint_on UNUSEDSIGNAL */
+    wire        snoop_mshr_hit  = snoop_req_valid_i && check_mshr_match(snoop_req_addr_i, snoop_mshr_match_idx);
+
+    assign event_snoop_query_o  = snoop_req_valid_i;
+    assign event_snoop_hit_o    = snoop_req_valid_i && (snoop_cache_hit || snoop_wbb_hit || snoop_mshr_hit);
+
+    wire snoop_do_read = (snoop_req_type_i[1] == 1'b1);
+    wire snoop_do_inv  = (snoop_req_type_i[0] == 1'b1) || (snoop_req_type_i == 2'b00);
+
     wire snoop_is_dirty = (snoop_cache_hit && dirty_array[snoop_set][snoop_hit_way]) ||
                           (snoop_wbb_hit && wbb_q[snoop_wbb_idx].dirty);
 
     assign snoop_req_ready_o    = 1'b1; // Unthrottled acceptance per §8.2
     assign snoop_rsp_valid_o    = snoop_req_valid_i;
     assign snoop_rsp_was_dirty_o= snoop_is_dirty;
-    assign snoop_rsp_has_data_o = snoop_is_dirty && (snoop_req_type_i != 2'b00); // SNOOP_READ or SNOOP_CLEAN_INV
+    assign snoop_rsp_has_data_o = snoop_is_dirty && snoop_do_read; // SNOOP_READ or SNOOP_CLEAN_INV
 
     always_comb begin
         snoop_rsp_data_o = 512'd0;
@@ -892,6 +906,7 @@ module fursoy_s1_l1d
 
             for (int i = 0; i < MSHR_DEPTH; i++) begin
                 mshr_q[i] <= '0;
+                mshr_snoop_invalid_q[i] <= 1'b0;
                 for (int w = 0; w < LQ_DEPTH; w++) begin
                     mshr_waiters_q[i][w] <= '0;
                 end
@@ -981,21 +996,37 @@ module fursoy_s1_l1d
             end
 
             // -----------------------------------------------------------------
-            // 4. External Coherence Snoop Tag / Cache Invalidation (§8.3)
+            // 4. External Coherence Snoop Tag / Cache / WBB / MSHR Handling (§8.3)
             // -----------------------------------------------------------------
+            if (snoop_req_valid_i && snoop_do_inv) begin
+                for (int m = 0; m < MSHR_DEPTH; m++) begin
+                    if (mshr_q[m].valid && (mshr_q[m].line_addr == snoop_req_addr_i)) begin
+                        mshr_snoop_invalid_q[m] <= 1'b1;
+                    end
+                end
+            end
+
             if (snoop_cache_hit) begin
-                if ((snoop_req_type_i == 2'b00) || (snoop_req_type_i == 2'b10)) begin
+                if (snoop_do_inv) begin
                     // SNOOP_INV or SNOOP_CLEAN_INV: Invalidate cache line
                     valid_array[snoop_set][snoop_hit_way] <= 1'b0;
                     dirty_array[snoop_set][snoop_hit_way] <= 1'b0;
-                end else if (snoop_req_type_i == 2'b01) begin
+                end else if (snoop_do_read) begin
                     // SNOOP_READ: Mark line clean after shared readout
                     dirty_array[snoop_set][snoop_hit_way] <= 1'b0;
                 end
             end
 
+            if (snoop_wbb_hit) begin
+                if (snoop_do_inv) begin
+                    wbb_q[snoop_wbb_idx].valid <= 1'b0;
+                end else if (snoop_do_read) begin
+                    wbb_q[snoop_wbb_idx].dirty <= 1'b0;
+                end
+            end
+
             // -----------------------------------------------------------------
-            // 5. 2-Cycle Multi-Beat Refill Sequence (§6.3, P0-1, PROP_M7_16)
+            // 5. 2-Cycle Multi-Beat Refill Sequence (§6.3, P0-1, PROP_M7_16, PROP_M7_34)
             // -----------------------------------------------------------------
             if (refill_arriving) begin
                 // Beat 0 (Cycle 1): Write lower 256 bits across Banks 0..3 (PA[5] == 0)
@@ -1023,19 +1054,23 @@ module fursoy_s1_l1d
                 logic [5:0] set_i;
                 logic [43:0] tag_i;
                 logic [1:0] rep_way;
+                logic refill_line_snoop_inv;
 
                 set_i   = mshr_q[refill_tag_q].line_addr[5:0];
                 tag_i   = mshr_q[refill_tag_q].line_addr[49:6];
                 rep_way = mshr_q[refill_tag_q].victim_way;
+                refill_line_snoop_inv = mshr_snoop_invalid_q[refill_tag_q] ||
+                                        (snoop_req_valid_i && snoop_do_inv && (snoop_req_addr_i == mshr_q[refill_tag_q].line_addr));
 
                 bank_data[0][set_i][rep_way][1] <= refill_data_q[319:256]; // DW4
                 bank_data[1][set_i][rep_way][1] <= refill_data_q[383:320]; // DW5
                 bank_data[2][set_i][rep_way][1] <= refill_data_q[447:384]; // DW6
                 bank_data[3][set_i][rep_way][1] <= refill_data_q[511:448]; // DW7
 
-                valid_array[set_i][rep_way] <= 1'b1;
+                valid_array[set_i][rep_way] <= !refill_line_snoop_inv;
                 dirty_array[set_i][rep_way] <= 1'b0;
                 tag_array[set_i][rep_way]   <= tag_i;
+                mshr_snoop_invalid_q[refill_tag_q] <= 1'b0;
 
                 refill_busy_q <= 1'b0;
 
@@ -1101,6 +1136,7 @@ module fursoy_s1_l1d
                 end else if (store_can_alloc_mshr) begin
                     // Allocate write-allocate MSHR for store
                     mshr_q[mshr_free_slot].valid               <= 1'b1;
+                    mshr_snoop_invalid_q[mshr_free_slot]       <= 1'b0;
                     mshr_q[mshr_free_slot].line_addr           <= store_line;
                     mshr_q[mshr_free_slot].state               <= MSHR_WAIT_BUS;
                     mshr_q[mshr_free_slot].bus_tag             <= mshr_free_slot;
@@ -1149,6 +1185,7 @@ module fursoy_s1_l1d
                     mshr_waiters_q[load0_mshr_match_idx][load0_req_lq_idx_i].rob_epoch    <= load0_req_rob_epoch_i;
                 end else if (load0_can_alloc_mshr) begin
                     mshr_q[mshr_free_slot].valid               <= 1'b1;
+                    mshr_snoop_invalid_q[mshr_free_slot]       <= 1'b0;
                     mshr_q[mshr_free_slot].line_addr           <= load0_line;
                     mshr_q[mshr_free_slot].state               <= MSHR_WAIT_BUS;
                     mshr_q[mshr_free_slot].bus_tag             <= mshr_free_slot;
@@ -1209,6 +1246,7 @@ module fursoy_s1_l1d
                     l1_slot = (load0_is_miss && load0_accept) ? 2'(mshr_free_slot + 2'd1) : mshr_free_slot;
 
                     mshr_q[l1_slot].valid               <= 1'b1;
+                    mshr_snoop_invalid_q[l1_slot]       <= 1'b0;
                     mshr_q[l1_slot].line_addr           <= load1_line;
                     mshr_q[l1_slot].state               <= MSHR_WAIT_BUS;
                     mshr_q[l1_slot].bus_tag             <= l1_slot;

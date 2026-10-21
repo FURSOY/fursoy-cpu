@@ -290,6 +290,17 @@ module fursoy_s1_core
     output logic [2:0]             ptw_dtlb_grants_since_itlb_o,
 
     // -------------------------------------------------------------------------
+    // External Coherent Caching-Agent Snoop Interface (Milestone 7 Section 8)
+    // -------------------------------------------------------------------------
+    input  logic                   snoop_req_valid_i,
+    input  logic [55:0]            snoop_req_addr_i,
+    input  logic [1:0]             snoop_req_type_i,
+    output logic                   snoop_rsp_valid_o,
+    output logic                   snoop_rsp_has_data_o,
+    output logic                   snoop_rsp_was_dirty_o,
+    output logic [511:0]           snoop_rsp_data_o,
+
+    // -------------------------------------------------------------------------
     // Milestone 5 Hardware Performance Monitoring (HPM) & Profiling
     // -------------------------------------------------------------------------
     output logic [63:0]            mcycle_o,
@@ -297,7 +308,7 @@ module fursoy_s1_core
     output logic [63:0]            mhpmcounter_o         [32],
     output logic [63:0]            cpi_category_o        [8],
     output logic [7:0]             cpi_active_owner_o,
-    output logic [48:1]            raw_event_pulse_o
+    output logic [56:1]            raw_event_pulse_o
 );
 
     // =========================================================================
@@ -884,8 +895,34 @@ module fursoy_s1_core
         .int_dispatch_ready_o    (backend_int_dispatch_ready),
         .memiq_ready_o           (backend_memiq_ready),
         .lq_ready_o              (backend_lq_ready),
-        .sq_ready_o              (backend_sq_ready)
+        .sq_ready_o              (backend_sq_ready),
+
+        .snoop_req_valid_i       (snoop_req_valid_i),
+        .snoop_req_addr_i        (snoop_req_addr_i),
+        .snoop_req_type_i        (snoop_req_type_i),
+        .snoop_rsp_valid_o       (snoop_rsp_valid_o),
+        .snoop_rsp_has_data_o    (snoop_rsp_has_data_o),
+        .snoop_rsp_was_dirty_o   (snoop_rsp_was_dirty_o),
+        .snoop_rsp_data_o        (snoop_rsp_data_o),
+
+        .event_mem_dual_issue_o  (be_event_mem_dual_issue),
+        .event_bank_access_count_o(be_event_bank_access_count),
+        .event_bank_conflict_o   (be_event_bank_conflict),
+        .event_bank_broadcast_o  (be_event_bank_broadcast),
+        .event_store_drain_concurrent_o(be_event_store_drain_concurrent),
+        .event_snoop_query_o     (be_event_snoop_query),
+        .event_snoop_hit_o       (be_event_snoop_hit),
+        .event_snoop_replay_o    (be_event_snoop_replay)
     );
+
+    logic              be_event_mem_dual_issue;
+    logic [1:0]        be_event_bank_access_count;
+    logic              be_event_bank_conflict;
+    logic              be_event_bank_broadcast;
+    logic              be_event_store_drain_concurrent;
+    logic              be_event_snoop_query;
+    logic              be_event_snoop_hit;
+    logic              be_event_snoop_replay;
 
     logic              be_event_issue_p0;
     logic              be_event_issue_p1_alu;
@@ -1269,6 +1306,14 @@ module fursoy_s1_core
         .ev_retire_cycles_1_i    (ev_retire_cycles_1),
         .ev_retire_cycles_2_i    (ev_retire_cycles_2),
         .ev_serialize_cycles_i   (ev_serialize_cycles),
+        .ev_mem_dual_issue_i     (be_event_mem_dual_issue),
+        .ev_l1d_bank_access_i    (be_event_bank_access_count),
+        .ev_l1d_bank_conflict_i  (be_event_bank_conflict),
+        .ev_l1d_bank_broadcast_i (be_event_bank_broadcast),
+        .ev_store_drain_concurrent_i(be_event_store_drain_concurrent),
+        .ev_snoop_queries_i      (be_event_snoop_query),
+        .ev_snoop_hits_i         (be_event_snoop_hit),
+        .ev_snoop_replays_i      (be_event_snoop_replay),
 
         .cpi_serialize_i         (cpi_serialize),
         .cpi_br_recover_i        (cpi_br_recover),

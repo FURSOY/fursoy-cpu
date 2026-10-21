@@ -28,7 +28,7 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "65874197b14e386f80023e9419650d4ec180134d7db02937a7e6ca7dba0d1e42",  # M6 Closeout Freeze
     "8c53e566fa83df6d694a286982a2ccfc66050ea29cf0af56a9b5b2ff2d0f91e5",  # M7 Phase A Expansion
     "e4390576a7c65e4908b779fbcd60e127d7b0bd965d988093fd56c5143ca1eaf4",  # M7 Phase B Expansion
-    "400925e556b5eb47c8b338ac0acc7a6134ef39f3189e285bc6c49a119a5ca80a",  # M7 Phase C Expansion
+    "30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003",  # M7 Phase D / M7 Closeout
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m6-frontend-opt-v1.md"
 SPEC_VERSION = "1.1"

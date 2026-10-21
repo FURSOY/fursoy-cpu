@@ -225,7 +225,26 @@ module fursoy_s1_backend
     output logic [1:0]        int_dispatch_ready_o,
     output logic [1:0]        memiq_ready_o,
     output logic [1:0]        lq_ready_o,
-    output logic [1:0]        sq_ready_o
+    output logic [1:0]        sq_ready_o,
+
+    // External Coherence Snoop Interface (Milestone 7 Section 8)
+    input  logic              snoop_req_valid_i,
+    input  logic [55:0]       snoop_req_addr_i,
+    input  logic [1:0]        snoop_req_type_i,
+    output logic              snoop_rsp_valid_o,
+    output logic              snoop_rsp_has_data_o,
+    output logic              snoop_rsp_was_dirty_o,
+    output logic [511:0]      snoop_rsp_data_o,
+
+    // Milestone 7 Telemetry Events (Section 10.2)
+    output logic              event_mem_dual_issue_o,
+    output logic [1:0]        event_bank_access_count_o,
+    output logic              event_bank_conflict_o,
+    output logic              event_bank_broadcast_o,
+    output logic              event_store_drain_concurrent_o,
+    output logic              event_snoop_query_o,
+    output logic              event_snoop_hit_o,
+    output logic              event_snoop_replay_o
 );
 
     // -------------------------------------------------------------------------
@@ -1038,7 +1057,24 @@ module fursoy_s1_backend
         /* verilator lint_off PINCONNECTEMPTY */
         .lq_count_o              (),
         /* verilator lint_on PINCONNECTEMPTY */
-        .memiq_diag_ready_o      (memiq_diag_ready)
+        .memiq_diag_ready_o      (memiq_diag_ready),
+
+        .snoop_req_valid_i       (snoop_req_valid_i),
+        .snoop_req_addr_i        (snoop_req_addr_i),
+        .snoop_req_type_i        (snoop_req_type_i),
+        .snoop_rsp_valid_o       (snoop_rsp_valid_o),
+        .snoop_rsp_has_data_o    (snoop_rsp_has_data_o),
+        .snoop_rsp_was_dirty_o   (snoop_rsp_was_dirty_o),
+        .snoop_rsp_data_o        (snoop_rsp_data_o),
+
+        .event_mem_dual_issue_o  (event_mem_dual_issue_o),
+        .event_bank_access_count_o(event_bank_access_count_o),
+        .event_bank_conflict_o   (event_bank_conflict_o),
+        .event_bank_broadcast_o  (event_bank_broadcast_o),
+        .event_store_drain_concurrent_o(event_store_drain_concurrent_o),
+        .event_snoop_query_o     (event_snoop_query_o),
+        .event_snoop_hit_o       (event_snoop_hit_o),
+        .event_snoop_replay_o    (event_snoop_replay_o)
     );
 
     wire is1_is_mul = (is1_uop.uop_class == UOP_MUL);

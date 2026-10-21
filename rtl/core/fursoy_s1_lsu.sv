@@ -202,7 +202,26 @@ module fursoy_s1_lsu
     output logic [1:0]        lq_ready_o,
     output logic [1:0]        sq_ready_o,
     output logic [4:0]        lq_count_o,
-    output logic [MEM_IQ_DEPTH-1:0] memiq_diag_ready_o
+    output logic [MEM_IQ_DEPTH-1:0] memiq_diag_ready_o,
+
+    // External Coherence Snoop Interface (Milestone 7 Section 8)
+    input  logic              snoop_req_valid_i,
+    input  logic [55:0]       snoop_req_addr_i,
+    input  logic [1:0]        snoop_req_type_i,
+    output logic              snoop_rsp_valid_o,
+    output logic              snoop_rsp_has_data_o,
+    output logic              snoop_rsp_was_dirty_o,
+    output logic [511:0]      snoop_rsp_data_o,
+
+    // Milestone 7 Telemetry Events (Section 10.2)
+    output logic              event_mem_dual_issue_o,
+    output logic [1:0]        event_bank_access_count_o,
+    output logic              event_bank_conflict_o,
+    output logic              event_bank_broadcast_o,
+    output logic              event_store_drain_concurrent_o,
+    output logic              event_snoop_query_o,
+    output logic              event_snoop_hit_o,
+    output logic              event_snoop_replay_o
 );
 
     // =========================================================================
@@ -257,11 +276,13 @@ module fursoy_s1_lsu
     // 1. Memory Issue Queue (MemIQ) — Dual-Issue Arbitration
     // =========================================================================
     logic         memiq_issue0_valid;
+    logic         memiq_issue1_valid;
+
+    assign event_mem_dual_issue_o = memiq_issue0_valid && memiq_issue1_valid;
     /* verilator lint_off UNUSEDSIGNAL */
     memiq_entry_t memiq_issue0_uop;
     /* verilator lint_on UNUSEDSIGNAL */
 
-    logic         memiq_issue1_valid;
     /* verilator lint_off UNUSEDSIGNAL */
     memiq_entry_t memiq_issue1_uop;
     /* verilator lint_on UNUSEDSIGNAL */
@@ -622,12 +643,12 @@ module fursoy_s1_lsu
         .event_l1d_miss_o           (event_l1d_miss_o),
         .mshr_occ_o                 (event_l1d_mshr_occ_o),
         .wbb_full_o                 (event_l1d_wbb_full_o),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .event_bank_access_count_o  (),
-        .event_bank_conflict_o      (),
-        .event_bank_broadcast_o     (),
-        .event_store_drain_concurrent_o(),
-        /* verilator lint_on PINCONNECTEMPTY */
+        .event_bank_access_count_o  (event_bank_access_count_o),
+        .event_bank_conflict_o      (event_bank_conflict_o),
+        .event_bank_broadcast_o     (event_bank_broadcast_o),
+        .event_store_drain_concurrent_o(event_store_drain_concurrent_o),
+        .event_snoop_query_o        (event_snoop_query_o),
+        .event_snoop_hit_o          (event_snoop_hit_o),
 
         .bus_rd_req_valid_o         (bus_rd_req_valid_o),
         .bus_rd_req_addr_o          (bus_rd_req_addr_o),
@@ -649,16 +670,16 @@ module fursoy_s1_lsu
         .dcache_clean_all_done_o    (dcache_clean_all_done_o),
         .l1d_quiescent_o            (l1d_quiescent),
 
-        .snoop_req_valid_i          (1'b0),
-        .snoop_req_addr_i           ('0),
-        .snoop_req_type_i           ('0),
+        .snoop_req_valid_i          (snoop_req_valid_i),
+        .snoop_req_addr_i           (snoop_req_addr_i[55:6]),
+        .snoop_req_type_i           (snoop_req_type_i),
         /* verilator lint_off PINCONNECTEMPTY */
         .snoop_req_ready_o          (),
-        .snoop_rsp_valid_o          (),
-        .snoop_rsp_has_data_o       (),
-        .snoop_rsp_data_o           (),
-        .snoop_rsp_was_dirty_o      ()
         /* verilator lint_on PINCONNECTEMPTY */
+        .snoop_rsp_valid_o          (snoop_rsp_valid_o),
+        .snoop_rsp_has_data_o       (snoop_rsp_has_data_o),
+        .snoop_rsp_data_o           (snoop_rsp_data_o),
+        .snoop_rsp_was_dirty_o      (snoop_rsp_was_dirty_o)
     );
 
     // =========================================================================
@@ -863,7 +884,12 @@ module fursoy_s1_lsu
         .lsu_violation_rob_idx_o    (lsu_violation_rob_idx_o),
         .lsu_violation_rob_epoch_o  (lsu_violation_rob_epoch_o),
         .lsu_retire0_allow_o        (lsu_retire0_allow_o),
-        .lsu_retire1_allow_o        (lsu_retire1_allow_o)
+        .lsu_retire1_allow_o        (lsu_retire1_allow_o),
+
+        .snoop_req_valid_i          (snoop_req_valid_i),
+        .snoop_req_addr_i           (snoop_req_addr_i),
+        .snoop_req_type_i           (snoop_req_type_i),
+        .event_snoop_replay_o       (event_snoop_replay_o)
     );
 
 endmodule

@@ -261,7 +261,15 @@ module fursoy_s1_lsu_queues
     output rob_idx_t          lsu_violation_rob_idx_o,
     output rob_epoch_t        lsu_violation_rob_epoch_o,
     output logic              lsu_retire0_allow_o,
-    output logic              lsu_retire1_allow_o
+    output logic              lsu_retire1_allow_o,
+
+    // External Coherence Snoop Interface (Milestone 7 §8.3, PROP_M7_36)
+    input  logic              snoop_req_valid_i,
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic [55:0]       snoop_req_addr_i,
+    /* verilator lint_on UNUSEDSIGNAL */
+    input  logic [1:0]        snoop_req_type_i,
+    output logic              event_snoop_replay_o
 );
 
     // =========================================================================
@@ -310,9 +318,40 @@ module fursoy_s1_lsu_queues
 
     assign port3_busy_o = p3_dtlb_retry_q;
 
-    assign lsu_violation_valid_o     = m3_viol_valid_q;
-    assign lsu_violation_rob_idx_o   = m3_viol_rob_idx_q;
-    assign lsu_violation_rob_epoch_o = m3_viol_rob_epoch_q;
+    // External Coherence Snoop Hazard Evaluation (§8.3, PROP_M7_36)
+    wire snoop_do_inv = (snoop_req_type_i[0] == 1'b1) || (snoop_req_type_i == 2'b00);
+    wire [49:0] snoop_line_addr = snoop_req_addr_i[55:6];
+
+    logic [LQ_DEPTH-1:0] snoop_lq_match;
+    logic                snoop_match_found;
+    lq_idx_t             oldest_snoop_viol_lq;
+
+    always_comb begin
+        snoop_match_found    = 1'b0;
+        oldest_snoop_viol_lq = '0;
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            snoop_lq_match[l] = snoop_req_valid_i && snoop_do_inv &&
+                                lq_q[l].valid && lq_q[l].pa_valid &&
+                                (lq_q[l].pa[55:6] == snoop_line_addr) &&
+                                (lq_q[l].completed || lq_q[l].wb_done || lq_q[l].forwarded);
+            if (snoop_lq_match[l]) begin
+                if (!snoop_match_found || (rob_dist(lq_q[l].rob_idx, rob_head_i) < rob_dist(lq_q[oldest_snoop_viol_lq].rob_idx, rob_head_i))) begin
+                    oldest_snoop_viol_lq = lq_idx_t'(l);
+                    snoop_match_found    = 1'b1;
+                end
+            end
+        end
+    end
+
+    assign event_snoop_replay_o = snoop_match_found;
+
+    wire snoop_viol_older_than_m3 = !m3_viol_valid_q ||
+        (snoop_match_found && (rob_dist(lq_q[oldest_snoop_viol_lq].rob_idx, rob_head_i) < rob_dist(m3_viol_rob_idx_q, rob_head_i)));
+    wire snoop_viol_wins = snoop_match_found && snoop_viol_older_than_m3;
+
+    assign lsu_violation_valid_o     = snoop_viol_wins ? 1'b1 : m3_viol_valid_q;
+    assign lsu_violation_rob_idx_o   = snoop_viol_wins ? lq_q[oldest_snoop_viol_lq].rob_idx   : m3_viol_rob_idx_q;
+    assign lsu_violation_rob_epoch_o = snoop_viol_wins ? lq_q[oldest_snoop_viol_lq].rob_epoch : m3_viol_rob_epoch_q;
 
     // Active Validity Bitmasks
     /* verilator lint_off UNUSEDSIGNAL */
@@ -818,12 +857,13 @@ module fursoy_s1_lsu_queues
             if (m1_hold_valid_q && lq_q[head0_lq_idx].sq_unresolved_mask[m1_hold_sq_idx_q]) begin
                 lsu_retire0_allow_o = 1'b0;
             end
-            // 5. No violation targeting this load currently in flight in Stage M3
-            if (m3_viol_valid_q && (m3_viol_rob_idx_q == rob_head_i)) begin
+            // 5. No violation targeting this load currently in flight in Stage M3 or from snoop
+            if ((m3_viol_valid_q && (m3_viol_rob_idx_q == rob_head_i)) ||
+                (snoop_match_found && (lq_q[oldest_snoop_viol_lq].rob_idx == rob_head_i))) begin
                 lsu_retire0_allow_o = 1'b0;
             end
             // 6. Violated load never retires (triggers replay recovery)
-            if (lq_q[head0_lq_idx].violated) begin
+            if (lq_q[head0_lq_idx].violated || snoop_lq_match[head0_lq_idx]) begin
                 lsu_retire0_allow_o = 1'b0;
             end
         end
@@ -863,12 +903,13 @@ module fursoy_s1_lsu_queues
             if (m1_hold_valid_q && lq_q[head1_lq_idx].sq_unresolved_mask[m1_hold_sq_idx_q]) begin
                 lsu_retire1_allow_o = 1'b0;
             end
-            // 5. No violation targeting this load currently in flight in Stage M3
-            if (m3_viol_valid_q && (m3_viol_rob_idx_q == rob_head_next_i)) begin
+            // 5. No violation targeting this load currently in flight in Stage M3 or from snoop
+            if ((m3_viol_valid_q && (m3_viol_rob_idx_q == rob_head_next_i)) ||
+                (snoop_match_found && (lq_q[oldest_snoop_viol_lq].rob_idx == rob_head_next_i))) begin
                 lsu_retire1_allow_o = 1'b0;
             end
             // 6. Violated load never retires (triggers replay recovery)
-            if (lq_q[head1_lq_idx].violated) begin
+            if (lq_q[head1_lq_idx].violated || snoop_lq_match[head1_lq_idx]) begin
                 lsu_retire1_allow_o = 1'b0;
             end
         end
@@ -1741,6 +1782,15 @@ module fursoy_s1_lsu_queues
                     end
                 end
 
+                // External Coherence Snoop Load Hazard Invalidation (§8.3, PROP_M7_36)
+                if (snoop_req_valid_i && snoop_do_inv) begin
+                    for (int l = 0; l < LQ_DEPTH; l++) begin
+                        if (snoop_lq_match[l]) begin
+                            lq_q[l].violated <= 1'b1;
+                        end
+                    end
+                end
+
                 // Stage M1 -> M2 Pipeline & Holding Register Transfer
                 if (m1_hold_valid_q) begin
                     m2_valid_q          <= 1'b1;
@@ -1953,10 +2003,10 @@ module fursoy_s1_lsu_queues
             end
 
             // Same-cycle violation dominates retirement (Lane 0 and Lane 1)
-            if (retire_valid_i[0] && retire0_lq_found && m3_viol_valid_q && (m3_viol_rob_idx_q == retire_rob_idx_i[0])) begin
+            if (retire_valid_i[0] && retire0_lq_found && lsu_violation_valid_o && (lsu_violation_rob_idx_o == retire_rob_idx_i[0])) begin
                 $fatal(1, "[B1_ASSERTION FAILED] Same-cycle violation did not dominate retirement at slot 0!");
             end
-            if (retire_valid_i[1] && retire1_lq_found && m3_viol_valid_q && (m3_viol_rob_idx_q == retire_rob_idx_i[1])) begin
+            if (retire_valid_i[1] && retire1_lq_found && lsu_violation_valid_o && (lsu_violation_rob_idx_o == retire_rob_idx_i[1])) begin
                 $fatal(1, "[B1_ASSERTION FAILED] Same-cycle violation did not dominate retirement at slot 1!");
             end
 
