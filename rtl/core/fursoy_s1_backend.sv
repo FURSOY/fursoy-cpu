@@ -1035,6 +1035,9 @@ module fursoy_s1_backend
         .memiq_ready_o           (memiq_ready_o),
         .lq_ready_o              (lq_ready_o),
         .sq_ready_o              (sq_ready_o),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .lq_count_o              (),
+        /* verilator lint_on PINCONNECTEMPTY */
         .memiq_diag_ready_o      (memiq_diag_ready)
     );
 

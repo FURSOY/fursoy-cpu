@@ -1,0 +1,53 @@
+{
+  "timestamp_utc": "2026-10-21T15:08:49.043975+00:00",
+  "phase": "M7 Phase C: Multi-Ported LSQ & Store-to-Load Forwarding",
+  "production_rtl_manifest_sha256": "400925e556b5eb47c8b338ac0acc7a6134ef39f3189e285bc6c49a119a5ca80a",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m7-multibank-l1d-v1.md",
+    "version": "1.1",
+    "sha256": "c8ae7b5b19672db9dcacb3daa7113cb8251c7e14b857cc79f5aef3a6a91d79c9"
+  },
+  "unit_verification": {
+    "directed_scenarios": 10,
+    "directed_total": 10,
+    "total_accepted_ops": 75018,
+    "seeds": [
+      {
+        "seed": 42,
+        "accepted_ops": 25006,
+        "cycles": 2919,
+        "mismatches": 0,
+        "status": "pass"
+      },
+      {
+        "seed": 20260920,
+        "accepted_ops": 25004,
+        "cycles": 5537,
+        "mismatches": 0,
+        "status": "pass"
+      },
+      {
+        "seed": 20261009,
+        "accepted_ops": 25008,
+        "cycles": 8137,
+        "mismatches": 0,
+        "status": "pass"
+      }
+    ],
+    "properties": {
+      "PROP_M7_21": "pass",
+      "PROP_M7_22": "pass",
+      "PROP_M7_23": "pass",
+      "PROP_M7_24": "pass",
+      "PROP_M7_25": "pass",
+      "PROP_M7_26": "pass",
+      "PROP_M7_27": "pass",
+      "PROP_M7_28": "pass",
+      "PROP_M7_29": "pass",
+      "PROP_M7_30": "pass"
+    },
+    "status": "pass"
+  },
+  "elapsed_seconds": 0.84,
+  "overall_status": "PASS"
+}

@@ -37,6 +37,7 @@ module fursoy_s1_lsu_queues
     // -------------------------------------------------------------------------
     output logic [1:0]        lq_ready_o,
     output logic [1:0]        sq_ready_o,
+    output logic [4:0]        lq_count_o,
     output lq_idx_t           alloc_lq_slot0_o,
     output lq_idx_t           alloc_lq_slot1_o,
     output sq_idx_t           alloc_sq_slot0_o,
@@ -157,22 +158,39 @@ module fursoy_s1_lsu_queues
     // -------------------------------------------------------------------------
     // L1D Cache Interface
     // -------------------------------------------------------------------------
-    // Speculative Load Issue to L1D
-    output logic              l1d_load_req_valid_o,
-    output lq_idx_t           l1d_load_req_lq_idx_o,
-    output logic [55:0]       l1d_load_req_pa_o,
-    output mem_size_t         l1d_load_req_size_o,
-    output logic              l1d_load_req_sign_ext_o,
-    output preg_t             l1d_load_req_pnew_o,
-    output rob_idx_t          l1d_load_req_rob_idx_o,
-    output rob_epoch_t        l1d_load_req_rob_epoch_o,
-    input  logic              l1d_load_req_ready_i,
+    // Speculative Load Issue to L1D — Port 0 (Lane 0)
+    output logic              l1d_load0_req_valid_o,
+    output lq_idx_t           l1d_load0_req_lq_idx_o,
+    output logic [55:0]       l1d_load0_req_pa_o,
+    output mem_size_t         l1d_load0_req_size_o,
+    output logic              l1d_load0_req_sign_ext_o,
+    output preg_t             l1d_load0_req_pnew_o,
+    output rob_idx_t          l1d_load0_req_rob_idx_o,
+    output rob_epoch_t        l1d_load0_req_rob_epoch_o,
+    input  logic              l1d_load0_req_ready_i,
 
-    input  logic              l1d_load_rsp_valid_i,
-    input  lq_idx_t           l1d_load_rsp_lq_idx_i,
-    input  logic              l1d_load_rsp_hit_i,
-    input  logic [63:0]       l1d_load_rsp_data_i,
-    input  mshr_idx_t         l1d_load_rsp_mshr_id_i,
+    input  logic              l1d_load0_rsp_valid_i,
+    input  lq_idx_t           l1d_load0_rsp_lq_idx_i,
+    input  logic              l1d_load0_rsp_hit_i,
+    input  logic [63:0]       l1d_load0_rsp_data_i,
+    input  mshr_idx_t         l1d_load0_rsp_mshr_id_i,
+
+    // Speculative Load Issue to L1D — Port 1 (Lane 1)
+    output logic              l1d_load1_req_valid_o,
+    output lq_idx_t           l1d_load1_req_lq_idx_o,
+    output logic [55:0]       l1d_load1_req_pa_o,
+    output mem_size_t         l1d_load1_req_size_o,
+    output logic              l1d_load1_req_sign_ext_o,
+    output preg_t             l1d_load1_req_pnew_o,
+    output rob_idx_t          l1d_load1_req_rob_idx_o,
+    output rob_epoch_t        l1d_load1_req_rob_epoch_o,
+    input  logic              l1d_load1_req_ready_i,
+
+    input  logic              l1d_load1_rsp_valid_i,
+    input  lq_idx_t           l1d_load1_rsp_lq_idx_i,
+    input  logic              l1d_load1_rsp_hit_i,
+    input  logic [63:0]       l1d_load1_rsp_data_i,
+    input  mshr_idx_t         l1d_load1_rsp_mshr_id_i,
 
     // MSHR Refill Completion to LQ
     input  logic              mshr_refill_valid_i,
@@ -353,6 +371,7 @@ module fursoy_s1_lsu_queues
     assign alloc_lq_slot1_o = lq_slot1;
     assign alloc_sq_slot0_o = sq_slot0;
     assign alloc_sq_slot1_o = sq_slot1;
+    assign lq_count_o       = 5'd16 - lq_free_count;
     logic [15:0] sq_store_mask;
     always_comb begin
         for (int i = 0; i < SQ_DEPTH; i++) begin
@@ -465,199 +484,193 @@ module fursoy_s1_lsu_queues
     end
 
     // =========================================================================
-    // 3. Conservative Load Disambiguation & Store-to-Load Forwarding (Sections 6, 7)
+    // 3. Dual-Lane Store-to-Load Forwarding & Dual Load Selection (§7.2, PROP_M7_22..24)
     // =========================================================================
-    // Find candidate load ready to disambiguate and evaluate forwarding / L1D issue
-    logic [3:0]  disambig_lq_idx;
-    logic        disambig_lq_valid;
-    logic        fwd_success;
-    logic [63:0] fwd_data;
-    logic        fwd_stall;
+    logic [LQ_DEPTH-1:0] lq_entry_ready;
+    logic [LQ_DEPTH-1:0] lq_entry_fwd_success;
+    logic [LQ_DEPTH-1:0] lq_entry_fwd_stall;
+    logic [63:0]         lq_entry_fwd_data [LQ_DEPTH];
+    logic [3:0]          lq_entry_youngest_s [LQ_DEPTH];
+    logic [LQ_DEPTH-1:0] lq_entry_is_speculative;
+    logic [15:0]         lq_entry_unres_stores [LQ_DEPTH];
 
-    logic        all_older_pa_valid;
-    logic [15:0] overlap_mask;
-    logic [7:0]  l_mask;
-    logic [3:0]  youngest_s;
-    logic        youngest_found;
-    logic [5:0]  min_s_dist;
-    logic        same_word;
-    logic        has_overlap;
-    logic [5:0]  s_dist;
-    logic [5:0]  min_l_dist;
-    logic [5:0]  l_dist;
-    logic        cand_ready;
-    logic        cand_fwd_stall;
-    logic        cand_fwd_success;
-    logic [63:0] cand_fwd_data;
-    logic [3:0]  cand_youngest_s;
-    logic [3:0]  selected_youngest_s;
-    logic [15:0] cand_unresolved_stores;
-    logic        cand_is_eligible_spec;
-    logic        cand_is_speculative;
-    logic        has_older_fence;
-
-    logic [15:0] selected_unresolved_stores;
-    logic        selected_is_speculative;
+    logic        all_older_pa_valid_l;
+    logic        has_older_fence_l;
+    logic        cand_is_eligible_spec_l;
+    logic [15:0] overlap_mask_l;
+    logic [7:0]  l_mask_l;
+    logic        cand_fwd_stall_l;
+    logic        youngest_found_l;
+    logic [5:0]  min_s_dist_l;
+    logic [3:0]  youngest_s_l;
+    logic        same_word_s;
+    logic        has_overlap_s;
+    logic [5:0]  s_dist_val;
+    logic [5:0]  l_dist_head;
 
     always_comb begin
-        disambig_lq_idx            = 4'd0;
-        disambig_lq_valid          = 1'b0;
-        fwd_success                = 1'b0;
-        fwd_data                   = 64'd0;
-        fwd_stall                  = 1'b0;
-        all_older_pa_valid         = 1'b0;
-        overlap_mask               = 16'd0;
-        l_mask                     = 8'd0;
-        youngest_s                 = 4'd0;
-        youngest_found             = 1'b0;
-        min_s_dist                 = 6'd63;
-        same_word                  = 1'b0;
-        has_overlap                = 1'b0;
-        s_dist                     = 6'd0;
-        min_l_dist                 = 6'd63;
-        l_dist                     = 6'd0;
-        cand_ready                 = 1'b0;
-        cand_fwd_stall             = 1'b0;
-        cand_fwd_success           = 1'b0;
-        cand_fwd_data              = 64'd0;
-        cand_youngest_s            = 4'd0;
-        selected_youngest_s        = 4'd0;
-        cand_unresolved_stores     = 16'd0;
-        cand_is_eligible_spec      = 1'b0;
-        cand_is_speculative        = 1'b0;
-        has_older_fence            = 1'b0;
-        selected_unresolved_stores = 16'd0;
-        selected_is_speculative    = 1'b0;
+        all_older_pa_valid_l    = 1'b0;
+        has_older_fence_l       = 1'b0;
+        cand_is_eligible_spec_l = 1'b0;
+        overlap_mask_l          = 16'd0;
+        l_mask_l                = 8'd0;
+        cand_fwd_stall_l        = 1'b0;
+        youngest_found_l        = 1'b0;
+        min_s_dist_l            = 6'd63;
+        youngest_s_l            = 4'd0;
+        same_word_s             = 1'b0;
+        has_overlap_s           = 1'b0;
+        s_dist_val              = 6'd0;
 
         for (int l = 0; l < LQ_DEPTH; l++) begin
-            if (lq_q[l].valid && lq_q[l].pa_valid && !lq_q[l].completed && !lq_q[l].issued_to_l1d && !lq_q[l].align_fault) begin
-                // Check Conservative Disambiguation Contract:
-                // Identify which older stores recorded in sq_older_mask have pa_valid == 1 vs unresolved
-                all_older_pa_valid     = 1'b1;
-                cand_unresolved_stores = 16'd0;
-                has_older_fence        = 1'b0;
+            lq_entry_ready[l]          = 1'b0;
+            lq_entry_fwd_success[l]    = 1'b0;
+            lq_entry_fwd_stall[l]      = 1'b0;
+            lq_entry_fwd_data[l]       = 64'd0;
+            lq_entry_youngest_s[l]     = 4'd0;
+            lq_entry_is_speculative[l] = 1'b0;
+            lq_entry_unres_stores[l]   = 16'd0;
 
+            all_older_pa_valid_l    = 1'b1;
+            has_older_fence_l       = 1'b0;
+            cand_is_eligible_spec_l = 1'b0;
+            overlap_mask_l          = 16'd0;
+            cand_fwd_stall_l        = 1'b0;
+            youngest_found_l        = 1'b0;
+            min_s_dist_l            = 6'd63;
+            youngest_s_l            = 4'd0;
+            l_mask_l                = get_byte_lane_mask(lq_q[l].pa[2:0], lq_q[l].size);
+            same_word_s             = 1'b0;
+            has_overlap_s           = 1'b0;
+            s_dist_val              = 6'd0;
+
+            if (lq_q[l].valid && lq_q[l].pa_valid && !lq_q[l].completed && !lq_q[l].issued_to_l1d && !lq_q[l].align_fault) begin
                 for (int s = 0; s < SQ_DEPTH; s++) begin
                     if (lq_q[l].sq_older_mask[s]) begin
-                        // P0-3: A completed failed SC performs no store; it does not block younger loads
                         if (sq_q[s].is_sc && sq_q[s].completed && !sq_q[s].sc_success) begin
-                            // Failed SC: do not stall on PA
+                            // Failed SC: ignore
                         end else if (sq_q[s].is_fence) begin
-                            has_older_fence    = 1'b1;
-                            all_older_pa_valid = 1'b0;
+                            has_older_fence_l    = 1'b1;
+                            all_older_pa_valid_l = 1'b0;
                         end else if (!sq_q[s].pa_valid) begin
-                            all_older_pa_valid         = 1'b0;
-                            cand_unresolved_stores[s]  = 1'b1;
+                            all_older_pa_valid_l = 1'b0;
+                            lq_entry_unres_stores[l][s] = 1'b1;
                         end
                     end
                 end
 
-                // Eligible speculative load rule (Rule 3):
-                // Normal memory, cacheable, idempotent, !MMIO, !LR, !SC, !AMO, !replay_safe, !fault, !fence
-                cand_is_eligible_spec = !lq_q[l].is_mmio && !lq_q[l].is_lr &&
-                                        !lq_q[l].replay_safe &&
-                                        !lq_q[l].page_fault && !lq_q[l].access_fault &&
-                                        !lq_q[l].align_fault && !has_older_fence;
+                cand_is_eligible_spec_l = !lq_q[l].is_mmio && !lq_q[l].is_lr &&
+                                          !lq_q[l].replay_safe &&
+                                          !lq_q[l].page_fault && !lq_q[l].access_fault &&
+                                          !lq_q[l].align_fault && !has_older_fence_l;
 
-                if (all_older_pa_valid || cand_is_eligible_spec) begin
-                    cand_is_speculative = !all_older_pa_valid;
-
-                    // Forwarding Check against older stores with resolved PA:
-                    overlap_mask   = 16'd0;
-                    l_mask         = get_byte_lane_mask(lq_q[l].pa[2:0], lq_q[l].size);
-                    cand_fwd_stall = 1'b0;
+                if (all_older_pa_valid_l || cand_is_eligible_spec_l) begin
+                    lq_entry_is_speculative[l] = !all_older_pa_valid_l;
 
                     for (int s = 0; s < SQ_DEPTH; s++) begin
                         if (lq_q[l].sq_older_mask[s] && sq_q[s].pa_valid) begin
-                            same_word   = (sq_q[s].pa[55:3] == lq_q[l].pa[55:3]);
-                            has_overlap = same_word && ((sq_q[s].mask & l_mask) != 8'b0);
-                            if (has_overlap) begin
+                            same_word_s   = (sq_q[s].pa[55:3] == lq_q[l].pa[55:3]);
+                            has_overlap_s = same_word_s && ((sq_q[s].mask & l_mask_l) != 8'b0);
+                            if (has_overlap_s) begin
                                 if (sq_q[s].is_sc && !sq_q[s].completed) begin
-                                    // P0-3: Unresolved SC outcome: stall load until outcome is determined
-                                    cand_fwd_stall = 1'b1;
+                                    cand_fwd_stall_l = 1'b1;
                                 end else if (sq_q[s].is_sc && sq_q[s].completed && !sq_q[s].sc_success) begin
-                                    // P0-3: Failed SC: performs NO memory store, invisible to forwarding!
+                                    // Failed SC performs no memory store
                                 end else begin
-                                    overlap_mask[s] = 1'b1;
+                                    overlap_mask_l[s] = 1'b1;
                                 end
                             end
                         end
                     end
 
-                    cand_ready       = 1'b0;
-                    cand_fwd_success = 1'b0;
-                    cand_fwd_data    = 64'd0;
-                    cand_youngest_s  = 4'd0;
+                    if (cand_fwd_stall_l) begin
+                        lq_entry_fwd_stall[l] = 1'b1;
+                        lq_entry_ready[l]     = 1'b0;
+                    end else if (overlap_mask_l == 16'd0) begin
+                        lq_entry_ready[l]       = 1'b1;
+                        lq_entry_fwd_success[l] = 1'b0;
+                        lq_entry_fwd_data[l]    = 64'd0;
+                    end else begin
+                        for (int s = 0; s < SQ_DEPTH; s++) begin
+                            if (overlap_mask_l[s]) begin
+                                s_dist_val = rob_dist(lq_q[l].rob_idx, sq_q[s].rob_idx);
+                                if (!youngest_found_l || (s_dist_val < min_s_dist_l)) begin
+                                    min_s_dist_l     = s_dist_val;
+                                    youngest_s_l     = 4'(s);
+                                    youngest_found_l = 1'b1;
+                                end
+                            end
+                        end
+                        lq_entry_youngest_s[l] = youngest_s_l;
 
-                    if (!cand_fwd_stall) begin
-                        if (overlap_mask == 16'd0) begin
-                            // No overlap with any resolved older store: eligible to issue!
-                            cand_ready       = 1'b1;
-                            cand_fwd_success = 1'b0;
-                            cand_fwd_data    = 64'd0;
+                        if ((sq_q[youngest_s_l].mask & l_mask_l) == l_mask_l) begin
+                            if (sq_q[youngest_s_l].data_valid) begin
+                                lq_entry_ready[l]       = 1'b1;
+                                lq_entry_fwd_success[l] = 1'b1;
+                                lq_entry_fwd_data[l]    = format_load_result(
+                                    format_store_payload(sq_q[youngest_s_l].data, sq_q[youngest_s_l].va[2:0], sq_q[youngest_s_l].size),
+                                    lq_q[l].pa[2:0],
+                                    lq_q[l].size,
+                                    lq_q[l].sign_ext
+                                );
+                            end else begin
+                                lq_entry_fwd_stall[l] = 1'b1;
+                                lq_entry_ready[l]     = 1'b0;
+                            end
                         end else begin
-                            // Overlap exists with at least one resolved store
-                            youngest_found = 1'b0;
-                            min_s_dist     = 6'd63;
-
-                            for (int s = 0; s < SQ_DEPTH; s++) begin
-                                if (overlap_mask[s]) begin
-                                    s_dist = rob_dist(lq_q[l].rob_idx, sq_q[s].rob_idx);
-                                    if (!youngest_found || (s_dist < min_s_dist)) begin
-                                        min_s_dist      = s_dist;
-                                        cand_youngest_s = 4'(s);
-                                        youngest_found  = 1'b1;
-                                    end
-                                end
-                            end
-
-                            if ((sq_q[cand_youngest_s].mask & l_mask) == l_mask) begin
-                                if (sq_q[cand_youngest_s].data_valid) begin
-                                    // Full single-store coverage with valid data: Forward!
-                                    cand_ready       = 1'b1;
-                                    cand_fwd_success = 1'b1;
-                                    cand_fwd_data    = format_load_result(
-                                        format_store_payload(sq_q[cand_youngest_s].data, sq_q[cand_youngest_s].va[2:0], sq_q[cand_youngest_s].size),
-                                        lq_q[l].pa[2:0],
-                                        lq_q[l].size,
-                                        lq_q[l].sign_ext
-                                    );
-                                end
-                            end
-                        end
-                    end
-
-                    // Select oldest ready load (closest to ROB head) to maximize throughput and prevent starvation
-                    if (cand_ready) begin
-                        l_dist = rob_dist(lq_q[l].rob_idx, rob_head_i);
-                        if (!disambig_lq_valid || (l_dist < min_l_dist)) begin
-                            min_l_dist                 = l_dist;
-                            disambig_lq_idx            = 4'(l);
-                            disambig_lq_valid          = 1'b1;
-                            fwd_success                = cand_fwd_success;
-                            fwd_data                   = cand_fwd_data;
-                            selected_youngest_s        = cand_youngest_s;
-                            selected_is_speculative    = cand_is_speculative;
-                            selected_unresolved_stores = cand_unresolved_stores;
+                            lq_entry_fwd_stall[l] = 1'b1;
+                            lq_entry_ready[l]     = 1'b0;
                         end
                     end
                 end
             end
         end
-
-        youngest_s = selected_youngest_s;
     end
 
-    // L1D Speculative Load Issue Launch
-    wire l1d_issue_fire = disambig_lq_valid && !fwd_success && !fwd_stall && l1d_load_req_ready_i;
-    wire fwd_issue_fire = disambig_lq_valid && fwd_success;
+    // Dual Load Selection: Scan for Oldest Ready (cand_slot0) and Second Oldest Ready (cand_slot1)
+    logic       has_cand0, has_cand1;
+    logic [3:0] cand_slot0, cand_slot1;
+    logic [5:0] dist_cand0, dist_cand1;
 
-    assign event_load_fwd_exact_o   = disambig_lq_valid && fwd_success;
-    assign event_load_fwd_partial_o = disambig_lq_valid && fwd_stall;
+    always_comb begin
+        has_cand0   = 1'b0;
+        has_cand1   = 1'b0;
+        cand_slot0  = 4'd0;
+        cand_slot1  = 4'd0;
+        dist_cand0  = 6'd63;
+        dist_cand1  = 6'd63;
+        l_dist_head = 6'd0;
 
-    // Milestone 5 Event 0x24: EV_LOAD_SPECULATIVE
-    // Increments exactly once per issued load instance that speculated past unresolved older store
-    assign event_load_speculative_o = (l1d_issue_fire || fwd_issue_fire) && selected_is_speculative;
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            if (lq_entry_ready[l]) begin
+                l_dist_head = rob_dist(lq_q[l].rob_idx, rob_head_i);
+                if (!has_cand0 || (l_dist_head < dist_cand0)) begin
+                    has_cand1  = has_cand0;
+                    cand_slot1 = cand_slot0;
+                    dist_cand1 = dist_cand0;
+                    has_cand0  = 1'b1;
+                    cand_slot0 = 4'(l);
+                    dist_cand0 = l_dist_head;
+                end else if (!has_cand1 || (l_dist_head < dist_cand1)) begin
+                    has_cand1  = 1'b1;
+                    cand_slot1 = 4'(l);
+                    dist_cand1 = l_dist_head;
+                end
+            end
+        end
+    end
+
+    // Lane 0 & Lane 1 Issue Fires
+    wire fwd0_issue_fire = has_cand0 && lq_entry_fwd_success[cand_slot0];
+    wire l1d0_issue_fire = has_cand0 && !lq_entry_fwd_success[cand_slot0] && l1d_load0_req_ready_i;
+
+    wire fwd1_issue_fire = has_cand1 && lq_entry_fwd_success[cand_slot1];
+    wire l1d1_issue_fire = has_cand1 && !lq_entry_fwd_success[cand_slot1] && l1d_load1_req_ready_i;
+
+    assign event_load_fwd_exact_o   = fwd0_issue_fire || fwd1_issue_fire;
+    assign event_load_fwd_partial_o = (|lq_entry_fwd_stall);
+    assign event_load_speculative_o = (has_cand0 && (l1d0_issue_fire || fwd0_issue_fire) && lq_entry_is_speculative[cand_slot0]) ||
+                                      (has_cand1 && (l1d1_issue_fire || fwd1_issue_fire) && lq_entry_is_speculative[cand_slot1]);
 
     always_comb begin
         rob_head_is_mem_stall_o = 1'b0;
@@ -675,24 +688,25 @@ module fursoy_s1_lsu_queues
         end
     end
 
-    assign l1d_load_req_valid_o    = disambig_lq_valid && !fwd_success && !fwd_stall;
+    // Speculative Load Issue to L1D (Port 0 / Lane 0)
+    assign l1d_load0_req_valid_o    = has_cand0 && !lq_entry_fwd_success[cand_slot0];
+    assign l1d_load0_req_lq_idx_o   = cand_slot0;
+    assign l1d_load0_req_pa_o       = lq_q[cand_slot0].pa;
+    assign l1d_load0_req_size_o     = lq_q[cand_slot0].size;
+    assign l1d_load0_req_sign_ext_o = lq_q[cand_slot0].sign_ext;
+    assign l1d_load0_req_pnew_o     = lq_q[cand_slot0].pnew;
+    assign l1d_load0_req_rob_idx_o  = lq_q[cand_slot0].rob_idx;
+    assign l1d_load0_req_rob_epoch_o= lq_q[cand_slot0].rob_epoch;
 
-    always_ff @(posedge clk_i) begin
-        if (event_load_speculative_o) begin
-            $display("[SPEC_PULSE] event_load_speculative pulsed at time %0t! lq_idx=%0d unres=%h",
-                     $time, disambig_lq_idx, selected_unresolved_stores);
-        end
-        if (lsu_violation_valid_o) begin
-            $display("[VIOL_PULSE] lsu_violation_valid pulsed at time %0t rob_idx=%0d!", $time, lsu_violation_rob_idx_o);
-        end
-    end
-    assign l1d_load_req_lq_idx_o   = disambig_lq_idx;
-    assign l1d_load_req_pa_o       = lq_q[disambig_lq_idx].pa;
-    assign l1d_load_req_size_o     = lq_q[disambig_lq_idx].size;
-    assign l1d_load_req_sign_ext_o = lq_q[disambig_lq_idx].sign_ext;
-    assign l1d_load_req_pnew_o     = lq_q[disambig_lq_idx].pnew;
-    assign l1d_load_req_rob_idx_o  = lq_q[disambig_lq_idx].rob_idx;
-    assign l1d_load_req_rob_epoch_o= lq_q[disambig_lq_idx].rob_epoch;
+    // Speculative Load Issue to L1D (Port 1 / Lane 1)
+    assign l1d_load1_req_valid_o    = has_cand1 && !lq_entry_fwd_success[cand_slot1];
+    assign l1d_load1_req_lq_idx_o   = cand_slot1;
+    assign l1d_load1_req_pa_o       = lq_q[cand_slot1].pa;
+    assign l1d_load1_req_size_o     = lq_q[cand_slot1].size;
+    assign l1d_load1_req_sign_ext_o = lq_q[cand_slot1].sign_ext;
+    assign l1d_load1_req_pnew_o     = lq_q[cand_slot1].pnew;
+    assign l1d_load1_req_rob_idx_o  = lq_q[cand_slot1].rob_idx;
+    assign l1d_load1_req_rob_epoch_o= lq_q[cand_slot1].rob_epoch;
 
     // =========================================================================
     // 4. Committed Store In-Order Drain to L1D (Sections 5.2, 5.3)
@@ -915,9 +929,12 @@ module fursoy_s1_lsu_queues
                 lq_comp_exc[l]   = 1'b1;
                 lq_comp_cause[l] = lq_q[l].align_fault ? 5'd4 : (lq_q[l].page_fault ? 5'd15 : 5'd5);
                 lq_comp_data[l]  = 64'd0;
-            end else if (disambig_lq_valid && fwd_success && (4'(l) == disambig_lq_idx)) begin
+            end else if (fwd0_issue_fire && (4'(l) == cand_slot0)) begin
                 lq_ready_comp[l] = 1'b1;
-                lq_comp_data[l]  = fwd_data;
+                lq_comp_data[l]  = lq_entry_fwd_data[cand_slot0];
+            end else if (fwd1_issue_fire && (4'(l) == cand_slot1)) begin
+                lq_ready_comp[l] = 1'b1;
+                lq_comp_data[l]  = lq_entry_fwd_data[cand_slot1];
             end else if (lq_q[l].valid && lq_q[l].completed && !lq_q[l].wb_done && !lq_q[l].align_fault) begin
                 lq_ready_comp[l] = 1'b1;
                 lq_comp_data[l]  = lq_q[l].result_data;
@@ -1341,18 +1358,31 @@ module fursoy_s1_lsu_queues
             // -----------------------------------------------------------------
             // D. L1D Speculative Load Issue Response & MSHR Refill Capture
             // -----------------------------------------------------------------
-            if (l1d_issue_fire) begin
-                lq_q[disambig_lq_idx].issued_to_l1d      <= 1'b1;
-                lq_q[disambig_lq_idx].is_speculative     <= selected_is_speculative;
-                lq_q[disambig_lq_idx].sq_unresolved_mask <= selected_unresolved_stores;
+            if (l1d0_issue_fire) begin
+                lq_q[cand_slot0].issued_to_l1d      <= 1'b1;
+                lq_q[cand_slot0].is_speculative     <= lq_entry_is_speculative[cand_slot0];
+                lq_q[cand_slot0].sq_unresolved_mask <= lq_entry_unres_stores[cand_slot0];
+            end
+            if (l1d1_issue_fire) begin
+                lq_q[cand_slot1].issued_to_l1d      <= 1'b1;
+                lq_q[cand_slot1].is_speculative     <= lq_entry_is_speculative[cand_slot1];
+                lq_q[cand_slot1].sq_unresolved_mask <= lq_entry_unres_stores[cand_slot1];
             end
 
-            if (l1d_load_rsp_valid_i) begin
-                if (l1d_load_rsp_hit_i) begin
-                    lq_q[l1d_load_rsp_lq_idx_i].completed   <= 1'b1;
-                    lq_q[l1d_load_rsp_lq_idx_i].result_data <= l1d_load_rsp_data_i;
+            if (l1d_load0_rsp_valid_i) begin
+                if (l1d_load0_rsp_hit_i) begin
+                    lq_q[l1d_load0_rsp_lq_idx_i].completed   <= 1'b1;
+                    lq_q[l1d_load0_rsp_lq_idx_i].result_data <= l1d_load0_rsp_data_i;
                 end else begin
-                    lq_q[l1d_load_rsp_lq_idx_i].mshr_id <= l1d_load_rsp_mshr_id_i;
+                    lq_q[l1d_load0_rsp_lq_idx_i].mshr_id <= l1d_load0_rsp_mshr_id_i;
+                end
+            end
+            if (l1d_load1_rsp_valid_i) begin
+                if (l1d_load1_rsp_hit_i) begin
+                    lq_q[l1d_load1_rsp_lq_idx_i].completed   <= 1'b1;
+                    lq_q[l1d_load1_rsp_lq_idx_i].result_data <= l1d_load1_rsp_data_i;
+                end else begin
+                    lq_q[l1d_load1_rsp_lq_idx_i].mshr_id <= l1d_load1_rsp_mshr_id_i;
                 end
             end
 
@@ -1362,16 +1392,25 @@ module fursoy_s1_lsu_queues
             end
 
             // -----------------------------------------------------------------
-            // E. Store-to-Load Forwarding Hit (1 Cycle)
+            // E. Store-to-Load Forwarding Hit (Dual-Lane)
             // -----------------------------------------------------------------
-            if (disambig_lq_valid && fwd_success) begin
-                lq_q[disambig_lq_idx].completed          <= 1'b1;
-                lq_q[disambig_lq_idx].forwarded          <= 1'b1;
-                lq_q[disambig_lq_idx].forward_data       <= fwd_data;
-                lq_q[disambig_lq_idx].result_data        <= fwd_data;
-                lq_q[disambig_lq_idx].wb_done            <= 1'b1;
-                lq_q[disambig_lq_idx].is_speculative     <= selected_is_speculative;
-                lq_q[disambig_lq_idx].sq_unresolved_mask <= selected_unresolved_stores;
+            if (fwd0_issue_fire) begin
+                lq_q[cand_slot0].completed          <= 1'b1;
+                lq_q[cand_slot0].forwarded          <= 1'b1;
+                lq_q[cand_slot0].forward_data       <= lq_entry_fwd_data[cand_slot0];
+                lq_q[cand_slot0].result_data        <= lq_entry_fwd_data[cand_slot0];
+                lq_q[cand_slot0].wb_done            <= 1'b1;
+                lq_q[cand_slot0].is_speculative     <= lq_entry_is_speculative[cand_slot0];
+                lq_q[cand_slot0].sq_unresolved_mask <= lq_entry_unres_stores[cand_slot0];
+            end
+            if (fwd1_issue_fire) begin
+                lq_q[cand_slot1].completed          <= 1'b1;
+                lq_q[cand_slot1].forwarded          <= 1'b1;
+                lq_q[cand_slot1].forward_data       <= lq_entry_fwd_data[cand_slot1];
+                lq_q[cand_slot1].result_data        <= lq_entry_fwd_data[cand_slot1];
+                lq_q[cand_slot1].wb_done            <= 1'b1;
+                lq_q[cand_slot1].is_speculative     <= lq_entry_is_speculative[cand_slot1];
+                lq_q[cand_slot1].sq_unresolved_mask <= lq_entry_unres_stores[cand_slot1];
             end
 
             // -----------------------------------------------------------------
@@ -1836,16 +1875,26 @@ module fursoy_s1_lsu_queues
                 $fatal(1, "[LSU QUEUES ASSERTION FAILED] Uncommitted store attempted L1D drain!");
             end
             // Assertion 4: Loads must NEVER access memory while older store PA unresolved unless speculative
-            if (l1d_issue_fire && (lq_q[disambig_lq_idx].replay_safe || lq_q[disambig_lq_idx].is_mmio || lq_q[disambig_lq_idx].is_lr)) begin
+            if (l1d0_issue_fire && (lq_q[cand_slot0].replay_safe || lq_q[cand_slot0].is_mmio || lq_q[cand_slot0].is_lr)) begin
                 for (int s = 0; s < SQ_DEPTH; s++) begin
-                    if (lq_q[disambig_lq_idx].sq_older_mask[s] && !sq_q[s].pa_valid) begin
-                        $fatal(1, "[LSU QUEUES ASSERTION FAILED] Ineligible/replay-safe load issued to L1D with older store PA unresolved!");
+                    if (lq_q[cand_slot0].sq_older_mask[s] && !sq_q[s].pa_valid) begin
+                        $fatal(1, "[LSU QUEUES ASSERTION FAILED] Lane 0 ineligible/replay-safe load issued to L1D with older store PA unresolved!");
+                    end
+                end
+            end
+            if (l1d1_issue_fire && (lq_q[cand_slot1].replay_safe || lq_q[cand_slot1].is_mmio || lq_q[cand_slot1].is_lr)) begin
+                for (int s = 0; s < SQ_DEPTH; s++) begin
+                    if (lq_q[cand_slot1].sq_older_mask[s] && !sq_q[s].pa_valid) begin
+                        $fatal(1, "[LSU QUEUES ASSERTION FAILED] Lane 1 ineligible/replay-safe load issued to L1D with older store PA unresolved!");
                     end
                 end
             end
             // Assertion 5: Forwarding must NEVER occur on partial overlap
-            if (disambig_lq_valid && fwd_success && fwd_stall) begin
-                $fatal(1, "[LSU QUEUES ASSERTION FAILED] Forwarding occurred during partial overlap stall!");
+            if (fwd0_issue_fire && lq_entry_fwd_stall[cand_slot0]) begin
+                $fatal(1, "[LSU QUEUES ASSERTION FAILED] Lane 0 forwarding occurred during partial overlap stall!");
+            end
+            if (fwd1_issue_fire && lq_entry_fwd_stall[cand_slot1]) begin
+                $fatal(1, "[LSU QUEUES ASSERTION FAILED] Lane 1 forwarding occurred during partial overlap stall!");
             end
             // Assertion 10: Faulting stores must NEVER transition to committed
             for (int s = 0; s < SQ_DEPTH; s++) begin
@@ -1855,8 +1904,11 @@ module fursoy_s1_lsu_queues
             end
 
             // P0-3 Assertion: Failed SC must NEVER forward
-            if (disambig_lq_valid && fwd_success && sq_q[youngest_s].is_sc && (!sq_q[youngest_s].completed || !sq_q[youngest_s].sc_success)) begin
-                $fatal(1, "[LSU QUEUES ASSERTION FAILED] Failed or unresolved SC forwarded data to load!");
+            if (fwd0_issue_fire && sq_q[lq_entry_youngest_s[cand_slot0]].is_sc && (!sq_q[lq_entry_youngest_s[cand_slot0]].completed || !sq_q[lq_entry_youngest_s[cand_slot0]].sc_success)) begin
+                $fatal(1, "[LSU QUEUES ASSERTION FAILED] Failed or unresolved SC forwarded data to Lane 0 load!");
+            end
+            if (fwd1_issue_fire && sq_q[lq_entry_youngest_s[cand_slot1]].is_sc && (!sq_q[lq_entry_youngest_s[cand_slot1]].completed || !sq_q[lq_entry_youngest_s[cand_slot1]].sc_success)) begin
+                $fatal(1, "[LSU QUEUES ASSERTION FAILED] Failed or unresolved SC forwarded data to Lane 1 load!");
             end
 
             // P0-3 Assertion: Failed SC must NEVER drain to memory
@@ -1929,13 +1981,19 @@ module fursoy_s1_lsu_queues
             end
 
             // Replay-safe load cannot use unresolved-store speculative bypass
-            if (l1d_issue_fire && lq_q[disambig_lq_idx].replay_safe && (lq_q[disambig_lq_idx].sq_unresolved_mask != 16'd0)) begin
-                $fatal(1, "[B1_ASSERTION FAILED] Replay-safe load issued speculatively!");
+            if (l1d0_issue_fire && lq_q[cand_slot0].replay_safe && (lq_q[cand_slot0].sq_unresolved_mask != 16'd0)) begin
+                $fatal(1, "[B1_ASSERTION FAILED] Lane 0 replay-safe load issued speculatively!");
+            end
+            if (l1d1_issue_fire && lq_q[cand_slot1].replay_safe && (lq_q[cand_slot1].sq_unresolved_mask != 16'd0)) begin
+                $fatal(1, "[B1_ASSERTION FAILED] Lane 1 replay-safe load issued speculatively!");
             end
 
             // Non-speculative/MMIO/LR loads never set speculative-load marker
-            if ((l1d_issue_fire || fwd_issue_fire) && (lq_q[disambig_lq_idx].is_mmio || lq_q[disambig_lq_idx].is_lr) && selected_is_speculative) begin
-                $fatal(1, "[B1_ASSERTION FAILED] MMIO or LR load marked speculative!");
+            if ((l1d0_issue_fire || fwd0_issue_fire) && (lq_q[cand_slot0].is_mmio || lq_q[cand_slot0].is_lr) && lq_entry_is_speculative[cand_slot0]) begin
+                $fatal(1, "[B1_ASSERTION FAILED] Lane 0 MMIO or LR load marked speculative!");
+            end
+            if ((l1d1_issue_fire || fwd1_issue_fire) && (lq_q[cand_slot1].is_mmio || lq_q[cand_slot1].is_lr) && lq_entry_is_speculative[cand_slot1]) begin
+                $fatal(1, "[B1_ASSERTION FAILED] Lane 1 MMIO or LR load marked speculative!");
             end
         end
     end

@@ -201,6 +201,7 @@ module fursoy_s1_lsu
     output logic [1:0]        memiq_ready_o,
     output logic [1:0]        lq_ready_o,
     output logic [1:0]        sq_ready_o,
+    output logic [4:0]        lq_count_o,
     output logic [MEM_IQ_DEPTH-1:0] memiq_diag_ready_o
 );
 
@@ -514,21 +515,37 @@ module fursoy_s1_lsu
     // =========================================================================
     // 4. Non-Blocking L1 Data Cache (L1D) Subsystem
     // =========================================================================
-    logic        l1d_load_req_valid;
-    lq_idx_t     l1d_load_req_lq_idx;
-    logic [55:0] l1d_load_req_pa;
-    mem_size_t   l1d_load_req_size;
-    logic        l1d_load_req_sign_ext;
-    preg_t       l1d_load_req_pnew;
-    rob_idx_t    l1d_load_req_rob_idx;
-    rob_epoch_t  l1d_load_req_rob_epoch;
-    logic        l1d_load_req_ready;
+    logic        l1d_load0_req_valid;
+    lq_idx_t     l1d_load0_req_lq_idx;
+    logic [55:0] l1d_load0_req_pa;
+    mem_size_t   l1d_load0_req_size;
+    logic        l1d_load0_req_sign_ext;
+    preg_t       l1d_load0_req_pnew;
+    rob_idx_t    l1d_load0_req_rob_idx;
+    rob_epoch_t  l1d_load0_req_rob_epoch;
+    logic        l1d_load0_req_ready;
 
-    logic        l1d_load_rsp_valid;
-    lq_idx_t     l1d_load_rsp_lq_idx;
-    logic        l1d_load_rsp_hit;
-    logic [63:0] l1d_load_rsp_data;
-    mshr_idx_t   l1d_load_rsp_mshr_id;
+    logic        l1d_load0_rsp_valid;
+    lq_idx_t     l1d_load0_rsp_lq_idx;
+    logic        l1d_load0_rsp_hit;
+    logic [63:0] l1d_load0_rsp_data;
+    mshr_idx_t   l1d_load0_rsp_mshr_id;
+
+    logic        l1d_load1_req_valid;
+    lq_idx_t     l1d_load1_req_lq_idx;
+    logic [55:0] l1d_load1_req_pa;
+    mem_size_t   l1d_load1_req_size;
+    logic        l1d_load1_req_sign_ext;
+    preg_t       l1d_load1_req_pnew;
+    rob_idx_t    l1d_load1_req_rob_idx;
+    rob_epoch_t  l1d_load1_req_rob_epoch;
+    logic        l1d_load1_req_ready;
+
+    logic        l1d_load1_rsp_valid;
+    lq_idx_t     l1d_load1_rsp_lq_idx;
+    logic        l1d_load1_rsp_hit;
+    logic [63:0] l1d_load1_rsp_data;
+    mshr_idx_t   l1d_load1_rsp_mshr_id;
 
     logic        refill_comp_valid;
     lq_idx_t     refill_comp_lq_idx;
@@ -554,38 +571,37 @@ module fursoy_s1_lsu
         .recover_rob_idx_i          (recover_rob_idx_i),
         .rob_head_i                 (rob_head_i),
 
-        .load0_req_valid_i          (l1d_load_req_valid),
-        .load0_req_lq_idx_i         (l1d_load_req_lq_idx),
-        .load0_req_pa_i             (l1d_load_req_pa),
-        .load0_req_size_i           (l1d_load_req_size),
-        .load0_req_sign_ext_i       (l1d_load_req_sign_ext),
-        .load0_req_pnew_i           (l1d_load_req_pnew),
-        .load0_req_rob_idx_i        (l1d_load_req_rob_idx),
-        .load0_req_rob_epoch_i      (l1d_load_req_rob_epoch),
-        .load0_req_ready_o          (l1d_load_req_ready),
+        .load0_req_valid_i          (l1d_load0_req_valid),
+        .load0_req_lq_idx_i         (l1d_load0_req_lq_idx),
+        .load0_req_pa_i             (l1d_load0_req_pa),
+        .load0_req_size_i           (l1d_load0_req_size),
+        .load0_req_sign_ext_i       (l1d_load0_req_sign_ext),
+        .load0_req_pnew_i           (l1d_load0_req_pnew),
+        .load0_req_rob_idx_i        (l1d_load0_req_rob_idx),
+        .load0_req_rob_epoch_i      (l1d_load0_req_rob_epoch),
+        .load0_req_ready_o          (l1d_load0_req_ready),
 
-        .load0_rsp_valid_o          (l1d_load_rsp_valid),
-        .load0_rsp_lq_idx_o         (l1d_load_rsp_lq_idx),
-        .load0_rsp_hit_o            (l1d_load_rsp_hit),
-        .load0_rsp_data_o           (l1d_load_rsp_data),
-        .load0_rsp_mshr_id_o        (l1d_load_rsp_mshr_id),
+        .load0_rsp_valid_o          (l1d_load0_rsp_valid),
+        .load0_rsp_lq_idx_o         (l1d_load0_rsp_lq_idx),
+        .load0_rsp_hit_o            (l1d_load0_rsp_hit),
+        .load0_rsp_data_o           (l1d_load0_rsp_data),
+        .load0_rsp_mshr_id_o        (l1d_load0_rsp_mshr_id),
 
-        .load1_req_valid_i          (1'b0),
-        .load1_req_lq_idx_i         ('0),
-        .load1_req_pa_i             ('0),
-        .load1_req_size_i           (MEM_SIZE_DOUBLE),
-        .load1_req_sign_ext_i       (1'b0),
-        .load1_req_pnew_i           ('0),
-        .load1_req_rob_idx_i        ('0),
-        .load1_req_rob_epoch_i      ('0),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .load1_req_ready_o          (),
-        .load1_rsp_valid_o          (),
-        .load1_rsp_lq_idx_o         (),
-        .load1_rsp_hit_o            (),
-        .load1_rsp_data_o           (),
-        .load1_rsp_mshr_id_o        (),
-        /* verilator lint_on PINCONNECTEMPTY */
+        .load1_req_valid_i          (l1d_load1_req_valid),
+        .load1_req_lq_idx_i         (l1d_load1_req_lq_idx),
+        .load1_req_pa_i             (l1d_load1_req_pa),
+        .load1_req_size_i           (l1d_load1_req_size),
+        .load1_req_sign_ext_i       (l1d_load1_req_sign_ext),
+        .load1_req_pnew_i           (l1d_load1_req_pnew),
+        .load1_req_rob_idx_i        (l1d_load1_req_rob_idx),
+        .load1_req_rob_epoch_i      (l1d_load1_req_rob_epoch),
+        .load1_req_ready_o          (l1d_load1_req_ready),
+
+        .load1_rsp_valid_o          (l1d_load1_rsp_valid),
+        .load1_rsp_lq_idx_o         (l1d_load1_rsp_lq_idx),
+        .load1_rsp_hit_o            (l1d_load1_rsp_hit),
+        .load1_rsp_data_o           (l1d_load1_rsp_data),
+        .load1_rsp_mshr_id_o        (l1d_load1_rsp_mshr_id),
 
         .store_drain_valid_i        (l1d_store_drain_valid),
         .store_drain_sq_idx_i       (l1d_store_drain_sq_idx),
@@ -659,6 +675,7 @@ module fursoy_s1_lsu
 
         .lq_ready_o                 (lq_ready),
         .sq_ready_o                 (sq_ready),
+        .lq_count_o                 (lq_count_o),
         .alloc_lq_slot0_o           (alloc_lq0),
         .alloc_lq_slot1_o           (alloc_lq1),
         .alloc_sq_slot0_o           (alloc_sq0),
@@ -764,21 +781,37 @@ module fursoy_s1_lsu
         .wb3_pnew_i                 (wb3_pnew_i),
         .wb3_data_i                 (wb3_data_i),
 
-        .l1d_load_req_valid_o       (l1d_load_req_valid),
-        .l1d_load_req_lq_idx_o      (l1d_load_req_lq_idx),
-        .l1d_load_req_pa_o          (l1d_load_req_pa),
-        .l1d_load_req_size_o        (l1d_load_req_size),
-        .l1d_load_req_sign_ext_o    (l1d_load_req_sign_ext),
-        .l1d_load_req_pnew_o        (l1d_load_req_pnew),
-        .l1d_load_req_rob_idx_o     (l1d_load_req_rob_idx),
-        .l1d_load_req_rob_epoch_o   (l1d_load_req_rob_epoch),
-        .l1d_load_req_ready_i       (l1d_load_req_ready),
+        .l1d_load0_req_valid_o      (l1d_load0_req_valid),
+        .l1d_load0_req_lq_idx_o     (l1d_load0_req_lq_idx),
+        .l1d_load0_req_pa_o         (l1d_load0_req_pa),
+        .l1d_load0_req_size_o       (l1d_load0_req_size),
+        .l1d_load0_req_sign_ext_o   (l1d_load0_req_sign_ext),
+        .l1d_load0_req_pnew_o       (l1d_load0_req_pnew),
+        .l1d_load0_req_rob_idx_o    (l1d_load0_req_rob_idx),
+        .l1d_load0_req_rob_epoch_o  (l1d_load0_req_rob_epoch),
+        .l1d_load0_req_ready_i      (l1d_load0_req_ready),
 
-        .l1d_load_rsp_valid_i       (l1d_load_rsp_valid),
-        .l1d_load_rsp_lq_idx_i      (l1d_load_rsp_lq_idx),
-        .l1d_load_rsp_hit_i         (l1d_load_rsp_hit),
-        .l1d_load_rsp_data_i        (l1d_load_rsp_data),
-        .l1d_load_rsp_mshr_id_i     (l1d_load_rsp_mshr_id),
+        .l1d_load0_rsp_valid_i      (l1d_load0_rsp_valid),
+        .l1d_load0_rsp_lq_idx_i     (l1d_load0_rsp_lq_idx),
+        .l1d_load0_rsp_hit_i        (l1d_load0_rsp_hit),
+        .l1d_load0_rsp_data_i       (l1d_load0_rsp_data),
+        .l1d_load0_rsp_mshr_id_i    (l1d_load0_rsp_mshr_id),
+
+        .l1d_load1_req_valid_o      (l1d_load1_req_valid),
+        .l1d_load1_req_lq_idx_o     (l1d_load1_req_lq_idx),
+        .l1d_load1_req_pa_o         (l1d_load1_req_pa),
+        .l1d_load1_req_size_o       (l1d_load1_req_size),
+        .l1d_load1_req_sign_ext_o   (l1d_load1_req_sign_ext),
+        .l1d_load1_req_pnew_o       (l1d_load1_req_pnew),
+        .l1d_load1_req_rob_idx_o    (l1d_load1_req_rob_idx),
+        .l1d_load1_req_rob_epoch_o  (l1d_load1_req_rob_epoch),
+        .l1d_load1_req_ready_i      (l1d_load1_req_ready),
+
+        .l1d_load1_rsp_valid_i      (l1d_load1_rsp_valid),
+        .l1d_load1_rsp_lq_idx_i     (l1d_load1_rsp_lq_idx),
+        .l1d_load1_rsp_hit_i        (l1d_load1_rsp_hit),
+        .l1d_load1_rsp_data_i       (l1d_load1_rsp_data),
+        .l1d_load1_rsp_mshr_id_i    (l1d_load1_rsp_mshr_id),
 
         .mshr_refill_valid_i        (refill_comp_valid),
         .mshr_refill_lq_idx_i       (refill_comp_lq_idx),
