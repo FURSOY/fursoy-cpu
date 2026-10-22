@@ -14,6 +14,7 @@
 // - Validated writeback gating & lifetime-gated branch recovery.
 // Reference: docs/architecture/slice1-m2-backend-v1.md
 `include "fursoy_s1_lsu.sv"
+`include "fursoy_s1_fprf.sv"
 
 module fursoy_s1_backend
     import fursoy_s1_pkg::*;
@@ -244,7 +245,32 @@ module fursoy_s1_backend
     output logic              event_store_drain_concurrent_o,
     output logic              event_snoop_query_o,
     output logic              event_snoop_hit_o,
-    output logic              event_snoop_replay_o
+    output logic              event_snoop_replay_o,
+
+    // Milestone 8 Phase A Floating-Point Register File Interface
+    input  fpreg_t            r0_fp_paddr_i,
+    output logic [63:0]       r0_fp_data_o,
+    input  fpreg_t            r1_fp_paddr_i,
+    output logic [63:0]       r1_fp_data_o,
+    input  fpreg_t            r2_fp_paddr_i,
+    output logic [63:0]       r2_fp_data_o,
+    input  fpreg_t            r3_fp_paddr_i,
+    output logic [63:0]       r3_fp_data_o,
+
+    input  logic              w0_fp_valid_i,
+    input  fpreg_t            w0_fp_paddr_i,
+    input  logic [63:0]       w0_fp_data_i,
+
+    input  logic              w1_fp_valid_i,
+    input  fpreg_t            w1_fp_paddr_i,
+    input  logic [63:0]       w1_fp_data_i,
+
+    input  logic              w2_fp_valid_i,
+    input  fpreg_t            w2_fp_paddr_i,
+    input  logic [63:0]       w2_fp_data_i,
+
+    input  fpreg_t            probe_fp_paddr_i,
+    output logic [63:0]       probe_fp_pdata_o
 );
 
     // -------------------------------------------------------------------------
@@ -531,6 +557,38 @@ module fursoy_s1_backend
 
         .probe_paddr_i  (probe_paddr_i),
         .probe_pdata_o  (probe_pdata_o)
+    );
+
+    // -------------------------------------------------------------------------
+    // 3b. 64-bit Floating-Point Physical Register File (FPRF) — Milestone 8
+    // -------------------------------------------------------------------------
+    fursoy_s1_fprf u_fprf (
+        .clk_i          (clk_i),
+        .rst_i          (rst_i),
+
+        .raddr0_fp_i    (r0_fp_paddr_i),
+        .rdata0_fp_o    (r0_fp_data_o),
+        .raddr1_fp_i    (r1_fp_paddr_i),
+        .rdata1_fp_o    (r1_fp_data_o),
+        .raddr2_fp_i    (r2_fp_paddr_i),
+        .rdata2_fp_o    (r2_fp_data_o),
+        .raddr3_fp_i    (r3_fp_paddr_i),
+        .rdata3_fp_o    (r3_fp_data_o),
+
+        .w0_valid_i     (w0_fp_valid_i),
+        .w0_paddr_i     (w0_fp_paddr_i),
+        .w0_data_i      (w0_fp_data_i),
+
+        .w1_valid_i     (w1_fp_valid_i),
+        .w1_paddr_i     (w1_fp_paddr_i),
+        .w1_data_i      (w1_fp_data_i),
+
+        .w2_valid_i     (w2_fp_valid_i),
+        .w2_paddr_i     (w2_fp_paddr_i),
+        .w2_data_i      (w2_fp_data_i),
+
+        .probe_paddr_i  (probe_fp_paddr_i),
+        .probe_pdata_o  (probe_fp_pdata_o)
     );
 
     // -------------------------------------------------------------------------

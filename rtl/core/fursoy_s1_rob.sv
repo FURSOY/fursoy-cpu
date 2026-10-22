@@ -37,6 +37,12 @@ module fursoy_s1_rob
     input  chkpt_idx_t             alloc_chkpt_id_i   [1:0],
     input  logic [63:0]            alloc_pc_i         [1:0],
 
+    // Milestone 8 Phase A Floating-Point Allocation Fields
+    input  logic [1:0]             alloc_is_fp_i,
+    input  logic [1:0]             alloc_fp_dest_valid_i,
+    input  fpreg_t                 alloc_prd_fp_i     [1:0],
+    input  fpreg_t                 alloc_pold_fp_i    [1:0],
+
     output rob_idx_t               alloc_rob_idx_o    [1:0],
     output rob_epoch_t             alloc_rob_epoch_o  [1:0],
     output logic [1:0]             alloc_ready_o, // [0]: >=1 slot, [1]: >=2 slots
@@ -50,6 +56,7 @@ module fursoy_s1_rob
     input  logic [3:0]             comp_branch_mispred_i,
     input  logic [3:0]             comp_exception_i,
     input  logic [4:0]             comp_cause_i       [3:0],
+    input  logic [4:0]             comp_fflags_i      [3:0],
     output logic [3:0]             comp_ack_o,
 
     // -------------------------------------------------------------------------
@@ -77,6 +84,13 @@ module fursoy_s1_rob
     output rob_idx_t               retire_rob_idx_o   [1:0],
     output rob_epoch_t             retire_epoch_o     [1:0],
 
+    // Milestone 8 Phase A Floating-Point Retirement Fields
+    output logic [1:0]             retire_is_fp_o,
+    output logic [1:0]             retire_fp_dest_valid_o,
+    output fpreg_t                 retire_prd_fp_o    [1:0],
+    output fpreg_t                 retire_pold_fp_o   [1:0],
+    output logic [4:0]             retire_fflags_o    [1:0],
+
     // Precise Exception / Flush Trigger at ROB Head
     output logic                   retire_exception_o,
     output logic [4:0]             retire_exc_cause_o,
@@ -90,6 +104,8 @@ module fursoy_s1_rob
 
     output logic [1:0]             recover_pnew_valid_o,
     output preg_t                  recover_pnew_o     [1:0],
+    output logic [1:0]             recover_pnew_fp_valid_o,
+    output fpreg_t                 recover_pnew_fp_o  [1:0],
     output logic                   recovering_o,
 
     // -------------------------------------------------------------------------
@@ -157,12 +173,13 @@ module fursoy_s1_rob
     assign alloc_rob_epoch_o[0] = slot_epoch_q[tail_q];
     assign alloc_rob_epoch_o[1] = slot_epoch_q[inc48(tail_q, 3'd1)];
 
-    // Live completion qualification against slot validity and epoch
+    // Live completion qualification against slot validity, completion status, and epoch
     logic [3:0] comp_match;
     always_comb begin
         for (int unsigned w = 0; w < 4; w++) begin
             comp_match[w] = comp_valid_i[w] &&
                             entries_q[comp_rob_idx_i[w]].valid &&
+                            !entries_q[comp_rob_idx_i[w]].completed &&
                             (entries_q[comp_rob_idx_i[w]].epoch == comp_epoch_i[w]);
         end
     end
@@ -198,20 +215,24 @@ module fursoy_s1_rob
     logic entry0_completed_eff;
     logic entry0_exception_eff;
     logic [4:0] entry0_exc_cause_eff;
+    logic [4:0] entry0_fflags_eff;
 
     logic entry1_completed_eff;
     logic entry1_exception_eff;
     /* verilator lint_off UNUSEDSIGNAL */
     logic [4:0] entry1_exc_cause_eff;
     /* verilator lint_on UNUSEDSIGNAL */
+    logic [4:0] entry1_fflags_eff;
 
     always_comb begin
         entry0_completed_eff = entry0.completed;
         entry0_exception_eff = entry0.exception;
         entry0_exc_cause_eff = entry0.exc_cause;
+        entry0_fflags_eff    = entry0.fflags;
         for (int unsigned w = 0; w < 4; w++) begin
             if (comp_match[w] && (comp_rob_idx_i[w] == head_q)) begin
                 entry0_completed_eff = 1'b1;
+                entry0_fflags_eff    = comp_fflags_i[w];
                 if (comp_exception_i[w]) begin
                     entry0_exception_comb_check: begin
                         entry0_exception_eff = 1'b1;
@@ -224,9 +245,11 @@ module fursoy_s1_rob
         entry1_completed_eff = entry1.completed;
         entry1_exception_eff = entry1.exception;
         entry1_exc_cause_eff = entry1.exc_cause;
+        entry1_fflags_eff    = entry1.fflags;
         for (int unsigned w = 0; w < 4; w++) begin
             if (comp_match[w] && (comp_rob_idx_i[w] == head_next)) begin
                 entry1_completed_eff = 1'b1;
+                entry1_fflags_eff    = comp_fflags_i[w];
                 if (comp_exception_i[w]) begin
                     entry1_exception_comb_check: begin
                         entry1_exception_eff = 1'b1;
@@ -292,6 +315,12 @@ module fursoy_s1_rob
     assign retire_rob_idx_o[0]   = head_q;
     assign retire_epoch_o[0]     = entry0.epoch;
 
+    assign retire_is_fp_o[0]         = entry0.is_fp;
+    assign retire_fp_dest_valid_o[0] = entry0.fp_dest_valid;
+    assign retire_prd_fp_o[0]        = entry0.prd_fp;
+    assign retire_pold_fp_o[0]       = entry0.pold_fp;
+    assign retire_fflags_o[0]        = entry0_fflags_eff;
+
     assign retire_valid_o[1]     = retire_grant[1];
     assign retire_rd_o[1]        = entry1.rd;
     assign retire_pnew_o[1]      = entry1.pnew;
@@ -301,6 +330,12 @@ module fursoy_s1_rob
     assign retire_pc_o[1]        = entry1.pc;
     assign retire_rob_idx_o[1]   = head_next;
     assign retire_epoch_o[1]     = entry1.epoch;
+
+    assign retire_is_fp_o[1]         = entry1.is_fp;
+    assign retire_fp_dest_valid_o[1] = entry1.fp_dest_valid;
+    assign retire_prd_fp_o[1]        = entry1.prd_fp;
+    assign retire_pold_fp_o[1]       = entry1.pold_fp;
+    assign retire_fflags_o[1]        = entry1_fflags_eff;
 
     logic [1:0] num_retire;
     assign num_retire = (retire_grant == 2'b11) ? 2'd2 :
@@ -325,6 +360,12 @@ module fursoy_s1_rob
     logic       rec_valid0;
     logic       rec_valid1;
 
+    // Milestone 8 Phase A FP recovery signals
+    fpreg_t     rec_pnew_fp0;
+    fpreg_t     rec_pnew_fp1;
+    logic       rec_valid_fp0;
+    logic       rec_valid_fp1;
+
     always_comb begin
         rec_squash_cnt = 2'd0;
         rec_pnew0      = '0;
@@ -332,29 +373,47 @@ module fursoy_s1_rob
         rec_valid0     = 1'b0;
         rec_valid1     = 1'b0;
 
+        rec_pnew_fp0   = '0;
+        rec_pnew_fp1   = '0;
+        rec_valid_fp0  = 1'b0;
+        rec_valid_fp1  = 1'b0;
+
         if (recovering_q && (tail_q != target_tail_q) && (count_q > {5'b0, num_retire})) begin
             // First candidate entry
             rec_squash_cnt = 2'd1;
-            if (entries_q[rec_cand0].valid && (entries_q[rec_cand0].rd != 5'd0)) begin
+            if (entries_q[rec_cand0].valid && (!entries_q[rec_cand0].fp_dest_valid) && (entries_q[rec_cand0].rd != 5'd0)) begin
                 rec_valid0 = 1'b1;
                 rec_pnew0  = entries_q[rec_cand0].pnew;
+            end
+            if (entries_q[rec_cand0].valid && entries_q[rec_cand0].fp_dest_valid) begin
+                rec_valid_fp0 = 1'b1;
+                rec_pnew_fp0  = entries_q[rec_cand0].prd_fp;
             end
 
             // Second candidate entry (if rec_cand0 was not already the target and capacity allows)
             if ((rec_cand0 != target_tail_q) && (count_q > ({5'b0, num_retire} + 7'd1))) begin
                 rec_squash_cnt = 2'd2;
-                if (entries_q[rec_cand1].valid && (entries_q[rec_cand1].rd != 5'd0)) begin
+                if (entries_q[rec_cand1].valid && (!entries_q[rec_cand1].fp_dest_valid) && (entries_q[rec_cand1].rd != 5'd0)) begin
                     rec_valid1 = 1'b1;
                     rec_pnew1  = entries_q[rec_cand1].pnew;
+                end
+                if (entries_q[rec_cand1].valid && entries_q[rec_cand1].fp_dest_valid) begin
+                    rec_valid_fp1 = 1'b1;
+                    rec_pnew_fp1  = entries_q[rec_cand1].prd_fp;
                 end
             end
         end
     end
 
-    assign recover_pnew_valid_o[0] = rec_valid0;
-    assign recover_pnew_valid_o[1] = rec_valid1;
-    assign recover_pnew_o[0]       = rec_pnew0;
-    assign recover_pnew_o[1]       = rec_pnew1;
+    assign recover_pnew_valid_o[0]    = rec_valid0;
+    assign recover_pnew_valid_o[1]    = rec_valid1;
+    assign recover_pnew_o[0]          = rec_pnew0;
+    assign recover_pnew_o[1]          = rec_pnew1;
+
+    assign recover_pnew_fp_valid_o[0] = rec_valid_fp0;
+    assign recover_pnew_fp_valid_o[1] = rec_valid_fp1;
+    assign recover_pnew_fp_o[0]       = rec_pnew_fp0;
+    assign recover_pnew_fp_o[1]       = rec_pnew_fp1;
 
     rob_idx_t target_tail_comb;
     rob_idx_t next_tail_comb;
@@ -400,6 +459,7 @@ module fursoy_s1_rob
                 if (comp_match[w]) begin
                     entries_q[comp_rob_idx_i[w]].completed      <= 1'b1;
                     entries_q[comp_rob_idx_i[w]].branch_mispred <= comp_branch_mispred_i[w];
+                    entries_q[comp_rob_idx_i[w]].fflags         <= comp_fflags_i[w];
                     if (comp_exception_i[w]) begin
                         entries_q[comp_rob_idx_i[w]].exception <= 1'b1;
                         entries_q[comp_rob_idx_i[w]].exc_cause <= comp_cause_i[w];
@@ -476,6 +536,12 @@ module fursoy_s1_rob
                     entries_q[tail_q].branch_mispred <= 1'b0;
                     entries_q[tail_q].mem_violation  <= 1'b0;
                     entries_q[tail_q].pc             <= alloc_pc_i[0];
+                    // Milestone 8 FP fields
+                    entries_q[tail_q].is_fp          <= alloc_is_fp_i[0];
+                    entries_q[tail_q].fp_dest_valid  <= alloc_fp_dest_valid_i[0];
+                    entries_q[tail_q].prd_fp         <= alloc_prd_fp_i[0];
+                    entries_q[tail_q].pold_fp        <= alloc_pold_fp_i[0];
+                    entries_q[tail_q].fflags         <= 5'd0;
                 end
 
                 if (alloc_valid_i[1]) begin
@@ -493,6 +559,12 @@ module fursoy_s1_rob
                     entries_q[tail1_comb].branch_mispred <= 1'b0;
                     entries_q[tail1_comb].mem_violation  <= 1'b0;
                     entries_q[tail1_comb].pc             <= alloc_pc_i[1];
+                    // Milestone 8 FP fields
+                    entries_q[tail1_comb].is_fp          <= alloc_is_fp_i[1];
+                    entries_q[tail1_comb].fp_dest_valid  <= alloc_fp_dest_valid_i[1];
+                    entries_q[tail1_comb].prd_fp         <= alloc_prd_fp_i[1];
+                    entries_q[tail1_comb].pold_fp        <= alloc_pold_fp_i[1];
+                    entries_q[tail1_comb].fflags         <= 5'd0;
                 end
 
                 tail_q  <= inc48(tail_q, {1'b0, num_alloc});
@@ -514,12 +586,26 @@ module fursoy_s1_rob
 
             // 2. Uniqueness: No two simultaneously valid destination-producing ROB entries own the same Pnew
             for (int unsigned i = 0; i < CAPACITY; i++) begin
-                if (entries_q[i].valid && (entries_q[i].rd != 5'd0)) begin
+                if (entries_q[i].valid && (!entries_q[i].fp_dest_valid) && (entries_q[i].rd != 5'd0)) begin
                     for (int unsigned j = i + 1; j < CAPACITY; j++) begin
-                        if (entries_q[j].valid && (entries_q[j].rd != 5'd0)) begin
+                        if (entries_q[j].valid && (!entries_q[j].fp_dest_valid) && (entries_q[j].rd != 5'd0)) begin
                             if (entries_q[i].pnew == entries_q[j].pnew) begin
                                 $fatal(1, "[ROB ASSERTION FAILED] Entries %0d and %0d share same Pnew p%0d!",
                                        i, j, entries_q[i].pnew);
+                            end
+                        end
+                    end
+                end
+            end
+
+            // 2b. FP Uniqueness: No two simultaneously valid FP destination-producing ROB entries own the same Prd_fp
+            for (int unsigned i = 0; i < CAPACITY; i++) begin
+                if (entries_q[i].valid && entries_q[i].fp_dest_valid) begin
+                    for (int unsigned j = i + 1; j < CAPACITY; j++) begin
+                        if (entries_q[j].valid && entries_q[j].fp_dest_valid) begin
+                            if (entries_q[i].prd_fp == entries_q[j].prd_fp) begin
+                                $fatal(1, "[ROB ASSERTION FAILED] FP Entries %0d and %0d share same Prd_fp fp%0d!",
+                                       i, j, entries_q[i].prd_fp);
                             end
                         end
                     end

@@ -68,12 +68,21 @@ module fursoy_s1_csr
     input  logic [4:0]        retire_exc_cause_i,
     input  logic [63:0]       retire_exc_pc_i,
 
+    // Milestone 8 Phase A Floating-Point Retirement Interface
+    input  logic [1:0]        retire_fp_dest_valid_i,
+    input  logic [4:0]        retire_fflags_i      [1:0],
+
     // -------------------------------------------------------------------------
     // Architectural State Outputs
     // -------------------------------------------------------------------------
     output logic [1:0]        priv_mode_o,
     output logic [63:0]       mstatus_o,
     output logic [63:0]       satp_o,
+
+    // Milestone 8 Floating-Point Context Outputs
+    output logic [1:0]        mstatus_fs_o,
+    output logic [2:0]        frm_o,
+    output logic [4:0]        fflags_o,
 
     // Redirect & Flush Outputs
     output logic              sys_redirect_valid_o,
@@ -137,14 +146,26 @@ module fursoy_s1_csr
     // Free-running cycle counter
     logic [63:0] cycle_q;
 
+    // Milestone 8 Floating-Point CSR Registers
+    logic [2:0] frm_q;
+    logic [4:0] fflags_q;
+
     // Effective privilege mode and mstatus incorporating external injection
     wire [1:0]  eff_priv    = (priv_mode_i != 2'b11) ? priv_mode_i : priv_mode_q;
-    wire [63:0] eff_mstatus = (mstatus_i != 64'd0) ? mstatus_i : mstatus_q;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [63:0] raw_mstatus = (mstatus_i != 64'd0) ? mstatus_i : mstatus_q;
+    /* verilator lint_on UNUSEDSIGNAL */
+    wire [1:0]  eff_fs      = raw_mstatus[14:13];
+    wire        eff_sd      = (eff_fs == 2'b11);
+    wire [63:0] eff_mstatus = {eff_sd, raw_mstatus[62:15], eff_fs, raw_mstatus[12:0]};
 
     // Connect architectural outputs
-    assign priv_mode_o = eff_priv;
-    assign mstatus_o   = eff_mstatus;
-    assign satp_o      = satp_q;
+    assign priv_mode_o  = eff_priv;
+    assign mstatus_o    = eff_mstatus;
+    assign satp_o       = satp_q;
+    assign mstatus_fs_o = eff_fs;
+    assign frm_o        = frm_q;
+    assign fflags_o     = fflags_q;
 
     assign csr_mepc_o   = mepc_q;
     assign csr_mcause_o = mcause_q;
@@ -155,8 +176,8 @@ module fursoy_s1_csr
     assign csr_mtvec_o  = mtvec_q;
     assign csr_stvec_o  = stvec_q;
 
-    // Aliased supervisor CSR values
-    wire [63:0] sstatus_val = mstatus_q & 64'h0000_0003_000c_0122;
+    // Aliased supervisor CSR values (incorporating FS [14:13] and SD [63])
+    wire [63:0] sstatus_val = {eff_sd, 29'd0, 2'b10, 12'd0, mstatus_q[19:18], 3'd0, eff_fs, 4'd0, mstatus_q[8], 2'd0, mstatus_q[5], 3'd0, mstatus_q[1], 1'b0};
     wire [63:0] sie_val     = mie_q & mideleg_q & 64'h222;
     wire [63:0] sip_val     = mip_q & mideleg_q & 64'h222;
 
@@ -175,6 +196,11 @@ module fursoy_s1_csr
         old_csr_val     = 64'd0;
 
         case (p0_sys_csr_addr_i)
+            // Milestone 8 Floating-Point CSRs (fcsr, frm, fflags)
+            12'h001: old_csr_val = {59'd0, fflags_q};
+            12'h002: old_csr_val = {61'd0, frm_q};
+            12'h003: old_csr_val = {56'd0, frm_q, fflags_q};
+
             // M-mode CSRs
             12'h300: old_csr_val = mstatus_q;
             12'h301: old_csr_val = 64'd0;       // misa (WARL zero)
@@ -298,6 +324,11 @@ module fursoy_s1_csr
                         if (eff_priv == 2'b01 && !mcounteren_q[31:0][p0_sys_csr_addr_i[4:0]]) sys_illegal = 1'b1;
                         else if (eff_priv == 2'b00 && (!mcounteren_q[31:0][p0_sys_csr_addr_i[4:0]] || !scounteren_q[31:0][p0_sys_csr_addr_i[4:0]])) sys_illegal = 1'b1;
                     end
+                    // Milestone 8 Phase A: Floating-Point CSR Gating (fcsr, frm, fflags)
+                    // If mstatus.FS == 2'b00 (Off), ANY access from ANY mode raises Illegal Instruction (Cause 2)!
+                    else if ((p0_sys_csr_addr_i == 12'h001 || p0_sys_csr_addr_i == 12'h002 || p0_sys_csr_addr_i == 12'h003) && (eff_fs == 2'b00)) begin
+                        sys_illegal = 1'b1;
+                    end
                 end
 
                 default: begin
@@ -363,6 +394,10 @@ module fursoy_s1_csr
 
             cycle_q      <= '0;
 
+            // Milestone 8 FP CSRs Reset
+            frm_q        <= 3'd0;
+            fflags_q     <= 5'd0;
+
             hpm_we_o     <= 1'b0;
             hpm_waddr_o  <= '0;
             hpm_wdata_o  <= '0;
@@ -400,6 +435,25 @@ module fursoy_s1_csr
             // -----------------------------------------------------------------
             // Retirement Event Handling
             // -----------------------------------------------------------------
+            // Milestone 8 Phase A: In-order FP instruction retirement
+            // Accumulates accrued exception flags and transitions mstatus.FS to Dirty (2'b11)
+            begin : fp_retire_block
+                logic [4:0] eff_retire_fflags;
+                eff_retire_fflags = 5'd0;
+                if (retire_valid_i[0] && retire_fp_dest_valid_i[0] && !retire_exception_i) begin
+                    eff_retire_fflags = eff_retire_fflags | retire_fflags_i[0];
+                    mstatus_q[14:13]  <= 2'b11;
+                end
+                if (retire_valid_i[1] && retire_fp_dest_valid_i[1] && !retire_exception_i) begin
+                    eff_retire_fflags = eff_retire_fflags | retire_fflags_i[1];
+                    mstatus_q[14:13]  <= 2'b11;
+                end
+                if ((retire_valid_i[0] && retire_fp_dest_valid_i[0] && !retire_exception_i) ||
+                    (retire_valid_i[1] && retire_fp_dest_valid_i[1] && !retire_exception_i)) begin
+                    fflags_q <= fflags_q | eff_retire_fflags;
+                end
+            end
+
             if (retire_exception_i) begin
                 // Precise synchronous trap at ROB head
                 logic trap_to_s;
@@ -483,9 +537,24 @@ module fursoy_s1_csr
                     SYS_CSRRWI, SYS_CSRRSI, SYS_CSRRCI: begin
                         if (pending_sys_q.write_intent) begin
                             unique case (pending_sys_q.csr_addr)
+                                // Milestone 8 Floating-Point CSRs
+                                12'h001: begin // fflags
+                                    fflags_q <= pending_sys_q.write_val[4:0];
+                                    mstatus_q[14:13] <= 2'b11; // Dirty
+                                end
+                                12'h002: begin // frm
+                                    frm_q <= pending_sys_q.write_val[2:0];
+                                    mstatus_q[14:13] <= 2'b11; // Dirty
+                                end
+                                12'h003: begin // fcsr
+                                    fflags_q <= pending_sys_q.write_val[4:0];
+                                    frm_q    <= pending_sys_q.write_val[7:5];
+                                    mstatus_q[14:13] <= 2'b11; // Dirty
+                                end
+
                                 12'h300: begin // mstatus
                                     mstatus_q <= 64'h0000_000a_0000_0000 |
-                                                 (pending_sys_q.write_val & 64'h0000_0000_007e_19aa) |
+                                                 (pending_sys_q.write_val & 64'h0000_0000_007e_79aa) |
                                                  (pending_sys_q.write_val[12:11] == 2'b10 ? 64'h1800 : 64'd0);
                                     sys_redirect_valid_o  <= 1'b1;
                                     sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
@@ -506,11 +575,12 @@ module fursoy_s1_csr
 
                                 // S-mode CSRs
                                 12'h100: begin // sstatus
-                                    mstatus_q[1]  <= pending_sys_q.write_val[1];  // SIE
-                                    mstatus_q[5]  <= pending_sys_q.write_val[5];  // SPIE
-                                    mstatus_q[8]  <= pending_sys_q.write_val[8];  // SPP
-                                    mstatus_q[18] <= pending_sys_q.write_val[18]; // SUM
-                                    mstatus_q[19] <= pending_sys_q.write_val[19]; // MXR
+                                    mstatus_q[1]     <= pending_sys_q.write_val[1];     // SIE
+                                    mstatus_q[5]     <= pending_sys_q.write_val[5];     // SPIE
+                                    mstatus_q[8]     <= pending_sys_q.write_val[8];     // SPP
+                                    mstatus_q[14:13] <= pending_sys_q.write_val[14:13]; // FS
+                                    mstatus_q[18]    <= pending_sys_q.write_val[18];    // SUM
+                                    mstatus_q[19]    <= pending_sys_q.write_val[19];    // MXR
                                     sys_redirect_valid_o  <= 1'b1;
                                     sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
                                     sys_flush_valid_o     <= 1'b1;

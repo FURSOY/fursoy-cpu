@@ -1,0 +1,37 @@
+{
+  "timestamp_utc": "2026-10-22T19:38:34.625327+00:00",
+  "phase": "M8 Phase A: Scalar Floating-Point Register File (FPRF), FRAT, Status & CSRs",
+  "production_rtl_manifest_sha256": "03598b7836f34036b5f3ca4081a6cd438d1030fba140f43bd620d29b881da79b",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m8-fp-vector-v1.md",
+    "version": "1.1",
+    "sha256": "55a4fa1623c073d9b06d7384f7ea3ce0ad0824b7f240819179962994b68d92e6"
+  },
+  "unit_verification": {
+    "phase": "Phase A",
+    "total_properties": 10,
+    "passed_properties_count": 10,
+    "status": "pass",
+    "randomized_torture_operations": 75000,
+    "torture_seeds": [
+      42,
+      20260920,
+      20261009
+    ],
+    "torture_mismatches": 0,
+    "properties": [
+      "PROP_M8_01",
+      "PROP_M8_02",
+      "PROP_M8_03",
+      "PROP_M8_04",
+      "PROP_M8_05",
+      "PROP_M8_06",
+      "PROP_M8_07",
+      "PROP_M8_08",
+      "PROP_M8_09",
+      "PROP_M8_10"
+    ]
+  },
+  "elapsed_seconds": 3.32,
+  "overall_status": "PASS"
+}

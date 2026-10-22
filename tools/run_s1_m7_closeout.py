@@ -25,6 +25,7 @@ REPORT = ROOT / "results/s1-m7-closeout.json"
 EXPECTED_RTL_MANIFEST_SHA256 = "30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003"
 ACCEPTED_RTL_MANIFEST_SHA256S = {
     "30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003",
+    "03598b7836f34036b5f3ca4081a6cd438d1030fba140f43bd620d29b881da79b",  # M8 Phase A Final
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m7-multibank-l1d-v1.md"
 SPEC_VERSION = "1.1"
@@ -35,9 +36,12 @@ ALL_RTL = [
     ROOT / "rtl/core/fursoy_s1_freelist.sv",
     ROOT / "rtl/core/fursoy_s1_rat.sv",
     ROOT / "rtl/core/fursoy_s1_prf_status.sv",
+    ROOT / "rtl/core/fursoy_s1_frat.sv",
+    ROOT / "rtl/core/fursoy_s1_fprf_status.sv",
     ROOT / "rtl/core/fursoy_s1_rob.sv",
     ROOT / "rtl/core/fursoy_s1_substrate.sv",
     ROOT / "rtl/core/fursoy_s1_prf.sv",
+    ROOT / "rtl/core/fursoy_s1_fprf.sv",
     ROOT / "rtl/core/fursoy_s1_alu.sv",
     ROOT / "rtl/core/fursoy_s1_branch_unit.sv",
     ROOT / "rtl/core/fursoy_s1_multiplier.sv",

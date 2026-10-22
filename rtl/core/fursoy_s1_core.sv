@@ -81,6 +81,10 @@ module fursoy_s1_core
     input  logic                   uop0_is_branch_i,
     input  logic                   uop0_is_jal_i,
     input  logic                   uop0_is_jalr_i,
+    // Milestone 8 Phase A FP Renaming Inputs
+    input  logic                   uop0_is_fp_i,
+    input  logic                   uop0_fp_dest_valid_i,
+    input  fareg_t                 uop0_fs3_i,
 
     // Uop 1 Input
     input  logic                   uop1_valid_i,
@@ -97,6 +101,10 @@ module fursoy_s1_core
     input  logic                   uop1_is_branch_i,
     input  logic                   uop1_is_jal_i,
     input  logic                   uop1_is_jalr_i,
+    // Milestone 8 Phase A FP Renaming Inputs
+    input  logic                   uop1_is_fp_i,
+    input  logic                   uop1_fp_dest_valid_i,
+    input  fareg_t                 uop1_fs3_i,
 
     // Acceptance Acknowledgment to Decode / Frontend
     output logic [1:0]             rename_ack_o,
@@ -176,6 +184,64 @@ module fursoy_s1_core
     input  rob_idx_t               test_inject_rob_idx_i,
     input  rob_epoch_t             test_inject_rob_epoch_i,
     input  logic                   test_inject_mispredict_i,
+
+    // Milestone 8 Phase A Floating-Point Direct Test Injection & Observability
+    input  logic [2:0]             comp_fp_wb_valid_i,
+    input  fpreg_t                 comp_fp_wb_preg_i     [2:0],
+    input  logic [4:0]             comp_fflags_i         [3:0],
+
+    input  logic                   test_fp_w0_valid_i,
+    input  fpreg_t                 test_fp_w0_paddr_i,
+    input  logic [63:0]            test_fp_w0_data_i,
+
+    input  logic                   test_fp_w1_valid_i,
+    input  fpreg_t                 test_fp_w1_paddr_i,
+    input  logic [63:0]            test_fp_w1_data_i,
+
+    input  logic                   test_fp_w2_valid_i,
+    input  fpreg_t                 test_fp_w2_paddr_i,
+    input  logic [63:0]            test_fp_w2_data_i,
+
+    // Direct Read Probe Port into FPRF Data Storage
+    input  fpreg_t                 probe_fp_paddr_i,
+    output logic [63:0]            probe_fp_pdata_o,
+
+    // Milestone 8 Phase A FP Renamed Discrete Outputs
+    output fpreg_t                 uop0_prd_fp_o,
+    output fpreg_t                 uop0_pold_fp_o,
+    output fpreg_t                 uop0_prs1_fp_o,
+    output logic                   uop0_prs1_fp_ready_o,
+    output fpreg_t                 uop0_prs2_fp_o,
+    output logic                   uop0_prs2_fp_ready_o,
+    output fpreg_t                 uop0_prs3_fp_o,
+    output logic                   uop0_prs3_fp_ready_o,
+
+    output fpreg_t                 uop1_prd_fp_o,
+    output fpreg_t                 uop1_pold_fp_o,
+    output fpreg_t                 uop1_prs1_fp_o,
+    output logic                   uop1_prs1_fp_ready_o,
+    output fpreg_t                 uop1_prs2_fp_o,
+    output logic                   uop1_prs2_fp_ready_o,
+    output fpreg_t                 uop1_prs3_fp_o,
+    output logic                   uop1_prs3_fp_ready_o,
+
+    // Milestone 8 Phase A FP Retirement Outputs
+    output logic [1:0]             retire_is_fp_o,
+    output logic [1:0]             retire_fp_dest_valid_o,
+    output fpreg_t                 retire_prd_fp_o       [1:0],
+    output fpreg_t                 retire_pold_fp_o      [1:0],
+    output logic [4:0]             retire_fflags_o       [1:0],
+
+    // Milestone 8 Phase A FP Free List & Status Observability
+    output logic [FL_FP_CNT_W-1:0] fl_fp_count_o,
+    output logic [1:0]             fl_fp_ready_o,
+    output logic                   fl_fp_reconstructing_o,
+    output fpreg_t                 arat_fp_map_o         [FAREG_COUNT],
+    output fpreg_t                 srat_fp_map_o         [FAREG_COUNT],
+    output logic [FPRF_SIZE-1:0]   prf_fp_ready_o,
+    output logic [1:0]             mstatus_fs_o,
+    output logic [2:0]             fcsr_frm_o,
+    output logic [4:0]             fcsr_fflags_o,
 
     // -------------------------------------------------------------------------
     // External Memory Interconnect & Translation Interface (M3 L1D Channels)
@@ -503,6 +569,9 @@ module fursoy_s1_core
     wire areg_t sub_uop0_rd        = frontend_en_i ? fe_uop0.rd        : uop0_rd_i;
     wire        sub_uop0_is_branch = frontend_en_i ? (fe_uop0.is_branch || fe_uop0.is_jalr) : uop0_is_branch_i;
     wire [63:0] sub_uop0_pc        = frontend_en_i ? fe_uop0.pc        : uop0_pc_i;
+    wire        sub_uop0_is_fp         = frontend_en_i ? 1'b0 : uop0_is_fp_i;
+    wire        sub_uop0_fp_dest_valid = frontend_en_i ? 1'b0 : uop0_fp_dest_valid_i;
+    wire fareg_t sub_uop0_fs3          = frontend_en_i ? 5'd0 : uop0_fs3_i;
 
     wire        sub_uop1_valid     = frontend_en_i ? fe_uop1_valid     : uop1_valid_i;
     wire areg_t sub_uop1_rs1       = frontend_en_i ? fe_uop1.rs1       : uop1_rs1_i;
@@ -510,9 +579,32 @@ module fursoy_s1_core
     wire areg_t sub_uop1_rd        = frontend_en_i ? fe_uop1.rd        : uop1_rd_i;
     wire        sub_uop1_is_branch = frontend_en_i ? (fe_uop1.is_branch || fe_uop1.is_jalr) : uop1_is_branch_i;
     wire [63:0] sub_uop1_pc        = frontend_en_i ? fe_uop1.pc        : uop1_pc_i;
+    wire        sub_uop1_is_fp         = frontend_en_i ? 1'b0 : uop1_is_fp_i;
+    wire        sub_uop1_fp_dest_valid = frontend_en_i ? 1'b0 : uop1_fp_dest_valid_i;
+    wire fareg_t sub_uop1_fs3          = frontend_en_i ? 5'd0 : uop1_fs3_i;
+
+    // Substrate to CSR / Core FP retirement wires
+    logic [1:0] sub_retire_is_fp;
+    logic [1:0] sub_retire_fp_dest_valid;
+    fpreg_t     sub_retire_prd_fp [1:0];
+    fpreg_t     sub_retire_pold_fp [1:0];
+    logic [4:0] sub_retire_fflags [1:0];
+
+    assign retire_is_fp_o         = sub_retire_is_fp;
+    assign retire_fp_dest_valid_o = sub_retire_fp_dest_valid;
+    assign retire_prd_fp_o        = sub_retire_prd_fp;
+    assign retire_pold_fp_o       = sub_retire_pold_fp;
+    assign retire_fflags_o        = sub_retire_fflags;
+
+    // Combined FP writeback completion bus for substrate
+    wire [2:0]   int_comp_fp_wb_valid = comp_fp_wb_valid_i | {test_fp_w2_valid_i, test_fp_w1_valid_i, test_fp_w0_valid_i};
+    wire fpreg_t int_comp_fp_wb_preg [2:0];
+    assign int_comp_fp_wb_preg[0] = comp_fp_wb_valid_i[0] ? comp_fp_wb_preg_i[0] : test_fp_w0_paddr_i;
+    assign int_comp_fp_wb_preg[1] = comp_fp_wb_valid_i[1] ? comp_fp_wb_preg_i[1] : test_fp_w1_paddr_i;
+    assign int_comp_fp_wb_preg[2] = comp_fp_wb_valid_i[2] ? comp_fp_wb_preg_i[2] : test_fp_w2_paddr_i;
 
     // Backend Dispatch MUX
-    wire             be_uop0_valid       = frontend_en_i ? fe_uop0_valid       : uop0_valid_i;
+    wire             be_uop0_valid       = frontend_en_i ? fe_uop0_valid       : (uop0_valid_i && !uop0_is_fp_i);
     wire uop_class_t be_uop0_class       = frontend_en_i ? fe_uop0.uop_class   : uop0_class_i;
     wire uop_subop_t be_uop0_subop       = frontend_en_i ? fe_uop0.sub_op      : uop0_subop_i;
     wire [63:0]      be_uop0_imm         = frontend_en_i ? fe_uop0.imm         : uop0_imm_i;
@@ -529,7 +621,7 @@ module fursoy_s1_core
     wire [4:0]       be_uop0_exc_cause   = frontend_en_i ? fe_uop0.exc_cause   : 5'd0;
     wire             be_uop0_replay_safe = frontend_en_i ? fe_uop0.replay_safe : 1'b0;
 
-    wire             be_uop1_valid       = frontend_en_i ? fe_uop1_valid       : uop1_valid_i;
+    wire             be_uop1_valid       = frontend_en_i ? fe_uop1_valid       : (uop1_valid_i && !uop1_is_fp_i);
     wire uop_class_t be_uop1_class       = frontend_en_i ? fe_uop1.uop_class   : uop1_class_i;
     wire uop_subop_t be_uop1_subop       = frontend_en_i ? fe_uop1.sub_op      : uop1_subop_i;
     wire [63:0]      be_uop1_imm         = frontend_en_i ? fe_uop1.imm         : uop1_imm_i;
@@ -600,6 +692,9 @@ module fursoy_s1_core
         .uop0_rd_i               (sub_uop0_rd),
         .uop0_is_branch_i        (sub_uop0_is_branch),
         .uop0_pc_i               (sub_uop0_pc),
+        .uop0_is_fp_i            (sub_uop0_is_fp),
+        .uop0_fp_dest_valid_i    (sub_uop0_fp_dest_valid),
+        .uop0_fs3_i              (sub_uop0_fs3),
 
         .uop1_valid_i            (sub_uop1_valid),
         .uop1_rs1_i              (sub_uop1_rs1),
@@ -607,6 +702,9 @@ module fursoy_s1_core
         .uop1_rd_i               (sub_uop1_rd),
         .uop1_is_branch_i        (sub_uop1_is_branch),
         .uop1_pc_i               (sub_uop1_pc),
+        .uop1_is_fp_i            (sub_uop1_is_fp),
+        .uop1_fp_dest_valid_i    (sub_uop1_fp_dest_valid),
+        .uop1_fs3_i              (sub_uop1_fs3),
 
         .dispatch_ready_i        (int_dispatch_ready),
         .rename_ack_o            (int_rename_ack),
@@ -625,6 +723,15 @@ module fursoy_s1_core
         .uop0_rob_epoch_o        (sub_uop0_rob_epoch),
         .uop0_chkpt_id_o         (sub_uop0_chkpt_id),
 
+        .uop0_prd_fp_o           (uop0_prd_fp_o),
+        .uop0_pold_fp_o          (uop0_pold_fp_o),
+        .uop0_prs1_fp_o          (uop0_prs1_fp_o),
+        .uop0_prs1_fp_ready_o    (uop0_prs1_fp_ready_o),
+        .uop0_prs2_fp_o          (uop0_prs2_fp_o),
+        .uop0_prs2_fp_ready_o    (uop0_prs2_fp_ready_o),
+        .uop0_prs3_fp_o          (uop0_prs3_fp_o),
+        .uop0_prs3_fp_ready_o    (uop0_prs3_fp_ready_o),
+
         .uop1_ack_o              (sub_uop1_ack),
         .uop1_pnew_o             (sub_uop1_pnew),
         .uop1_pold_o             (sub_uop1_pold),
@@ -636,6 +743,15 @@ module fursoy_s1_core
         .uop1_rob_epoch_o        (sub_uop1_rob_epoch),
         .uop1_chkpt_id_o         (sub_uop1_chkpt_id),
 
+        .uop1_prd_fp_o           (uop1_prd_fp_o),
+        .uop1_pold_fp_o          (uop1_pold_fp_o),
+        .uop1_prs1_fp_o          (uop1_prs1_fp_o),
+        .uop1_prs1_fp_ready_o    (uop1_prs1_fp_ready_o),
+        .uop1_prs2_fp_o          (uop1_prs2_fp_o),
+        .uop1_prs2_fp_ready_o    (uop1_prs2_fp_ready_o),
+        .uop1_prs3_fp_o          (uop1_prs3_fp_o),
+        .uop1_prs3_fp_ready_o    (uop1_prs3_fp_ready_o),
+
         // Writeback / Completion
         .comp_valid_i            (int_comp_valid),
         .comp_rob_idx_i          (int_comp_rob_idx),
@@ -644,7 +760,11 @@ module fursoy_s1_core
         .comp_branch_mispred_i   (int_comp_branch_mispred),
         .comp_exception_i        (int_comp_exception),
         .comp_cause_i            (int_comp_cause),
+        .comp_fflags_i           (comp_fflags_i),
         .comp_ack_o              (int_comp_ack),
+
+        .comp_fp_wb_valid_i      (int_comp_fp_wb_valid),
+        .comp_fp_wb_preg_i       (int_comp_fp_wb_preg),
 
         // Branch recovery
         .recover_valid_i         (int_recover_valid),
@@ -677,6 +797,12 @@ module fursoy_s1_core
         .retire_rob_idx_o        (int_retire_rob_idx),
         .retire_epoch_o          (int_retire_epoch),
 
+        .retire_is_fp_o          (sub_retire_is_fp),
+        .retire_fp_dest_valid_o  (sub_retire_fp_dest_valid),
+        .retire_prd_fp_o         (sub_retire_prd_fp),
+        .retire_pold_fp_o        (sub_retire_pold_fp),
+        .retire_fflags_o         (sub_retire_fflags),
+
         .retire_exception_o      (retire_exception_o),
         .retire_exc_cause_o      (retire_exc_cause_o),
         .retire_exc_pc_o         (retire_exc_pc_o),
@@ -693,6 +819,14 @@ module fursoy_s1_core
         .arat_map_o              (arat_map_o),
         .srat_map_o              (srat_map_o),
         .prf_ready_o             (prf_ready_o),
+
+        .fl_fp_count_o           (fl_fp_count_o),
+        .fl_fp_ready_o           (fl_fp_ready_o),
+        .fl_fp_reconstructing_o (fl_fp_reconstructing_o),
+        .arat_fp_map_o           (arat_fp_map_o),
+        .srat_fp_map_o           (srat_fp_map_o),
+        .prf_fp_ready_o          (prf_fp_ready_o),
+
         .diag_head_valid_o       (diag_head_valid_o),
         .diag_head_completed_o   (diag_head_completed_o),
         .diag_head_exception_o   (diag_head_exception_o),
@@ -912,8 +1046,37 @@ module fursoy_s1_core
         .event_store_drain_concurrent_o(be_event_store_drain_concurrent),
         .event_snoop_query_o     (be_event_snoop_query),
         .event_snoop_hit_o       (be_event_snoop_hit),
-        .event_snoop_replay_o    (be_event_snoop_replay)
+        .event_snoop_replay_o    (be_event_snoop_replay),
+
+        // Milestone 8 Phase A Floating-Point Register File Interface
+        .r0_fp_paddr_i           ('0),
+        .r0_fp_data_o            (unused_rf_fp_data[0]),
+        .r1_fp_paddr_i           ('0),
+        .r1_fp_data_o            (unused_rf_fp_data[1]),
+        .r2_fp_paddr_i           ('0),
+        .r2_fp_data_o            (unused_rf_fp_data[2]),
+        .r3_fp_paddr_i           ('0),
+        .r3_fp_data_o            (unused_rf_fp_data[3]),
+
+        .w0_fp_valid_i           (test_fp_w0_valid_i),
+        .w0_fp_paddr_i           (test_fp_w0_paddr_i),
+        .w0_fp_data_i            (test_fp_w0_data_i),
+
+        .w1_fp_valid_i           (test_fp_w1_valid_i),
+        .w1_fp_paddr_i           (test_fp_w1_paddr_i),
+        .w1_fp_data_i            (test_fp_w1_data_i),
+
+        .w2_fp_valid_i           (test_fp_w2_valid_i),
+        .w2_fp_paddr_i           (test_fp_w2_paddr_i),
+        .w2_fp_data_i            (test_fp_w2_data_i),
+
+        .probe_fp_paddr_i        (probe_fp_paddr_i),
+        .probe_fp_pdata_o        (probe_fp_pdata_o)
     );
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [63:0] unused_rf_fp_data [4];
+    /* verilator lint_on UNUSEDSIGNAL */
 
     logic              be_event_mem_dual_issue;
     logic [1:0]        be_event_bank_access_count;
@@ -988,10 +1151,19 @@ module fursoy_s1_core
         .retire_exc_cause_i      (retire_exc_cause_o),
         .retire_exc_pc_i         (retire_exc_pc_o),
 
+        // Milestone 8 Phase A Floating-Point Retirement Interface
+        .retire_fp_dest_valid_i  (sub_retire_fp_dest_valid),
+        .retire_fflags_i         (sub_retire_fflags),
+
         // Architectural State Outputs
         .priv_mode_o             (csr_priv_mode),
         .mstatus_o               (csr_mstatus),
         .satp_o                  (csr_satp),
+
+        // Milestone 8 Floating-Point Context Outputs
+        .mstatus_fs_o            (mstatus_fs_o),
+        .frm_o                   (fcsr_frm_o),
+        .fflags_o                (fcsr_fflags_o),
 
         // Redirect & Flush Outputs
         .sys_redirect_valid_o    (csr_redirect_valid),

@@ -37,6 +37,28 @@ package fursoy_s1_pkg;
     typedef logic [ROB_EPOCH_W-1:0] rob_epoch_t;
 
     // -------------------------------------------------------------------------
+    // Milestone 8 Floating-Point (RV64FD) Dimensions & Types
+    // -------------------------------------------------------------------------
+    localparam int unsigned FAREG_COUNT      = 32; // Architectural FP registers f0..f31
+    localparam int unsigned FPRF_SIZE        = 64; // Dedicated FP physical registers fp0..fp63
+    localparam int unsigned FL_FP_DEPTH      = 32; // Free List depth = FPRF_SIZE - FAREG_COUNT = 32
+    localparam int unsigned FAREG_IDX_W      = 5;  // $clog2(32)
+    localparam int unsigned FPRF_IDX_W       = 6;  // $clog2(64)
+    localparam int unsigned FL_FP_IDX_W      = 5;  // $clog2(32)
+    localparam int unsigned FL_FP_CNT_W      = 6;  // 0..32
+
+    // Type aliases for FP
+    typedef logic [FAREG_IDX_W-1:0] fareg_t;
+    typedef logic [FPRF_IDX_W-1:0]  fpreg_t;
+    typedef logic [FL_FP_IDX_W-1:0] fl_fp_idx_t;
+
+    // Standard RISC-V fcsr structure (CSR 0x003: [7:5] frm, [4:0] fflags)
+    typedef struct packed {
+        logic [2:0] frm;    // Rounding mode: RNE(0), RTZ(1), RDN(2), RUP(3), RMM(4), DYN(7)
+        logic [4:0] fflags; // Accrued exception flags: NV(4), DZ(3), OF(2), UF(1), NX(0)
+    } fcsr_t;
+
+    // -------------------------------------------------------------------------
     // Micro-operation Rename Input Structure (2-wide)
     // -------------------------------------------------------------------------
     typedef struct packed {
@@ -46,6 +68,10 @@ package fursoy_s1_pkg;
         areg_t      rd;
         logic       is_branch;      // Conditional branch requiring checkpoint
         logic [63:0] pc;
+        // Milestone 8 Phase A Floating-Point Extensions
+        logic       is_fp;
+        logic       fp_dest_valid;
+        fareg_t     fs3;            // Third FP source register (FMA)
     } uop_rename_in_t;
 
     // -------------------------------------------------------------------------
@@ -67,6 +93,17 @@ package fursoy_s1_pkg;
         rob_idx_t   rob_idx;
         rob_epoch_t rob_epoch;      // Lifetime generation tag for stale completion protection
         logic [63:0] pc;
+        // Milestone 8 Phase A Floating-Point Extensions
+        logic       is_fp;
+        logic       fp_dest_valid;
+        fpreg_t     prd_fp;
+        fpreg_t     pold_fp;
+        fpreg_t     prs1_fp;
+        logic       prs1_fp_ready;
+        fpreg_t     prs2_fp;
+        logic       prs2_fp_ready;
+        fpreg_t     prs3_fp;
+        logic       prs3_fp_ready;
     } uop_renamed_t;
 
     // -------------------------------------------------------------------------
@@ -86,6 +123,12 @@ package fursoy_s1_pkg;
         logic       branch_mispred;
         logic       mem_violation;  // Phase B1: Sticky memory-order RAW violation
         logic [63:0] pc;
+        // Milestone 8 Phase A Floating-Point Extensions
+        logic       is_fp;
+        logic       fp_dest_valid;
+        fpreg_t     prd_fp;
+        fpreg_t     pold_fp;
+        logic [4:0] fflags;
     } rob_entry_t;
 
     // -------------------------------------------------------------------------
@@ -160,7 +203,8 @@ package fursoy_s1_pkg;
         UOP_STORE     = 4'd10,
         UOP_AMO       = 4'd11,
         UOP_FENCE     = 4'd12,
-        UOP_SYSTEM    = 4'd13
+        UOP_SYSTEM    = 4'd13,
+        UOP_FP        = 4'd14
     } uop_class_t;
 
     typedef enum logic [6:0] {
@@ -385,6 +429,10 @@ package fursoy_s1_pkg;
         logic        exception;
         logic [4:0]  exc_cause;
         logic        replay_safe;   // Phase B1: One-shot conservative issue token
+        // Milestone 8 Phase A Floating-Point Extensions
+        logic        is_fp;
+        logic        fp_dest_valid;
+        fareg_t      fs3;
     } uop_decoded_t;
 
     // -------------------------------------------------------------------------

@@ -29,6 +29,7 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "8c53e566fa83df6d694a286982a2ccfc66050ea29cf0af56a9b5b2ff2d0f91e5",  # M7 Phase A Expansion
     "e4390576a7c65e4908b779fbcd60e127d7b0bd965d988093fd56c5143ca1eaf4",  # M7 Phase B Expansion
     "30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003",  # M7 Phase D / M7 Closeout
+    "03598b7836f34036b5f3ca4081a6cd438d1030fba140f43bd620d29b881da79b",  # M8 Phase A Final
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m6-frontend-opt-v1.md"
 SPEC_VERSION = "1.1"
@@ -39,9 +40,12 @@ ALL_RTL = [
     ROOT / "rtl/core/fursoy_s1_freelist.sv",
     ROOT / "rtl/core/fursoy_s1_rat.sv",
     ROOT / "rtl/core/fursoy_s1_prf_status.sv",
+    ROOT / "rtl/core/fursoy_s1_frat.sv",
+    ROOT / "rtl/core/fursoy_s1_fprf_status.sv",
     ROOT / "rtl/core/fursoy_s1_rob.sv",
     ROOT / "rtl/core/fursoy_s1_substrate.sv",
     ROOT / "rtl/core/fursoy_s1_prf.sv",
+    ROOT / "rtl/core/fursoy_s1_fprf.sv",
     ROOT / "rtl/core/fursoy_s1_alu.sv",
     ROOT / "rtl/core/fursoy_s1_branch_unit.sv",
     ROOT / "rtl/core/fursoy_s1_multiplier.sv",
