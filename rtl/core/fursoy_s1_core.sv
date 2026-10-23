@@ -85,6 +85,7 @@ module fursoy_s1_core
     input  logic                   uop0_is_fp_i,
     input  logic                   uop0_fp_dest_valid_i,
     input  fareg_t                 uop0_fs3_i,
+    input  logic [2:0]             uop0_frm_i,
 
     // Uop 1 Input
     input  logic                   uop1_valid_i,
@@ -105,6 +106,7 @@ module fursoy_s1_core
     input  logic                   uop1_is_fp_i,
     input  logic                   uop1_fp_dest_valid_i,
     input  fareg_t                 uop1_fs3_i,
+    input  logic [2:0]             uop1_frm_i,
 
     // Acceptance Acknowledgment to Decode / Frontend
     output logic [1:0]             rename_ack_o,
@@ -148,11 +150,12 @@ module fursoy_s1_core
     output logic [PRF_COUNT-1:0]   prf_ready_o,
 
     // Writeback Probes for Verification Observability
-    output logic [3:0]             comp_valid_o,
-    output rob_idx_t               comp_rob_idx_o       [3:0],
-    output rob_epoch_t             comp_epoch_o         [3:0],
-    output preg_t                  comp_preg_o          [3:0],
-    output logic [3:0]             comp_ack_o,
+    output logic [4:0]             comp_valid_o,
+    output rob_idx_t               comp_rob_idx_o       [4:0],
+    output rob_epoch_t             comp_epoch_o         [4:0],
+    output preg_t                  comp_preg_o          [4:0],
+    output logic [4:0]             comp_ack_o,
+    output logic [4:0]             comp_fflags_o        [4:0],
 
     // Direct Read Probe Port into PRF Data Storage (for Testbench Assertions)
     input  preg_t                  probe_paddr_i,
@@ -188,7 +191,7 @@ module fursoy_s1_core
     // Milestone 8 Phase A Floating-Point Direct Test Injection & Observability
     input  logic [2:0]             comp_fp_wb_valid_i,
     input  fpreg_t                 comp_fp_wb_preg_i     [2:0],
-    input  logic [4:0]             comp_fflags_i         [3:0],
+    input  logic [4:0]             comp_fflags_i         [4:0],
 
     input  logic                   test_fp_w0_valid_i,
     input  fpreg_t                 test_fp_w0_paddr_i,
@@ -414,14 +417,18 @@ module fursoy_s1_core
     logic [1:0]     int_rename_ack;
 
     // Writeback & Completion Bus
-    logic [3:0]     int_comp_valid;
-    rob_idx_t       int_comp_rob_idx       [3:0];
-    rob_epoch_t     int_comp_epoch         [3:0];
-    preg_t          int_comp_preg          [3:0];
-    logic [3:0]     int_comp_branch_mispred;
-    logic [3:0]     int_comp_exception;
-    logic [4:0]     int_comp_cause         [3:0];
-    logic [3:0]     int_comp_ack;
+    logic [4:0]     int_comp_valid;
+    rob_idx_t       int_comp_rob_idx       [4:0];
+    rob_epoch_t     int_comp_epoch         [4:0];
+    preg_t          int_comp_preg          [4:0];
+    logic [4:0]     int_comp_branch_mispred;
+    logic [4:0]     int_comp_exception;
+    logic [4:0]     int_comp_cause         [4:0];
+    logic [4:0]     int_comp_fflags        [4:0];
+    logic [4:0]     int_comp_ack;
+    logic [4:0]     be_comp_fflags         [4:0];
+    logic [2:0]     be_comp_fp_wb_valid;
+    fpreg_t         be_comp_fp_wb_preg     [2:0];
 
     // Branch Recovery Handshake
     logic           int_recover_valid;
@@ -448,6 +455,11 @@ module fursoy_s1_core
     assign comp_epoch_o       = int_comp_epoch;
     assign comp_preg_o        = int_comp_preg;
     assign comp_ack_o         = int_comp_ack;
+    assign comp_fflags_o      = int_comp_fflags;
+
+    for (genvar gi = 0; gi < 5; gi++) begin : gen_comp_fflags
+        assign int_comp_fflags[gi] = be_comp_fflags[gi] | comp_fflags_i[gi];
+    end
 
     assign diag_recover_valid_o   = int_recover_valid;
     assign diag_recover_rob_idx_o = int_recover_rob_idx;
@@ -597,14 +609,14 @@ module fursoy_s1_core
     assign retire_fflags_o        = sub_retire_fflags;
 
     // Combined FP writeback completion bus for substrate
-    wire [2:0]   int_comp_fp_wb_valid = comp_fp_wb_valid_i | {test_fp_w2_valid_i, test_fp_w1_valid_i, test_fp_w0_valid_i};
+    wire [2:0]   int_comp_fp_wb_valid = be_comp_fp_wb_valid | comp_fp_wb_valid_i | {test_fp_w2_valid_i, test_fp_w1_valid_i, test_fp_w0_valid_i};
     wire fpreg_t int_comp_fp_wb_preg [2:0];
-    assign int_comp_fp_wb_preg[0] = comp_fp_wb_valid_i[0] ? comp_fp_wb_preg_i[0] : test_fp_w0_paddr_i;
-    assign int_comp_fp_wb_preg[1] = comp_fp_wb_valid_i[1] ? comp_fp_wb_preg_i[1] : test_fp_w1_paddr_i;
-    assign int_comp_fp_wb_preg[2] = comp_fp_wb_valid_i[2] ? comp_fp_wb_preg_i[2] : test_fp_w2_paddr_i;
+    assign int_comp_fp_wb_preg[0] = be_comp_fp_wb_valid[0] ? be_comp_fp_wb_preg[0] : (comp_fp_wb_valid_i[0] ? comp_fp_wb_preg_i[0] : test_fp_w0_paddr_i);
+    assign int_comp_fp_wb_preg[1] = be_comp_fp_wb_valid[1] ? be_comp_fp_wb_preg[1] : (comp_fp_wb_valid_i[1] ? comp_fp_wb_preg_i[1] : test_fp_w1_paddr_i);
+    assign int_comp_fp_wb_preg[2] = be_comp_fp_wb_valid[2] ? be_comp_fp_wb_preg[2] : (comp_fp_wb_valid_i[2] ? comp_fp_wb_preg_i[2] : test_fp_w2_paddr_i);
 
     // Backend Dispatch MUX
-    wire             be_uop0_valid       = frontend_en_i ? fe_uop0_valid       : (uop0_valid_i && !uop0_is_fp_i);
+    wire             be_uop0_valid       = frontend_en_i ? fe_uop0_valid       : uop0_valid_i;
     wire uop_class_t be_uop0_class       = frontend_en_i ? fe_uop0.uop_class   : uop0_class_i;
     wire uop_subop_t be_uop0_subop       = frontend_en_i ? fe_uop0.sub_op      : uop0_subop_i;
     wire [63:0]      be_uop0_imm         = frontend_en_i ? fe_uop0.imm         : uop0_imm_i;
@@ -621,7 +633,7 @@ module fursoy_s1_core
     wire [4:0]       be_uop0_exc_cause   = frontend_en_i ? fe_uop0.exc_cause   : 5'd0;
     wire             be_uop0_replay_safe = frontend_en_i ? fe_uop0.replay_safe : 1'b0;
 
-    wire             be_uop1_valid       = frontend_en_i ? fe_uop1_valid       : (uop1_valid_i && !uop1_is_fp_i);
+    wire             be_uop1_valid       = frontend_en_i ? fe_uop1_valid       : uop1_valid_i;
     wire uop_class_t be_uop1_class       = frontend_en_i ? fe_uop1.uop_class   : uop1_class_i;
     wire uop_subop_t be_uop1_subop       = frontend_en_i ? fe_uop1.sub_op      : uop1_subop_i;
     wire [63:0]      be_uop1_imm         = frontend_en_i ? fe_uop1.imm         : uop1_imm_i;
@@ -695,6 +707,7 @@ module fursoy_s1_core
         .uop0_is_fp_i            (sub_uop0_is_fp),
         .uop0_fp_dest_valid_i    (sub_uop0_fp_dest_valid),
         .uop0_fs3_i              (sub_uop0_fs3),
+        .uop0_frm_i              (uop0_frm_i),
 
         .uop1_valid_i            (sub_uop1_valid),
         .uop1_rs1_i              (sub_uop1_rs1),
@@ -705,6 +718,7 @@ module fursoy_s1_core
         .uop1_is_fp_i            (sub_uop1_is_fp),
         .uop1_fp_dest_valid_i    (sub_uop1_fp_dest_valid),
         .uop1_fs3_i              (sub_uop1_fs3),
+        .uop1_frm_i              (uop1_frm_i),
 
         .dispatch_ready_i        (int_dispatch_ready),
         .rename_ack_o            (int_rename_ack),
@@ -760,7 +774,7 @@ module fursoy_s1_core
         .comp_branch_mispred_i   (int_comp_branch_mispred),
         .comp_exception_i        (int_comp_exception),
         .comp_cause_i            (int_comp_cause),
-        .comp_fflags_i           (comp_fflags_i),
+        .comp_fflags_i           (int_comp_fflags),
         .comp_ack_o              (int_comp_ack),
 
         .comp_fp_wb_valid_i      (int_comp_fp_wb_valid),
@@ -885,6 +899,16 @@ module fursoy_s1_core
         .uop0_pre_ghr_i          (be_uop0_pre_ghr),
         .uop0_exception_i        (be_uop0_exception),
         .uop0_exc_cause_i        (be_uop0_exc_cause),
+        .uop0_is_fp_i            (sub_uop0_is_fp),
+        .uop0_fp_dest_valid_i    (sub_uop0_fp_dest_valid),
+        .uop0_prd_fp_i           (uop0_prd_fp_o),
+        .uop0_prs1_fp_i          (uop0_prs1_fp_o),
+        .uop0_prs1_fp_ready_i    (uop0_prs1_fp_ready_o),
+        .uop0_prs2_fp_i          (uop0_prs2_fp_o),
+        .uop0_prs2_fp_ready_i    (uop0_prs2_fp_ready_o),
+        .uop0_prs3_fp_i          (uop0_prs3_fp_o),
+        .uop0_prs3_fp_ready_i    (uop0_prs3_fp_ready_o),
+        .uop0_frm_i              (uop0_frm_i),
 
         // Uop 1 Payload
         .uop1_valid_i            (be_uop1_valid),
@@ -911,6 +935,18 @@ module fursoy_s1_core
         .uop1_pre_ghr_i          (be_uop1_pre_ghr),
         .uop1_exception_i        (be_uop1_exception),
         .uop1_exc_cause_i        (be_uop1_exc_cause),
+        .uop1_is_fp_i            (sub_uop1_is_fp),
+        .uop1_fp_dest_valid_i    (sub_uop1_fp_dest_valid),
+        .uop1_prd_fp_i           (uop1_prd_fp_o),
+        .uop1_prs1_fp_i          (uop1_prs1_fp_o),
+        .uop1_prs1_fp_ready_i    (uop1_prs1_fp_ready_o),
+        .uop1_prs2_fp_i          (uop1_prs2_fp_o),
+        .uop1_prs2_fp_ready_i    (uop1_prs2_fp_ready_o),
+        .uop1_prs3_fp_i          (uop1_prs3_fp_o),
+        .uop1_prs3_fp_ready_i    (uop1_prs3_fp_ready_o),
+        .uop1_frm_i              (uop1_frm_i),
+
+        .fcsr_frm_i              (fcsr_frm_o),
 
         // Completion
         .comp_valid_o            (int_comp_valid),
@@ -920,7 +956,11 @@ module fursoy_s1_core
         .comp_branch_mispred_o   (int_comp_branch_mispred),
         .comp_exception_o        (int_comp_exception),
         .comp_cause_o            (int_comp_cause),
+        .comp_fflags_o           (be_comp_fflags),
         .comp_ack_i              (int_comp_ack),
+
+        .comp_fp_wb_valid_o      (be_comp_fp_wb_valid),
+        .comp_fp_wb_preg_o       (be_comp_fp_wb_preg),
 
         // Probe
         .probe_paddr_i           (probe_paddr_i),

@@ -1,0 +1,31 @@
+{
+  "timestamp_utc": "2026-10-23T10:10:43.320628+00:00",
+  "phase": "M8 Phase B: Scalar FP Execution Pipeline (Port 4 FPIQ16, Pipelined FMA, Iterative Radix-4 FDIV/FSQRT, Moves & Conversions)",
+  "production_rtl_manifest_sha256": "bbcdaa85e986e59252f9e0ade4789df0cee95789e34233755f04ca0d0494f417",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m8-fp-vector-v1.md",
+    "version": "1.1",
+    "sha256": "55a4fa1623c073d9b06d7384f7ea3ce0ad0824b7f240819179962994b68d92e6"
+  },
+  "unit_verification": {
+    "status": "pass",
+    "total_properties_tested": 10,
+    "properties_passed": 10,
+    "passed_properties": [
+      "PROP_M8_11",
+      "PROP_M8_12",
+      "PROP_M8_13",
+      "PROP_M8_14",
+      "PROP_M8_15",
+      "PROP_M8_16",
+      "PROP_M8_17",
+      "PROP_M8_18",
+      "PROP_M8_19",
+      "PROP_M8_20"
+    ],
+    "torture_ops_completed": 75000,
+    "torture_mismatches": 0
+  },
+  "elapsed_seconds": 4.35,
+  "overall_status": "PASS"
+}

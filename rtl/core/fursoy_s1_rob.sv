@@ -50,14 +50,14 @@ module fursoy_s1_rob
     // -------------------------------------------------------------------------
     // Execution Writeback Completion Interface (from EX stages)
     // -------------------------------------------------------------------------
-    input  logic [3:0]             comp_valid_i,
-    input  rob_idx_t               comp_rob_idx_i     [3:0],
-    input  rob_epoch_t             comp_epoch_i       [3:0],
-    input  logic [3:0]             comp_branch_mispred_i,
-    input  logic [3:0]             comp_exception_i,
-    input  logic [4:0]             comp_cause_i       [3:0],
-    input  logic [4:0]             comp_fflags_i      [3:0],
-    output logic [3:0]             comp_ack_o,
+    input  logic [4:0]             comp_valid_i,
+    input  rob_idx_t               comp_rob_idx_i     [4:0],
+    input  rob_epoch_t             comp_epoch_i       [4:0],
+    input  logic [4:0]             comp_branch_mispred_i,
+    input  logic [4:0]             comp_exception_i,
+    input  logic [4:0]             comp_cause_i       [4:0],
+    input  logic [4:0]             comp_fflags_i      [4:0],
+    output logic [4:0]             comp_ack_o,
 
     // -------------------------------------------------------------------------
     // In-Order Retirement Interface (Retirement Stage at head_q)
@@ -174,14 +174,12 @@ module fursoy_s1_rob
     assign alloc_rob_epoch_o[1] = slot_epoch_q[inc48(tail_q, 3'd1)];
 
     // Live completion qualification against slot validity, completion status, and epoch
-    logic [3:0] comp_match;
-    always_comb begin
-        for (int unsigned w = 0; w < 4; w++) begin
-            comp_match[w] = comp_valid_i[w] &&
-                            entries_q[comp_rob_idx_i[w]].valid &&
-                            !entries_q[comp_rob_idx_i[w]].completed &&
-                            (entries_q[comp_rob_idx_i[w]].epoch == comp_epoch_i[w]);
-        end
+    logic [4:0] comp_match;
+    for (genvar gw = 0; gw < 5; gw++) begin : gen_comp_match
+        assign comp_match[gw] = comp_valid_i[gw] &&
+                                entries_q[comp_rob_idx_i[gw]].valid &&
+                                !entries_q[comp_rob_idx_i[gw]].completed &&
+                                (entries_q[comp_rob_idx_i[gw]].epoch == comp_epoch_i[gw]);
     end
     assign comp_ack_o = comp_match;
 
@@ -229,7 +227,7 @@ module fursoy_s1_rob
         entry0_exception_eff = entry0.exception;
         entry0_exc_cause_eff = entry0.exc_cause;
         entry0_fflags_eff    = entry0.fflags;
-        for (int unsigned w = 0; w < 4; w++) begin
+        for (int unsigned w = 0; w < 5; w++) begin
             if (comp_match[w] && (comp_rob_idx_i[w] == head_q)) begin
                 entry0_completed_eff = 1'b1;
                 entry0_fflags_eff    = comp_fflags_i[w];
@@ -246,7 +244,7 @@ module fursoy_s1_rob
         entry1_exception_eff = entry1.exception;
         entry1_exc_cause_eff = entry1.exc_cause;
         entry1_fflags_eff    = entry1.fflags;
-        for (int unsigned w = 0; w < 4; w++) begin
+        for (int unsigned w = 0; w < 5; w++) begin
             if (comp_match[w] && (comp_rob_idx_i[w] == head_next)) begin
                 entry1_completed_eff = 1'b1;
                 entry1_fflags_eff    = comp_fflags_i[w];
@@ -455,7 +453,7 @@ module fursoy_s1_rob
             // -----------------------------------------------------------------
             // 1. Writeback Completion Updates (strictly qualified by epoch match)
             // -----------------------------------------------------------------
-            for (int unsigned w = 0; w < 4; w++) begin
+            for (int unsigned w = 0; w < 5; w++) begin
                 if (comp_match[w]) begin
                     entries_q[comp_rob_idx_i[w]].completed      <= 1'b1;
                     entries_q[comp_rob_idx_i[w]].branch_mispred <= comp_branch_mispred_i[w];

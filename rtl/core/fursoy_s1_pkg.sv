@@ -72,6 +72,7 @@ package fursoy_s1_pkg;
         logic       is_fp;
         logic       fp_dest_valid;
         fareg_t     fs3;            // Third FP source register (FMA)
+        logic [2:0] frm;            // Rounding mode (instruction rm or dynamic)
     } uop_rename_in_t;
 
     // -------------------------------------------------------------------------
@@ -104,6 +105,7 @@ package fursoy_s1_pkg;
         logic       prs2_fp_ready;
         fpreg_t     prs3_fp;
         logic       prs3_fp_ready;
+        logic [2:0] frm;
     } uop_renamed_t;
 
     // -------------------------------------------------------------------------
@@ -207,128 +209,225 @@ package fursoy_s1_pkg;
         UOP_FP        = 4'd14
     } uop_class_t;
 
-    typedef enum logic [6:0] {
+    typedef enum logic [7:0] {
         // Base integer ALU (RV64I)
-        ALU_ADD       = 7'd0,
-        ALU_SUB       = 7'd1,
-        ALU_AND       = 7'd2,
-        ALU_OR        = 7'd3,
-        ALU_XOR       = 7'd4,
-        ALU_SLT       = 7'd5,
-        ALU_SLTU      = 7'd6,
-        ALU_LUI       = 7'd7,
-        ALU_AUIPC     = 7'd8,
+        ALU_ADD       = 8'd0,
+        ALU_SUB       = 8'd1,
+        ALU_AND       = 8'd2,
+        ALU_OR        = 8'd3,
+        ALU_XOR       = 8'd4,
+        ALU_SLT       = 8'd5,
+        ALU_SLTU      = 8'd6,
+        ALU_LUI       = 8'd7,
+        ALU_AUIPC     = 8'd8,
         // Shifts
-        ALU_SLL       = 7'd9,
-        ALU_SRL       = 7'd10,
-        ALU_SRA       = 7'd11,
+        ALU_SLL       = 8'd9,
+        ALU_SRL       = 8'd10,
+        ALU_SRA       = 8'd11,
         // Word operations (RV64I W-forms)
-        ALU_ADDW      = 7'd12,
-        ALU_SUBW      = 7'd13,
-        ALU_SLLW      = 7'd14,
-        ALU_SRLW      = 7'd15,
-        ALU_SRAW      = 7'd16,
+        ALU_ADDW      = 8'd12,
+        ALU_SUBW      = 8'd13,
+        ALU_SLLW      = 8'd14,
+        ALU_SRLW      = 8'd15,
+        ALU_SRAW      = 8'd16,
         // Extension Zba
-        ALU_SH1ADD    = 7'd17,
-        ALU_SH2ADD    = 7'd18,
-        ALU_SH3ADD    = 7'd19,
-        ALU_SH1ADD_UW = 7'd20,
-        ALU_SH2ADD_UW = 7'd21,
-        ALU_SH3ADD_UW = 7'd22,
-        ALU_ADD_UW    = 7'd23,
-        ALU_SLLI_UW   = 7'd24,
+        ALU_SH1ADD    = 8'd17,
+        ALU_SH2ADD    = 8'd18,
+        ALU_SH3ADD    = 8'd19,
+        ALU_SH1ADD_UW = 8'd20,
+        ALU_SH2ADD_UW = 8'd21,
+        ALU_SH3ADD_UW = 8'd22,
+        ALU_ADD_UW    = 8'd23,
+        ALU_SLLI_UW   = 8'd24,
         // Extension Zbb
-        ALU_ANDN      = 7'd25,
-        ALU_ORN       = 7'd26,
-        ALU_XNOR      = 7'd27,
-        ALU_CLZ       = 7'd28,
-        ALU_CTZ       = 7'd29,
-        ALU_CPOP      = 7'd30,
-        ALU_MAX       = 7'd31,
-        ALU_MAXU      = 7'd32,
-        ALU_MIN       = 7'd33,
-        ALU_MINU      = 7'd34,
-        ALU_SEXTB     = 7'd35,
-        ALU_SEXTH     = 7'd36,
-        ALU_ZEXTH     = 7'd37,
-        ALU_ROL       = 7'd38,
-        ALU_ROR       = 7'd39,
-        ALU_ORC_B     = 7'd40,
-        ALU_REV8      = 7'd41,
+        ALU_ANDN      = 8'd25,
+        ALU_ORN       = 8'd26,
+        ALU_XNOR      = 8'd27,
+        ALU_CLZ       = 8'd28,
+        ALU_CTZ       = 8'd29,
+        ALU_CPOP      = 8'd30,
+        ALU_MAX       = 8'd31,
+        ALU_MAXU      = 8'd32,
+        ALU_MIN       = 8'd33,
+        ALU_MINU      = 8'd34,
+        ALU_SEXTB     = 8'd35,
+        ALU_SEXTH     = 8'd36,
+        ALU_ZEXTH     = 8'd37,
+        ALU_ROL       = 8'd38,
+        ALU_ROR       = 8'd39,
+        ALU_ORC_B     = 8'd40,
+        ALU_REV8      = 8'd41,
         // Conditional Branches
-        BR_EQ         = 7'd42,
-        BR_NE         = 7'd43,
-        BR_LT         = 7'd44,
-        BR_GE         = 7'd45,
-        BR_LTU        = 7'd46,
-        BR_GEU        = 7'd47,
+        BR_EQ         = 8'd42,
+        BR_NE         = 8'd43,
+        BR_LT         = 8'd44,
+        BR_GE         = 8'd45,
+        BR_LTU        = 8'd46,
+        BR_GEU        = 8'd47,
         // Multiplier (RV64M)
-        MUL_MUL       = 7'd48,
-        MUL_MULH      = 7'd49,
-        MUL_MULHSU    = 7'd50,
-        MUL_MULHU     = 7'd51,
-        MUL_MULW      = 7'd52,
+        MUL_MUL       = 8'd48,
+        MUL_MULH      = 8'd49,
+        MUL_MULHSU    = 8'd50,
+        MUL_MULHU     = 8'd51,
+        MUL_MULW      = 8'd52,
         // Divider (RV64M)
-        DIV_DIV       = 7'd53,
-        DIV_DIVU      = 7'd54,
-        DIV_REM       = 7'd55,
-        DIV_REMU      = 7'd56,
-        DIV_DIVW      = 7'd57,
-        DIV_DIVUW     = 7'd58,
-        DIV_REMW      = 7'd59,
-        DIV_REMUW     = 7'd60,
+        DIV_DIV       = 8'd53,
+        DIV_DIVU      = 8'd54,
+        DIV_REM       = 8'd55,
+        DIV_REMU      = 8'd56,
+        DIV_DIVW      = 8'd57,
+        DIV_DIVUW     = 8'd58,
+        DIV_REMW      = 8'd59,
+        DIV_REMUW     = 8'd60,
         // Milestone 3 Loads (RV64I)
-        MEM_LB        = 7'd61,
-        MEM_LBU       = 7'd62,
-        MEM_LH        = 7'd63,
-        MEM_LHU       = 7'd64,
-        MEM_LW        = 7'd65,
-        MEM_LWU       = 7'd66,
-        MEM_LD        = 7'd67,
+        MEM_LB        = 8'd61,
+        MEM_LBU       = 8'd62,
+        MEM_LH        = 8'd63,
+        MEM_LHU       = 8'd64,
+        MEM_LW        = 8'd65,
+        MEM_LWU       = 8'd66,
+        MEM_LD        = 8'd67,
         // Milestone 3 Stores (RV64I)
-        MEM_SB        = 7'd68,
-        MEM_SH        = 7'd69,
-        MEM_SW        = 7'd70,
-        MEM_SD        = 7'd71,
+        MEM_SB        = 8'd68,
+        MEM_SH        = 8'd69,
+        MEM_SW        = 8'd70,
+        MEM_SD        = 8'd71,
         // Milestone 3 Atomics (RV64A LR/SC)
-        MEM_LR_W      = 7'd72,
-        MEM_LR_D      = 7'd73,
-        MEM_SC_W      = 7'd74,
-        MEM_SC_D      = 7'd75,
+        MEM_LR_W      = 8'd72,
+        MEM_LR_D      = 8'd73,
+        MEM_SC_W      = 8'd74,
+        MEM_SC_D      = 8'd75,
         // Milestone 3 AMO Operations (RV64A)
-        AMO_SWAP_W    = 7'd76,
-        AMO_SWAP_D    = 7'd77,
-        AMO_ADD_W     = 7'd78,
-        AMO_ADD_D     = 7'd79,
-        AMO_XOR_W     = 7'd80,
-        AMO_XOR_D     = 7'd81,
-        AMO_AND_W     = 7'd82,
-        AMO_AND_D     = 7'd83,
-        AMO_OR_W      = 7'd84,
-        AMO_OR_D      = 7'd85,
-        AMO_MIN_W     = 7'd86,
-        AMO_MIN_D     = 7'd87,
-        AMO_MAX_W     = 7'd88,
-        AMO_MAX_D     = 7'd89,
-        AMO_MINU_W    = 7'd90,
-        AMO_MINU_D    = 7'd91,
-        AMO_MAXU_W    = 7'd92,
-        AMO_MAXU_D    = 7'd93,
+        AMO_SWAP_W    = 8'd76,
+        AMO_SWAP_D    = 8'd77,
+        AMO_ADD_W     = 8'd78,
+        AMO_ADD_D     = 8'd79,
+        AMO_XOR_W     = 8'd80,
+        AMO_XOR_D     = 8'd81,
+        AMO_AND_W     = 8'd82,
+        AMO_AND_D     = 8'd83,
+        AMO_OR_W      = 8'd84,
+        AMO_OR_D      = 8'd85,
+        AMO_MIN_W     = 8'd86,
+        AMO_MIN_D     = 8'd87,
+        AMO_MAX_W     = 8'd88,
+        AMO_MAX_D     = 8'd89,
+        AMO_MINU_W    = 8'd90,
+        AMO_MINU_D    = 8'd91,
+        AMO_MAXU_W    = 8'd92,
+        AMO_MAXU_D    = 8'd93,
         // Milestone 3 Fences
-        MEM_FENCE     = 7'd94,
-        MEM_FENCE_I   = 7'd95,
+        MEM_FENCE     = 8'd94,
+        MEM_FENCE_I   = 8'd95,
         // System & CSR Sub-Operations
-        SYS_CSRRW     = 7'd96,
-        SYS_CSRRS     = 7'd97,
-        SYS_CSRRC     = 7'd98,
-        SYS_CSRRWI    = 7'd99,
-        SYS_CSRRSI    = 7'd100,
-        SYS_CSRRCI    = 7'd101,
-        SYS_MRET      = 7'd102,
-        SYS_SRET      = 7'd103,
-        SYS_WFI       = 7'd104,
-        SYS_SFENCE_VMA= 7'd105
+        SYS_CSRRW     = 8'd96,
+        SYS_CSRRS     = 8'd97,
+        SYS_CSRRC     = 8'd98,
+        SYS_CSRRWI    = 8'd99,
+        SYS_CSRRSI    = 8'd100,
+        SYS_CSRRCI    = 8'd101,
+        SYS_MRET      = 8'd102,
+        SYS_SRET      = 8'd103,
+        SYS_WFI       = 8'd104,
+        SYS_SFENCE_VMA= 8'd105,
+        // Milestone 8 Phase B Floating-Point Sub-Operations
+        // Pipelined FMA Unit (.S and .D)
+        FP_FADD_S     = 8'd106,
+        FP_FADD_D     = 8'd107,
+        FP_FSUB_S     = 8'd108,
+        FP_FSUB_D     = 8'd109,
+        FP_FMUL_S     = 8'd110,
+        FP_FMUL_D     = 8'd111,
+        FP_FMADD_S    = 8'd112,
+        FP_FMADD_D    = 8'd113,
+        FP_FMSUB_S    = 8'd114,
+        FP_FMSUB_D    = 8'd115,
+        FP_FNMSUB_S   = 8'd116,
+        FP_FNMSUB_D   = 8'd117,
+        FP_FNMADD_S   = 8'd118,
+        FP_FNMADD_D   = 8'd119,
+        // Sign Injection & Min/Max
+        FP_FSGNJ_S    = 8'd120,
+        FP_FSGNJ_D    = 8'd121,
+        FP_FSGNJN_S   = 8'd122,
+        FP_FSGNJN_D   = 8'd123,
+        FP_FSGNJX_S   = 8'd124,
+        FP_FSGNJX_D   = 8'd125,
+        FP_FMIN_S     = 8'd126,
+        FP_FMIN_D     = 8'd127,
+        FP_FMAX_S     = 8'd128,
+        FP_FMAX_D     = 8'd129,
+        // Iterative Radix-4 SRT FDIV / FSQRT Unit
+        FP_FDIV_S     = 8'd130,
+        FP_FDIV_D     = 8'd131,
+        FP_FSQRT_S    = 8'd132,
+        FP_FSQRT_D    = 8'd133,
+        // Float-to-Float Conversions
+        FP_FCVT_S_D   = 8'd134,
+        FP_FCVT_D_S   = 8'd135,
+        // FP Comparisons & Classification
+        FP_FEQ_S      = 8'd136,
+        FP_FEQ_D      = 8'd137,
+        FP_FLT_S      = 8'd138,
+        FP_FLT_D      = 8'd139,
+        FP_FLE_S      = 8'd140,
+        FP_FLE_D      = 8'd141,
+        FP_FCLASS_S   = 8'd142,
+        FP_FCLASS_D   = 8'd143,
+        // Float-to-Integer Moves & Conversions
+        FP_FMV_X_W    = 8'd144,
+        FP_FMV_X_D    = 8'd145,
+        FP_FCVT_W_S   = 8'd146,
+        FP_FCVT_W_D   = 8'd147,
+        FP_FCVT_WU_S  = 8'd148,
+        FP_FCVT_WU_D  = 8'd149,
+        FP_FCVT_L_S   = 8'd150,
+        FP_FCVT_L_D   = 8'd151,
+        FP_FCVT_LU_S  = 8'd152,
+        FP_FCVT_LU_D  = 8'd153,
+        // Integer-to-Float Moves & Conversions
+        FP_FMV_W_X    = 8'd154,
+        FP_FMV_D_X    = 8'd155,
+        FP_FCVT_S_W   = 8'd156,
+        FP_FCVT_D_W   = 8'd157,
+        FP_FCVT_S_WU  = 8'd158,
+        FP_FCVT_D_WU  = 8'd159,
+        FP_FCVT_S_L   = 8'd160,
+        FP_FCVT_D_L   = 8'd161,
+        FP_FCVT_S_LU  = 8'd162,
+        FP_FCVT_D_LU  = 8'd163
     } uop_subop_t;
+
+    // -------------------------------------------------------------------------
+    // Milestone 8 Phase B Floating-Point Issue Queue Dimensions & Types
+    // -------------------------------------------------------------------------
+    localparam int unsigned FPIQ_DEPTH = 16;
+    localparam int unsigned FPIQ_IDX_W = 4; // $clog2(16)
+    typedef logic [FPIQ_IDX_W-1:0] fpiq_idx_t;
+
+    typedef struct packed {
+        logic           valid;
+        uop_class_t     uop_class;
+        uop_subop_t     sub_op;
+        logic [2:0]     frm;
+        fpreg_t         prs1_fp;
+        logic           prs1_fp_ready;
+        logic           use_rs1_fp;
+        fpreg_t         prs2_fp;
+        logic           prs2_fp_ready;
+        logic           use_rs2_fp;
+        fpreg_t         prs3_fp;
+        logic           prs3_fp_ready;
+        logic           use_rs3_fp;
+        fpreg_t         prd_fp;
+        logic           fp_dest_valid;
+        preg_t          pnew;
+        logic           int_dest_valid;
+        areg_t          rd;
+        rob_idx_t       rob_idx;
+        rob_epoch_t     rob_epoch;
+        logic [63:0]    pc;
+    } fpiq_entry_t;
 
     localparam int unsigned GHR_WIDTH = 108; // 108-bit GHR for Milestone 6 Phase A TAGE-Lite
     typedef logic [GHR_WIDTH-1:0] ghr_t;
@@ -433,6 +532,7 @@ package fursoy_s1_pkg;
         logic        is_fp;
         logic        fp_dest_valid;
         fareg_t      fs3;
+        logic [2:0]  frm;
     } uop_decoded_t;
 
     // -------------------------------------------------------------------------
@@ -463,6 +563,10 @@ package fursoy_s1_pkg;
         logic [1:0]  port_mask;     // Bit 0: P0 eligible, Bit 1: P1 eligible
         logic        exception;
         logic [4:0]  exc_cause;
+        // Milestone 8 Int-to-Float fields
+        fpreg_t      prd_fp;
+        logic        fp_dest_valid;
+        logic [2:0]  frm;
     } iq_entry_t;
 
     // -------------------------------------------------------------------------

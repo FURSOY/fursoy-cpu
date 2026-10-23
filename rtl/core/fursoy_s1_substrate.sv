@@ -47,6 +47,7 @@ module fursoy_s1_substrate
     input  logic                   uop0_is_fp_i,
     input  logic                   uop0_fp_dest_valid_i,
     input  fareg_t                 uop0_fs3_i,
+    input  logic [2:0]             uop0_frm_i,
 
     input  logic                   uop1_valid_i,
     input  areg_t                  uop1_rs1_i,
@@ -58,6 +59,7 @@ module fursoy_s1_substrate
     input  logic                   uop1_is_fp_i,
     input  logic                   uop1_fp_dest_valid_i,
     input  fareg_t                 uop1_fs3_i,
+    input  logic [2:0]             uop1_frm_i,
 
     // Downstream backpressure (e.g. from Issue Queues)
     input  logic [1:0]             dispatch_ready_i,
@@ -111,16 +113,16 @@ module fursoy_s1_substrate
     // -------------------------------------------------------------------------
     // Execution Units Writeback / Completion Interface
     // -------------------------------------------------------------------------
-    // 4 ports (Port 0: ALU0/BR, Port 1: ALU1/MULDIV, Port 2: AGU0/LSU, Port 3: AGU1/Load)
-    input  logic [3:0]             comp_valid_i,
-    input  rob_idx_t               comp_rob_idx_i        [3:0],
-    input  rob_epoch_t             comp_epoch_i          [3:0],
-    input  preg_t                  comp_preg_i           [3:0],
-    input  logic [3:0]             comp_branch_mispred_i,
-    input  logic [3:0]             comp_exception_i,
-    input  logic [4:0]             comp_cause_i          [3:0],
-    input  logic [4:0]             comp_fflags_i         [3:0],
-    output logic [3:0]             comp_ack_o,
+    // 5 ports (Port 0: ALU0/BR, Port 1: ALU1/MULDIV, Port 2: AGU0/LSU, Port 3: AGU1/Load, Port 4: FP Pipeline)
+    input  logic [4:0]             comp_valid_i,
+    input  rob_idx_t               comp_rob_idx_i        [4:0],
+    input  rob_epoch_t             comp_epoch_i          [4:0],
+    input  preg_t                  comp_preg_i           [4:0],
+    input  logic [4:0]             comp_branch_mispred_i,
+    input  logic [4:0]             comp_exception_i,
+    input  logic [4:0]             comp_cause_i          [4:0],
+    input  logic [4:0]             comp_fflags_i         [4:0],
+    output logic [4:0]             comp_ack_o,
 
     // Dedicated Floating-Point Writeback Completion Interface (w0: P4, w1: P2, w2: P3)
     input  logic [2:0]             comp_fp_wb_valid_i,
@@ -311,7 +313,7 @@ module fursoy_s1_substrate
     rob_idx_t        rob_alloc_idx [1:0];
     rob_epoch_t      rob_alloc_epoch [1:0];
     logic [1:0]      rob_alloc_ready;
-    logic [3:0]      rob_comp_ack;
+    logic [4:0]      rob_comp_ack;
     rob_idx_t        rob_head;
     /* verilator lint_off UNUSEDSIGNAL */
     rob_idx_t        rob_tail;
@@ -348,6 +350,7 @@ module fursoy_s1_substrate
     assign uop0_rename_in.is_fp         = uop0_is_fp_i;
     assign uop0_rename_in.fp_dest_valid = uop0_fp_dest_valid_i;
     assign uop0_rename_in.fs3           = uop0_fs3_i;
+    assign uop0_rename_in.frm           = uop0_frm_i;
 
     assign uop1_rename_in.valid         = uop1_valid_i;
     assign uop1_rename_in.rs1           = uop1_rs1_i;
@@ -358,12 +361,13 @@ module fursoy_s1_substrate
     assign uop1_rename_in.is_fp         = uop1_is_fp_i;
     assign uop1_rename_in.fp_dest_valid = uop1_fp_dest_valid_i;
     assign uop1_rename_in.fs3           = uop1_fs3_i;
+    assign uop1_rename_in.frm           = uop1_frm_i;
 
     // Destination register requirement:
     // Integer: requires physical register if valid, not FP, and rd != 0 (x0 hardwired to 0).
     // Floating-Point: requires physical register if valid and writes FP dest (f0 is fully writable).
-    wire uop0_needs_preg  = uop0_valid_i && (!uop0_is_fp_i) && (uop0_rd_i != 5'd0);
-    wire uop1_needs_preg  = uop1_valid_i && (!uop1_is_fp_i) && (uop1_rd_i != 5'd0);
+    wire uop0_needs_preg  = uop0_valid_i && (!uop0_fp_dest_valid_i) && (uop0_rd_i != 5'd0);
+    wire uop1_needs_preg  = uop1_valid_i && (!uop1_fp_dest_valid_i) && (uop1_rd_i != 5'd0);
 
     wire uop0_needs_fpreg = uop0_valid_i && uop0_fp_dest_valid_i;
     wire uop1_needs_fpreg = uop1_valid_i && uop1_fp_dest_valid_i;
@@ -480,6 +484,7 @@ module fursoy_s1_substrate
     assign uop0_renamed_o.prs2_fp_ready = uop0_prs2_fp_ready;
     assign uop0_renamed_o.prs3_fp       = uop0_prs3_fp;
     assign uop0_renamed_o.prs3_fp_ready = uop0_prs3_fp_ready;
+    assign uop0_renamed_o.frm           = uop0_frm_i;
 
     assign uop1_renamed_o.valid         = uop1_can_dispatch;
     assign uop1_renamed_o.rd            = uop1_rd_i;
@@ -506,6 +511,7 @@ module fursoy_s1_substrate
     assign uop1_renamed_o.prs2_fp_ready = uop1_prs2_fp_ready;
     assign uop1_renamed_o.prs3_fp       = uop1_prs3_fp;
     assign uop1_renamed_o.prs3_fp_ready = uop1_prs3_fp_ready;
+    assign uop1_renamed_o.frm           = uop1_frm_i;
 
     // =========================================================================
     // 2. Submodule Instantiations
@@ -904,7 +910,7 @@ module fursoy_s1_substrate
 
             // 3. Active valid ROB Pnew must not appear in Free List
             for (int unsigned i = 0; i < ROB_NUM; i++) begin
-                if (u_rob.entries_q[i].valid && (!u_rob.entries_q[i].is_fp) && (u_rob.entries_q[i].rd != 5'd0)) begin
+                if (u_rob.entries_q[i].valid && (!u_rob.entries_q[i].fp_dest_valid) && (u_rob.entries_q[i].rd != 5'd0)) begin
                     preg_t rob_pnew;
                     rob_pnew = u_rob.entries_q[i].pnew;
                     for (int unsigned f = 0; f < 48; f++) begin
@@ -924,9 +930,9 @@ module fursoy_s1_substrate
 
             // 4. No two distinct live ROB destination entries own the same Pnew
             for (int unsigned i = 0; i < ROB_NUM; i++) begin
-                if (u_rob.entries_q[i].valid && (!u_rob.entries_q[i].is_fp) && (u_rob.entries_q[i].rd != 5'd0)) begin
+                if (u_rob.entries_q[i].valid && (!u_rob.entries_q[i].fp_dest_valid) && (u_rob.entries_q[i].rd != 5'd0)) begin
                     for (int unsigned j = i + 1; j < ROB_NUM; j++) begin
-                        if (u_rob.entries_q[j].valid && (!u_rob.entries_q[j].is_fp) && (u_rob.entries_q[j].rd != 5'd0)) begin
+                        if (u_rob.entries_q[j].valid && (!u_rob.entries_q[j].fp_dest_valid) && (u_rob.entries_q[j].rd != 5'd0)) begin
                             if (u_rob.entries_q[i].pnew == u_rob.entries_q[j].pnew) begin
                                 $fatal(1, "[SUBSTRATE ASSERTION FAILED] Distinct live ROB entries %0d and %0d share same Pnew p%0d!",
                                        i, j, u_rob.entries_q[i].pnew);

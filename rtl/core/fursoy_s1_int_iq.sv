@@ -53,6 +53,9 @@ module fursoy_s1_int_iq
     input  ghr_t              uop0_pre_ghr_i,
     input  logic              uop0_exception_i,
     input  logic [4:0]        uop0_exc_cause_i,
+    input  fpreg_t            uop0_prd_fp_i,
+    input  logic              uop0_fp_dest_valid_i,
+    input  logic [2:0]        uop0_frm_i,
 
     // Uop 1 Dispatch Payload
     input  logic              uop1_valid_i,
@@ -78,6 +81,9 @@ module fursoy_s1_int_iq
     input  ghr_t              uop1_pre_ghr_i,
     input  logic              uop1_exception_i,
     input  logic [4:0]        uop1_exc_cause_i,
+    input  fpreg_t            uop1_prd_fp_i,
+    input  logic              uop1_fp_dest_valid_i,
+    input  logic [2:0]        uop1_frm_i,
 
     // Validated Writeback Snoop for Wakeup (from Validated WB stage)
     input  logic              wb0_valid_i,
@@ -138,10 +144,27 @@ module fursoy_s1_int_iq
     // -------------------------------------------------------------------------
     // Allocation Logic
     // -------------------------------------------------------------------------
+    function automatic logic is_int2fp_op(input uop_subop_t op);
+        case (op)
+            FP_FMV_W_X, FP_FMV_D_X,
+            FP_FCVT_S_W, FP_FCVT_D_W,
+            FP_FCVT_S_WU, FP_FCVT_D_WU,
+            FP_FCVT_S_L, FP_FCVT_D_L,
+            FP_FCVT_S_LU, FP_FCVT_D_LU: return 1'b1;
+            default: return 1'b0;
+        endcase
+    endfunction
+
     wire uop0_is_mem = (uop0_class_i == UOP_LOAD) || (uop0_class_i == UOP_STORE) ||
                        (uop0_class_i == UOP_AMO)  || (uop0_class_i == UOP_FENCE);
     wire uop1_is_mem = (uop1_class_i == UOP_LOAD) || (uop1_class_i == UOP_STORE) ||
                        (uop1_class_i == UOP_AMO)  || (uop1_class_i == UOP_FENCE);
+
+    wire uop0_is_fpiq = (uop0_class_i == UOP_FP) && !is_int2fp_op(uop0_subop_i);
+    wire uop1_is_fpiq = (uop1_class_i == UOP_FP) && !is_int2fp_op(uop1_subop_i);
+
+    wire uop0_for_intiq = !uop0_is_mem && !uop0_is_fpiq;
+    wire uop1_for_intiq = !uop1_is_mem && !uop1_is_fpiq;
 
     // Count free entries
     logic [4:0] free_count;
@@ -178,18 +201,18 @@ module fursoy_s1_int_iq
         end
     end
 
-    wire [3:0] alloc_slot1_eff = !uop0_is_mem ? alloc_slot1 : alloc_slot0;
-    wire       slot1_found_eff = !uop0_is_mem ? slot1_found : slot0_found;
+    wire [3:0] alloc_slot1_eff = uop0_for_intiq ? alloc_slot1 : alloc_slot0;
+    wire       slot1_found_eff = uop0_for_intiq ? slot1_found : slot0_found;
 
-    wire alloc0_fire = uop0_valid_i && !uop0_is_mem && rename_ack_i[0] && !flush_valid_i && slot0_found;
-    wire alloc1_fire = uop1_valid_i && !uop1_is_mem && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
+    wire alloc0_fire = uop0_valid_i && uop0_for_intiq && rename_ack_i[0] && !flush_valid_i && slot0_found;
+    wire alloc1_fire = uop1_valid_i && uop1_for_intiq && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
 
     // Port Mask Generation for Dispatch Uops
     function automatic logic [1:0] get_port_mask(input uop_class_t uclass);
         case (uclass)
-            UOP_BRANCH, UOP_JAL, UOP_JALR, UOP_SYSTEM: return 2'b01; // Port 0 only
-            UOP_MUL, UOP_DIV:                          return 2'b10; // Port 1 only
-            default:                                   return 2'b11; // Symmetric flexible ALU
+            UOP_BRANCH, UOP_JAL, UOP_JALR, UOP_SYSTEM, UOP_FP: return 2'b01; // Port 0 only (including Int2FP)
+            UOP_MUL, UOP_DIV:                                   return 2'b10; // Port 1 only
+            default:                                            return 2'b11; // Symmetric flexible ALU
         endcase
     endfunction
 
@@ -528,6 +551,9 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot0].port_mask   <= get_port_mask(uop0_class_i);
                     entries_q[alloc_slot0].exception   <= uop0_exception_i;
                     entries_q[alloc_slot0].exc_cause   <= uop0_exc_cause_i;
+                    entries_q[alloc_slot0].prd_fp      <= uop0_prd_fp_i;
+                    entries_q[alloc_slot0].fp_dest_valid <= uop0_fp_dest_valid_i;
+                    entries_q[alloc_slot0].frm         <= uop0_frm_i;
                 end
             end
 
@@ -565,6 +591,9 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot1_eff].port_mask   <= get_port_mask(uop1_class_i);
                     entries_q[alloc_slot1_eff].exception   <= uop1_exception_i;
                     entries_q[alloc_slot1_eff].exc_cause   <= uop1_exc_cause_i;
+                    entries_q[alloc_slot1_eff].prd_fp      <= uop1_prd_fp_i;
+                    entries_q[alloc_slot1_eff].fp_dest_valid <= uop1_fp_dest_valid_i;
+                    entries_q[alloc_slot1_eff].frm         <= uop1_frm_i;
                 end
             end
         end

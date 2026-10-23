@@ -31,9 +31,9 @@ module fursoy_s1_prf_status
     // -------------------------------------------------------------------------
     // Execution Writeback Completion Interface (Sets Readiness)
     // -------------------------------------------------------------------------
-    // 4 writeback ports corresponding to Port 0, Port 1, Port 2, Port 3
-    input  logic [3:0]             wb_valid_i,
-    input  preg_t                  wb_preg_i [3:0],
+    // 5 writeback ports corresponding to Port 0, Port 1, Port 2, Port 3, Port 4
+    input  logic [4:0]             wb_valid_i,
+    input  preg_t                  wb_preg_i [4:0],
 
     // -------------------------------------------------------------------------
     // Reclamation Interface (Squash Pnew & Flush restore readiness)
@@ -104,7 +104,7 @@ module fursoy_s1_prf_status
             end
 
             // 2. Execution writeback completion sets ready
-            for (int unsigned w = 0; w < 4; w++) begin
+            for (int unsigned w = 0; w < 5; w++) begin
                 if (wb_valid_i[w] && (wb_preg_i[w] != 7'd0)) begin
                     ready_q[wb_preg_i[w]] <= 1'b1;
                 end

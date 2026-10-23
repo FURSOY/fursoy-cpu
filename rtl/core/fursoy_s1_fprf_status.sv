@@ -77,18 +77,36 @@ module fursoy_s1_fprf_status
     // -------------------------------------------------------------------------
     logic [PRF_CAPACITY-1:0] ready_q;
 
-    // -------------------------------------------------------------------------
-    // Combinational Source Readiness Lookups
-    // -------------------------------------------------------------------------
-    assign uop0_fs1_ready_o = ready_q[uop0_fs1_preg_i];
-    assign uop0_fs2_ready_o = ready_q[uop0_fs2_preg_i];
-    assign uop0_fs3_ready_o = ready_q[uop0_fs3_preg_i];
+    // Combinational Source Readiness Lookups (with same-cycle writeback bypass)
+    wire wb_match_uop0_fs1 = (wb_valid_i[0] && (uop0_fs1_preg_i == wb_preg_i[0])) ||
+                            (wb_valid_i[1] && (uop0_fs1_preg_i == wb_preg_i[1])) ||
+                            (wb_valid_i[2] && (uop0_fs1_preg_i == wb_preg_i[2]));
+    wire wb_match_uop0_fs2 = (wb_valid_i[0] && (uop0_fs2_preg_i == wb_preg_i[0])) ||
+                            (wb_valid_i[1] && (uop0_fs2_preg_i == wb_preg_i[1])) ||
+                            (wb_valid_i[2] && (uop0_fs2_preg_i == wb_preg_i[2]));
+    wire wb_match_uop0_fs3 = (wb_valid_i[0] && (uop0_fs3_preg_i == wb_preg_i[0])) ||
+                            (wb_valid_i[1] && (uop0_fs3_preg_i == wb_preg_i[1])) ||
+                            (wb_valid_i[2] && (uop0_fs3_preg_i == wb_preg_i[2]));
+
+    wire wb_match_uop1_fs1 = (wb_valid_i[0] && (uop1_fs1_preg_i == wb_preg_i[0])) ||
+                            (wb_valid_i[1] && (uop1_fs1_preg_i == wb_preg_i[1])) ||
+                            (wb_valid_i[2] && (uop1_fs1_preg_i == wb_preg_i[2]));
+    wire wb_match_uop1_fs2 = (wb_valid_i[0] && (uop1_fs2_preg_i == wb_preg_i[0])) ||
+                            (wb_valid_i[1] && (uop1_fs2_preg_i == wb_preg_i[1])) ||
+                            (wb_valid_i[2] && (uop1_fs2_preg_i == wb_preg_i[2]));
+    wire wb_match_uop1_fs3 = (wb_valid_i[0] && (uop1_fs3_preg_i == wb_preg_i[0])) ||
+                            (wb_valid_i[1] && (uop1_fs3_preg_i == wb_preg_i[1])) ||
+                            (wb_valid_i[2] && (uop1_fs3_preg_i == wb_preg_i[2]));
+
+    assign uop0_fs1_ready_o = ready_q[uop0_fs1_preg_i] || wb_match_uop0_fs1;
+    assign uop0_fs2_ready_o = ready_q[uop0_fs2_preg_i] || wb_match_uop0_fs2;
+    assign uop0_fs3_ready_o = ready_q[uop0_fs3_preg_i] || wb_match_uop0_fs3;
 
     // uop1: if intra-group RAW from uop0, uop0 was just allocated this cycle
     // and cannot be completed, so readiness is strictly 0!
-    assign uop1_fs1_ready_o = uop1_fs1_raw_uop0_i ? 1'b0 : ready_q[uop1_fs1_preg_i];
-    assign uop1_fs2_ready_o = uop1_fs2_raw_uop0_i ? 1'b0 : ready_q[uop1_fs2_preg_i];
-    assign uop1_fs3_ready_o = uop1_fs3_raw_uop0_i ? 1'b0 : ready_q[uop1_fs3_preg_i];
+    assign uop1_fs1_ready_o = uop1_fs1_raw_uop0_i ? 1'b0 : (ready_q[uop1_fs1_preg_i] || wb_match_uop1_fs1);
+    assign uop1_fs2_ready_o = uop1_fs2_raw_uop0_i ? 1'b0 : (ready_q[uop1_fs2_preg_i] || wb_match_uop1_fs2);
+    assign uop1_fs3_ready_o = uop1_fs3_raw_uop0_i ? 1'b0 : (ready_q[uop1_fs3_preg_i] || wb_match_uop1_fs3);
 
     assign ready_mask_fp_o  = ready_q;
 

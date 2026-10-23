@@ -15,6 +15,10 @@
 // Reference: docs/architecture/slice1-m2-backend-v1.md
 `include "fursoy_s1_lsu.sv"
 `include "fursoy_s1_fprf.sv"
+`include "fursoy_s1_fp_iq.sv"
+`include "fursoy_s1_fma.sv"
+`include "fursoy_s1_fdiv.sv"
+`include "fursoy_s1_fconv.sv"
 
 module fursoy_s1_backend
     import fursoy_s1_pkg::*;
@@ -69,6 +73,17 @@ module fursoy_s1_backend
     input  ghr_t              uop0_pre_ghr_i,
     input  logic              uop0_exception_i,
     input  logic [4:0]        uop0_exc_cause_i,
+    // Milestone 8 Phase B FP Uop 0 Payload
+    input  logic              uop0_is_fp_i,
+    input  logic              uop0_fp_dest_valid_i,
+    input  fpreg_t            uop0_prd_fp_i,
+    input  fpreg_t            uop0_prs1_fp_i,
+    input  logic              uop0_prs1_fp_ready_i,
+    input  fpreg_t            uop0_prs2_fp_i,
+    input  logic              uop0_prs2_fp_ready_i,
+    input  fpreg_t            uop0_prs3_fp_i,
+    input  logic              uop0_prs3_fp_ready_i,
+    input  logic [2:0]        uop0_frm_i,
 
     // Uop 1 Payload
     input  logic              uop1_valid_i,
@@ -95,20 +110,38 @@ module fursoy_s1_backend
     input  ghr_t              uop1_pre_ghr_i,
     input  logic              uop1_exception_i,
     input  logic [4:0]        uop1_exc_cause_i,
+    // Milestone 8 Phase B FP Uop 1 Payload
+    input  logic              uop1_is_fp_i,
+    input  logic              uop1_fp_dest_valid_i,
+    input  fpreg_t            uop1_prd_fp_i,
+    input  fpreg_t            uop1_prs1_fp_i,
+    input  logic              uop1_prs1_fp_ready_i,
+    input  fpreg_t            uop1_prs2_fp_i,
+    input  logic              uop1_prs2_fp_ready_i,
+    input  fpreg_t            uop1_prs3_fp_i,
+    input  logic              uop1_prs3_fp_ready_i,
+    input  logic [2:0]        uop1_frm_i,
+
+    input  logic [2:0]        fcsr_frm_i,
 
     // -------------------------------------------------------------------------
-    // M1 Completion Interface
+    // M1 Completion Interface (Expanded to 5 ports for Port 4 FP)
     // -------------------------------------------------------------------------
-    output logic [3:0]        comp_valid_o,
-    output rob_idx_t          comp_rob_idx_o       [3:0],
-    output rob_epoch_t        comp_epoch_o         [3:0],
-    output preg_t             comp_preg_o          [3:0],
-    output logic [3:0]        comp_branch_mispred_o,
-    output logic [3:0]        comp_exception_o,
-    output logic [4:0]        comp_cause_o         [3:0],
+    output logic [4:0]        comp_valid_o,
+    output rob_idx_t          comp_rob_idx_o       [4:0],
+    output rob_epoch_t        comp_epoch_o         [4:0],
+    output preg_t             comp_preg_o          [4:0],
+    output logic [4:0]        comp_branch_mispred_o,
+    output logic [4:0]        comp_exception_o,
+    output logic [4:0]        comp_cause_o         [4:0],
+    output logic [4:0]        comp_fflags_o        [4:0],
     /* verilator lint_off UNUSEDSIGNAL */
-    input  logic [3:0]        comp_ack_i,
+    input  logic [4:0]        comp_ack_i,
     /* verilator lint_on UNUSEDSIGNAL */
+
+    // Substrate FPRF Status writeback notification
+    output logic [2:0]        comp_fp_wb_valid_o,
+    output fpreg_t            comp_fp_wb_preg_o    [2:0],
 
     // Testbench / Diagnostics Read Probe Port
     input  preg_t             probe_paddr_i,
@@ -248,11 +281,17 @@ module fursoy_s1_backend
     output logic              event_snoop_replay_o,
 
     // Milestone 8 Phase A Floating-Point Register File Interface
+    /* verilator lint_off UNUSEDSIGNAL */
     input  fpreg_t            r0_fp_paddr_i,
+    /* verilator lint_on UNUSEDSIGNAL */
     output logic [63:0]       r0_fp_data_o,
+    /* verilator lint_off UNUSEDSIGNAL */
     input  fpreg_t            r1_fp_paddr_i,
+    /* verilator lint_on UNUSEDSIGNAL */
     output logic [63:0]       r1_fp_data_o,
+    /* verilator lint_off UNUSEDSIGNAL */
     input  fpreg_t            r2_fp_paddr_i,
+    /* verilator lint_on UNUSEDSIGNAL */
     output logic [63:0]       r2_fp_data_o,
     input  fpreg_t            r3_fp_paddr_i,
     output logic [63:0]       r3_fp_data_o,
@@ -344,20 +383,73 @@ module fursoy_s1_backend
     logic [4:0]  p3_comp_cause;
     logic [63:0] p3_wb_data;
 
+    // Port 0 / F2I Effective PRF Writeback Signals
+    logic        p0_eff_wb_valid;
+    logic [63:0] p0_eff_wb_data;
+    preg_t       p0_eff_wb_pnew;
+    rob_idx_t    p0_eff_wb_rob_idx;
+    rob_epoch_t  p0_eff_wb_rob_epoch;
+    logic        p0_eff_wb_mispredict;
+    logic        p0_eff_wb_exception;
+    logic [4:0]  p0_eff_wb_cause;
+    logic [4:0]  p0_eff_wb_fflags;
+    logic [63:0] p0_eff_wb_target;
+    logic        p0_eff_wb_actual_taken;
+    logic [63:0] p0_eff_wb_pc;
+    branch_type_t p0_eff_wb_br_type;
+    ghr_t        p0_eff_wb_ghr;
+    logic        p0_eff_wb_is_ctrl;
+
+    // Port 4 FPRF w0_fp Writeback Signals
+    logic        p4_fprf_wb_valid;
+    logic [63:0] p4_fprf_wb_data;
+    fpreg_t      p4_fprf_wb_preg;
+    rob_idx_t    p4_fprf_wb_rob_idx;
+    rob_epoch_t  p4_fprf_wb_rob_epoch;
+    logic [4:0]  p4_fprf_wb_fflags;
+
     // Dispatch Interface Readiness Combiner
     wire uop0_is_mem = (uop0_class_i == UOP_LOAD) || (uop0_class_i == UOP_STORE) ||
                        (uop0_class_i == UOP_AMO)  || (uop0_class_i == UOP_FENCE);
     wire uop1_is_mem = (uop1_class_i == UOP_LOAD) || (uop1_class_i == UOP_STORE) ||
                        (uop1_class_i == UOP_AMO)  || (uop1_class_i == UOP_FENCE);
 
+    function automatic logic is_int2fp_op_b(input uop_subop_t op);
+        case (op)
+            FP_FMV_W_X, FP_FMV_D_X,
+            FP_FCVT_S_W, FP_FCVT_D_W,
+            FP_FCVT_S_WU, FP_FCVT_D_WU,
+            FP_FCVT_S_L, FP_FCVT_D_L,
+            FP_FCVT_S_LU, FP_FCVT_D_LU: return 1'b1;
+            default: return 1'b0;
+        endcase
+    endfunction
+
+    wire uop0_is_fpiq = (uop0_class_i == UOP_FP) && uop0_is_fp_i && !uop0_is_mem && !is_int2fp_op_b(uop0_subop_i);
+    wire uop1_is_fpiq = (uop1_class_i == UOP_FP) && uop1_is_fp_i && !uop1_is_mem && !is_int2fp_op_b(uop1_subop_i);
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire uop0_is_int = !uop0_is_mem && !uop0_is_fpiq;
+    wire uop1_is_int = !uop1_is_mem && !uop1_is_fpiq;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    logic [1:0] fp_dispatch_ready;
+
     always_comb begin
-        dispatch_ready_o[0] = uop0_is_mem ? mem_dispatch_ready[0] : int_dispatch_ready[0];
+        if (uop0_is_mem) begin
+            dispatch_ready_o[0] = mem_dispatch_ready[0];
+        end else if (uop0_is_fpiq) begin
+            dispatch_ready_o[0] = fp_dispatch_ready[0];
+        end else begin
+            dispatch_ready_o[0] = int_dispatch_ready[0];
+        end
 
         if (uop1_is_mem) begin
-            dispatch_ready_o[1] = mem_dispatch_ready[1];
+            dispatch_ready_o[1] = uop0_is_mem ? mem_dispatch_ready[1] : mem_dispatch_ready[0];
+        end else if (uop1_is_fpiq) begin
+            dispatch_ready_o[1] = uop0_is_fpiq ? fp_dispatch_ready[1] : fp_dispatch_ready[0];
         end else begin
-            // uop1 is INT: if uop0 is MEM, uop1 is local INT #0, else local INT #1
-            dispatch_ready_o[1] = uop0_is_mem ? int_dispatch_ready[0] : int_dispatch_ready[1];
+            dispatch_ready_o[1] = uop0_is_int ? int_dispatch_ready[1] : int_dispatch_ready[0];
         end
     end
 
@@ -398,6 +490,9 @@ module fursoy_s1_backend
         .uop0_pre_ghr_i     (uop0_pre_ghr_i),
         .uop0_exception_i   (uop0_exception_i),
         .uop0_exc_cause_i   (uop0_exc_cause_i),
+        .uop0_prd_fp_i      (uop0_prd_fp_i),
+        .uop0_fp_dest_valid_i(uop0_fp_dest_valid_i),
+        .uop0_frm_i         (uop0_frm_i),
 
         .uop1_valid_i       (uop1_valid_i),
         .uop1_class_i       (uop1_class_i),
@@ -422,10 +517,13 @@ module fursoy_s1_backend
         .uop1_pre_ghr_i     (uop1_pre_ghr_i),
         .uop1_exception_i   (uop1_exception_i),
         .uop1_exc_cause_i   (uop1_exc_cause_i),
+        .uop1_prd_fp_i      (uop1_prd_fp_i),
+        .uop1_fp_dest_valid_i(uop1_fp_dest_valid_i),
+        .uop1_frm_i         (uop1_frm_i),
 
-        .wb0_valid_i        (p0_wb_valid),
+        .wb0_valid_i        (p0_eff_wb_valid),
         .wb0_comp_ack_i     (comp_ack_i[0]),
-        .wb0_pnew_i         (p0_wb_pnew),
+        .wb0_pnew_i         (p0_eff_wb_pnew),
 
         .wb1_valid_i        (p1_wb_valid),
         .wb1_comp_ack_i     (comp_ack_i[1]),
@@ -458,6 +556,108 @@ module fursoy_s1_backend
         .diag_prs2_rdy_o    (diag_prs2_rdy_o),
         .diag_rob_idx_o     (diag_rob_idx_o)
     );
+
+    // -------------------------------------------------------------------------
+    // 1b. Floating-Point Issue Queue (FPIQ16 — Port 4, Milestone 8 Phase B)
+    // -------------------------------------------------------------------------
+    logic        fp_issue_valid;
+    fpiq_entry_t fp_issue_uop;
+    logic        fdiv_busy;
+    logic        fconv_fprf_busy;
+    logic        fconv_prf_busy;
+
+    fursoy_s1_fp_iq u_fp_iq (
+        .clk_i              (clk_i),
+        .rst_i              (rst_i),
+        .flush_valid_i      (flush_valid_i),
+        .recover_valid_i    (internal_recover_valid),
+        .recover_rob_idx_i  (internal_recover_rob_idx),
+        .rob_head_i         (rob_head_i),
+
+        .dispatch_ready_o   (fp_dispatch_ready),
+        .rename_ack_i       (rename_ack_i),
+
+        .uop0_valid_i       (uop0_valid_i),
+        .uop0_is_fp_i       (uop0_is_fp_i),
+        .uop0_class_i       (uop0_class_i),
+        .uop0_subop_i       (uop0_subop_i),
+        .uop0_frm_i         (uop0_frm_i),
+        .uop0_prs1_fp_i     (uop0_prs1_fp_i),
+        .uop0_prs1_fp_ready_i(uop0_prs1_fp_ready_i),
+        .uop0_prs2_fp_i     (uop0_prs2_fp_i),
+        .uop0_prs2_fp_ready_i(uop0_prs2_fp_ready_i),
+        .uop0_prs3_fp_i     (uop0_prs3_fp_i),
+        .uop0_prs3_fp_ready_i(uop0_prs3_fp_ready_i),
+        .uop0_prd_fp_i      (uop0_prd_fp_i),
+        .uop0_fp_dest_valid_i(uop0_fp_dest_valid_i),
+        .uop0_pnew_i        (uop0_pnew_i),
+        .uop0_rob_idx_i     (uop0_rob_idx_i),
+        .uop0_rob_epoch_i   (uop0_rob_epoch_i),
+        .uop0_pc_i          (uop0_pc_i),
+
+        .uop1_valid_i       (uop1_valid_i),
+        .uop1_is_fp_i       (uop1_is_fp_i),
+        .uop1_class_i       (uop1_class_i),
+        .uop1_subop_i       (uop1_subop_i),
+        .uop1_frm_i         (uop1_frm_i),
+        .uop1_prs1_fp_i     (uop1_prs1_fp_i),
+        .uop1_prs1_fp_ready_i(uop1_prs1_fp_ready_i),
+        .uop1_prs2_fp_i     (uop1_prs2_fp_i),
+        .uop1_prs2_fp_ready_i(uop1_prs2_fp_ready_i),
+        .uop1_prs3_fp_i     (uop1_prs3_fp_i),
+        .uop1_prs3_fp_ready_i(uop1_prs3_fp_ready_i),
+        .uop1_prd_fp_i      (uop1_prd_fp_i),
+        .uop1_fp_dest_valid_i(uop1_fp_dest_valid_i),
+        .uop1_pnew_i        (uop1_pnew_i),
+        .uop1_rob_idx_i     (uop1_rob_idx_i),
+        .uop1_rob_epoch_i   (uop1_rob_epoch_i),
+        .uop1_pc_i          (uop1_pc_i),
+
+        .wb0_fp_valid_i     (p4_fprf_wb_valid),
+        .wb0_fp_paddr_i     (p4_fprf_wb_preg),
+        .wb1_fp_valid_i     (w1_fp_valid_i),
+        .wb1_fp_paddr_i     (w1_fp_paddr_i),
+        .wb2_fp_valid_i     (w2_fp_valid_i),
+        .wb2_fp_paddr_i     (w2_fp_paddr_i),
+
+        .fdiv_busy_i        (fdiv_busy),
+        .fconv_fprf_busy_i  (fconv_fprf_busy),
+        .fconv_prf_busy_i   (fconv_prf_busy),
+
+        .issue_valid_o      (fp_issue_valid),
+        .issue_uop_o        (fp_issue_uop)
+    );
+
+    // Port 4 Register Fetch Stage Registers
+    logic        fp_rf_valid_q;
+    /* verilator lint_off UNUSEDSIGNAL */
+    fpiq_entry_t fp_rf_uop_q;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    wire fp_is_squashed = internal_recover_valid && (rob_dist(fp_issue_uop.rob_idx, rob_head_i) > rob_dist(internal_recover_rob_idx, rob_head_i));
+    wire fp_rf_squashed = internal_recover_valid && (rob_dist(fp_rf_uop_q.rob_idx, rob_head_i) > rob_dist(internal_recover_rob_idx, rob_head_i));
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i || flush_valid_i) begin
+            fp_rf_valid_q <= 1'b0;
+            fp_rf_uop_q   <= '0;
+        end else if (internal_recover_valid) begin
+            if (fp_rf_squashed) begin
+                fp_rf_valid_q <= 1'b0;
+            end
+            if (fp_issue_valid && !fp_is_squashed) begin
+                fp_rf_valid_q <= 1'b1;
+                fp_rf_uop_q   <= fp_issue_uop;
+            end else if (!fp_rf_squashed) begin
+                fp_rf_valid_q <= 1'b0;
+            end
+        end else if (fp_issue_valid) begin
+            fp_rf_valid_q <= 1'b1;
+            fp_rf_uop_q   <= fp_issue_uop;
+        end else begin
+            fp_rf_valid_q <= 1'b0;
+        end
+    end
 
     // -------------------------------------------------------------------------
     // 2. Register Fetch Stage Registers (IS -> RF)
@@ -526,10 +726,10 @@ module fursoy_s1_backend
         .r3_paddr_i     (r3_paddr),
         .r3_data_o      (r3_data),
 
-        .w0_valid_i     (p0_wb_valid),
+        .w0_valid_i     (p0_eff_wb_valid),
         .w0_comp_ack_i  (comp_ack_i[0]),
-        .w0_paddr_i     (p0_wb_pnew),
-        .w0_data_i      (p0_wb_data),
+        .w0_paddr_i     (p0_eff_wb_pnew),
+        .w0_data_i      (p0_eff_wb_data),
 
         .w1_valid_i     (p1_wb_valid),
         .w1_comp_ack_i  (comp_ack_i[1]),
@@ -562,22 +762,24 @@ module fursoy_s1_backend
     // -------------------------------------------------------------------------
     // 3b. 64-bit Floating-Point Physical Register File (FPRF) — Milestone 8
     // -------------------------------------------------------------------------
+    logic [63:0] r0_fp_data, r1_fp_data, r2_fp_data, r3_fp_data;
+
     fursoy_s1_fprf u_fprf (
         .clk_i          (clk_i),
         .rst_i          (rst_i),
 
-        .raddr0_fp_i    (r0_fp_paddr_i),
-        .rdata0_fp_o    (r0_fp_data_o),
-        .raddr1_fp_i    (r1_fp_paddr_i),
-        .rdata1_fp_o    (r1_fp_data_o),
-        .raddr2_fp_i    (r2_fp_paddr_i),
-        .rdata2_fp_o    (r2_fp_data_o),
+        .raddr0_fp_i    (fp_rf_uop_q.prs1_fp),
+        .rdata0_fp_o    (r0_fp_data),
+        .raddr1_fp_i    (fp_rf_uop_q.prs2_fp),
+        .rdata1_fp_o    (r1_fp_data),
+        .raddr2_fp_i    (fp_rf_uop_q.prs3_fp),
+        .rdata2_fp_o    (r2_fp_data),
         .raddr3_fp_i    (r3_fp_paddr_i),
-        .rdata3_fp_o    (r3_fp_data_o),
+        .rdata3_fp_o    (r3_fp_data),
 
-        .w0_valid_i     (w0_fp_valid_i),
-        .w0_paddr_i     (w0_fp_paddr_i),
-        .w0_data_i      (w0_fp_data_i),
+        .w0_valid_i     (p4_fprf_wb_valid),
+        .w0_paddr_i     (p4_fprf_wb_preg),
+        .w0_data_i      (p4_fprf_wb_data),
 
         .w1_valid_i     (w1_fp_valid_i),
         .w1_paddr_i     (w1_fp_paddr_i),
@@ -590,6 +792,11 @@ module fursoy_s1_backend
         .probe_paddr_i  (probe_fp_paddr_i),
         .probe_pdata_o  (probe_fp_pdata_o)
     );
+
+    assign r0_fp_data_o = r0_fp_data;
+    assign r1_fp_data_o = r1_fp_data;
+    assign r2_fp_data_o = r2_fp_data;
+    assign r3_fp_data_o = r3_fp_data;
 
     // -------------------------------------------------------------------------
     // Validated Operand Forwarding & Muxing (RF -> EX)
@@ -637,12 +844,12 @@ module fursoy_s1_backend
         if ((rf0_uop_q.uop_class == UOP_ALU_INT) && (rf0_uop_q.sub_op == ALU_AUIPC)) begin
             p0_op_a = rf0_uop_q.pc;
         end else begin
-            p0_op_a = get_operand(rf0_uop_q.prs1, r0_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
+            p0_op_a = get_operand(rf0_uop_q.prs1, r0_data, p0_eff_wb_valid, comp_ack_i[0], p0_eff_wb_pnew, p0_eff_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
         if (rf0_uop_q.use_imm && (rf0_uop_q.uop_class != UOP_BRANCH)) begin
             p0_op_b = rf0_uop_q.imm;
         end else begin
-            p0_op_b = get_operand(rf0_uop_q.prs2, r1_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
+            p0_op_b = get_operand(rf0_uop_q.prs2, r1_data, p0_eff_wb_valid, comp_ack_i[0], p0_eff_wb_pnew, p0_eff_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
     end
 
@@ -652,12 +859,12 @@ module fursoy_s1_backend
         if ((rf1_uop_q.uop_class == UOP_ALU_INT) && (rf1_uop_q.sub_op == ALU_AUIPC)) begin
             p1_op_a = rf1_uop_q.pc;
         end else begin
-            p1_op_a = get_operand(rf1_uop_q.prs1, r2_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
+            p1_op_a = get_operand(rf1_uop_q.prs1, r2_data, p0_eff_wb_valid, comp_ack_i[0], p0_eff_wb_pnew, p0_eff_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
         if (rf1_uop_q.use_imm) begin
             p1_op_b = rf1_uop_q.imm;
         end else begin
-            p1_op_b = get_operand(rf1_uop_q.prs2, r3_data, p0_wb_valid, comp_ack_i[0], p0_wb_pnew, p0_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
+            p1_op_b = get_operand(rf1_uop_q.prs2, r3_data, p0_eff_wb_valid, comp_ack_i[0], p0_eff_wb_pnew, p0_eff_wb_data, p1_wb_valid, comp_ack_i[1], p1_wb_pnew, p1_wb_data, p2_comp_valid, comp_ack_i[2], p2_comp_exception, p2_comp_preg, p2_wb_data, p3_comp_valid, comp_ack_i[3], p3_comp_exception, p3_comp_preg, p3_wb_data);
         end
     end
 
@@ -749,7 +956,7 @@ module fursoy_s1_backend
             p0_wb_ghr          <= '0;
             p0_wb_is_ctrl      <= 1'b0;
         end else begin
-            if (rf0_valid_q && !ex0_squashed) begin
+            if (rf0_valid_q && !ex0_squashed && !p0_is_int2fp) begin
                 p0_wb_valid        <= 1'b1;
                 p0_wb_data         <= p0_ex_data;
                 p0_wb_pnew         <= rf0_uop_q.pnew;
@@ -1017,10 +1224,10 @@ module fursoy_s1_backend
         .r6_paddr_o              (r6_paddr),
         .r6_data_i               (r6_data),
 
-        .wb0_valid_i             (p0_wb_valid),
+        .wb0_valid_i             (p0_eff_wb_valid),
         .wb0_comp_ack_i          (comp_ack_i[0]),
-        .wb0_pnew_i              (p0_wb_pnew),
-        .wb0_data_i              (p0_wb_data),
+        .wb0_pnew_i              (p0_eff_wb_pnew),
+        .wb0_data_i              (p0_eff_wb_data),
 
         .wb1_valid_i             (p1_wb_valid),
         .wb1_comp_ack_i          (comp_ack_i[1]),
@@ -1149,15 +1356,288 @@ module fursoy_s1_backend
     assign int_dispatch_ready_o    = int_dispatch_ready;
 
     // -------------------------------------------------------------------------
+    // 5b. Port 4 Floating-Point Execution Subsystem (FMA, FDIV/FSQRT, FCONV)
+    // -------------------------------------------------------------------------
+    function automatic logic is_fma_op(input uop_subop_t op);
+        case (op)
+            FP_FMADD_S, FP_FMADD_D,
+            FP_FMSUB_S, FP_FMSUB_D,
+            FP_FNMSUB_S, FP_FNMSUB_D,
+            FP_FNMADD_S, FP_FNMADD_D,
+            FP_FADD_S, FP_FADD_D,
+            FP_FSUB_S, FP_FSUB_D,
+            FP_FMUL_S, FP_FMUL_D: return 1'b1;
+            default: return 1'b0;
+        endcase
+    endfunction
+
+    function automatic logic is_fdiv_op(input uop_subop_t op);
+        case (op)
+            FP_FDIV_S, FP_FDIV_D,
+            FP_FSQRT_S, FP_FSQRT_D: return 1'b1;
+            default: return 1'b0;
+        endcase
+    endfunction
+
+    function automatic logic is_fconv_p4_op(input uop_subop_t op);
+        case (op)
+            FP_FCVT_S_D, FP_FCVT_D_S,
+            FP_FSGNJ_S, FP_FSGNJN_S, FP_FSGNJX_S,
+            FP_FSGNJ_D, FP_FSGNJN_D, FP_FSGNJX_D,
+            FP_FMIN_S, FP_FMAX_S,
+            FP_FMIN_D, FP_FMAX_D,
+            FP_FMV_X_W, FP_FMV_X_D,
+            FP_FCVT_W_S, FP_FCVT_WU_S, FP_FCVT_L_S, FP_FCVT_LU_S,
+            FP_FCVT_W_D, FP_FCVT_WU_D, FP_FCVT_L_D, FP_FCVT_LU_D,
+            FP_FEQ_S, FP_FLT_S, FP_FLE_S,
+            FP_FEQ_D, FP_FLT_D, FP_FLE_D,
+            FP_FCLASS_S, FP_FCLASS_D: return 1'b1;
+            default: return 1'b0;
+        endcase
+    endfunction
+
+    logic        fma_out_valid;
+    logic [63:0] fma_out_data;
+    fpreg_t      fma_out_prd_fp;
+    rob_idx_t    fma_out_rob_idx;
+    rob_epoch_t  fma_out_rob_epoch;
+    logic [4:0]  fma_out_fflags;
+
+    fursoy_s1_fma u_fma (
+        .clk_i              (clk_i),
+        .rst_i              (rst_i),
+        .flush_valid_i      (flush_valid_i),
+        .recover_valid_i    (internal_recover_valid),
+        .recover_rob_idx_i  (internal_recover_rob_idx),
+        .rob_head_i         (rob_head_i),
+
+        .fcsr_frm_i         (fcsr_frm_i),
+
+        .req_valid_i        (fp_rf_valid_q && !fp_rf_squashed && is_fma_op(fp_rf_uop_q.sub_op)),
+        .req_subop_i        (fp_rf_uop_q.sub_op),
+        .req_frm_i          (fp_rf_uop_q.frm),
+        .req_rs1_data_i     (r0_fp_data),
+        .req_rs2_data_i     (r1_fp_data),
+        .req_rs3_data_i     (r2_fp_data),
+        .req_prd_fp_i       (fp_rf_uop_q.prd_fp),
+        .req_rob_idx_i      (fp_rf_uop_q.rob_idx),
+        .req_rob_epoch_i    (fp_rf_uop_q.rob_epoch),
+
+        .wb_valid_o         (fma_out_valid),
+        .wb_data_o          (fma_out_data),
+        .wb_prd_fp_o        (fma_out_prd_fp),
+        .wb_rob_idx_o       (fma_out_rob_idx),
+        .wb_rob_epoch_o     (fma_out_rob_epoch),
+        .wb_fflags_o        (fma_out_fflags)
+    );
+
+    logic        fdiv_out_valid;
+    logic [63:0] fdiv_out_data;
+    fpreg_t      fdiv_out_prd_fp;
+    rob_idx_t    fdiv_out_rob_idx;
+    rob_epoch_t  fdiv_out_rob_epoch;
+    logic [4:0]  fdiv_out_fflags;
+
+    fursoy_s1_fdiv u_fdiv (
+        .clk_i              (clk_i),
+        .rst_i              (rst_i),
+        .flush_valid_i      (flush_valid_i),
+        .recover_valid_i    (internal_recover_valid),
+        .recover_rob_idx_i  (internal_recover_rob_idx),
+        .rob_head_i         (rob_head_i),
+
+        .fcsr_frm_i         (fcsr_frm_i),
+
+        .req_valid_i        (fp_rf_valid_q && !fp_rf_squashed && is_fdiv_op(fp_rf_uop_q.sub_op)),
+        .req_subop_i        (fp_rf_uop_q.sub_op),
+        .req_frm_i          (fp_rf_uop_q.frm),
+        .req_rs1_data_i     (r0_fp_data),
+        .req_rs2_data_i     (r1_fp_data),
+        .req_prd_fp_i       (fp_rf_uop_q.prd_fp),
+        .req_rob_idx_i      (fp_rf_uop_q.rob_idx),
+        .req_rob_epoch_i    (fp_rf_uop_q.rob_epoch),
+
+        .busy_o             (fdiv_busy),
+        .fma_wb_valid_i     (fma_out_valid),
+
+        .wb_valid_o         (fdiv_out_valid),
+        .wb_data_o          (fdiv_out_data),
+        .wb_prd_fp_o        (fdiv_out_prd_fp),
+        .wb_rob_idx_o       (fdiv_out_rob_idx),
+        .wb_rob_epoch_o     (fdiv_out_rob_epoch),
+        .wb_fflags_o        (fdiv_out_fflags)
+    );
+
+    wire p0_is_int2fp = (rf0_uop_q.uop_class == UOP_FP) && is_int2fp_op_b(rf0_uop_q.sub_op);
+
+    logic        fconv_fprf_wb_valid;
+    logic [63:0] fconv_fprf_wb_data;
+    fpreg_t      fconv_fprf_wb_prd_fp;
+    rob_idx_t    fconv_fprf_wb_rob_idx;
+    rob_epoch_t  fconv_fprf_wb_rob_epoch;
+    logic [4:0]  fconv_fprf_wb_fflags;
+
+    logic        fconv_prf_wb_valid;
+    logic [63:0] fconv_prf_wb_data;
+    preg_t       fconv_prf_wb_pnew;
+    rob_idx_t    fconv_prf_wb_rob_idx;
+    rob_epoch_t  fconv_prf_wb_rob_epoch;
+    logic [4:0]  fconv_prf_wb_fflags;
+
+    fursoy_s1_fconv u_fconv (
+        .clk_i              (clk_i),
+        .rst_i              (rst_i),
+        .flush_valid_i      (flush_valid_i),
+        .recover_valid_i    (internal_recover_valid),
+        .recover_rob_idx_i  (internal_recover_rob_idx),
+        .rob_head_i         (rob_head_i),
+
+        .fcsr_frm_i         (fcsr_frm_i),
+
+        .p4_req_valid_i     (fp_rf_valid_q && !fp_rf_squashed && is_fconv_p4_op(fp_rf_uop_q.sub_op)),
+        .p4_req_subop_i     (fp_rf_uop_q.sub_op),
+        .p4_req_frm_i       (fp_rf_uop_q.frm),
+        .p4_req_rs1_fp_data_i(r0_fp_data),
+        .p4_req_rs2_fp_data_i(r1_fp_data),
+        .p4_req_prd_fp_i    (fp_rf_uop_q.prd_fp),
+        .p4_req_pnew_i      (fp_rf_uop_q.pnew),
+        .p4_req_fp_dest_valid_i(fp_rf_uop_q.fp_dest_valid),
+        .p4_req_rob_idx_i   (fp_rf_uop_q.rob_idx),
+        .p4_req_rob_epoch_i (fp_rf_uop_q.rob_epoch),
+
+        .int2fp_req_valid_i (rf0_valid_q && !ex0_squashed && p0_is_int2fp),
+        .int2fp_req_subop_i (rf0_uop_q.sub_op),
+        .int2fp_req_frm_i   (rf0_uop_q.frm),
+        .int2fp_req_int_data_i(p0_op_a),
+        .int2fp_req_prd_fp_i(rf0_uop_q.prd_fp),
+        .int2fp_req_rob_idx_i(rf0_uop_q.rob_idx),
+        .int2fp_req_rob_epoch_i(rf0_uop_q.rob_epoch),
+
+        .int_wb_busy_i      (p0_wb_valid),
+        .fprf_wb_busy_i     (fma_out_valid || fdiv_out_valid),
+
+        .fprf_wb_valid_o    (fconv_fprf_wb_valid),
+        .fprf_wb_data_o     (fconv_fprf_wb_data),
+        .fprf_wb_prd_fp_o   (fconv_fprf_wb_prd_fp),
+        .fprf_wb_rob_idx_o  (fconv_fprf_wb_rob_idx),
+        .fprf_wb_rob_epoch_o(fconv_fprf_wb_rob_epoch),
+        .fprf_wb_fflags_o   (fconv_fprf_wb_fflags),
+
+        .prf_wb_valid_o     (fconv_prf_wb_valid),
+        .prf_wb_data_o      (fconv_prf_wb_data),
+        .prf_wb_pnew_o      (fconv_prf_wb_pnew),
+        .prf_wb_rob_idx_o   (fconv_prf_wb_rob_idx),
+        .prf_wb_rob_epoch_o (fconv_prf_wb_rob_epoch),
+        .prf_wb_fflags_o    (fconv_prf_wb_fflags),
+
+        .fprf_busy_o        (fconv_fprf_busy),
+        .prf_busy_o         (fconv_prf_busy)
+    );
+
+    // Port 0 / F2I Effective PRF Writeback Arbitration (Priority: ALU0 > F2I)
+    always_comb begin
+        if (p0_wb_valid) begin
+            p0_eff_wb_valid        = 1'b1;
+            p0_eff_wb_data         = p0_wb_data;
+            p0_eff_wb_pnew         = p0_wb_pnew;
+            p0_eff_wb_rob_idx      = p0_wb_rob_idx;
+            p0_eff_wb_rob_epoch    = p0_wb_rob_epoch;
+            p0_eff_wb_mispredict   = p0_wb_mispredict;
+            p0_eff_wb_exception    = p0_wb_exception;
+            p0_eff_wb_cause        = p0_wb_cause;
+            p0_eff_wb_fflags       = 5'd0;
+            p0_eff_wb_target       = p0_wb_target;
+            p0_eff_wb_actual_taken = p0_wb_actual_taken;
+            p0_eff_wb_pc           = p0_wb_pc;
+            p0_eff_wb_br_type      = p0_wb_br_type;
+            p0_eff_wb_ghr          = p0_wb_ghr;
+            p0_eff_wb_is_ctrl      = p0_wb_is_ctrl;
+        end else if (fconv_prf_wb_valid) begin
+            p0_eff_wb_valid        = 1'b1;
+            p0_eff_wb_data         = fconv_prf_wb_data;
+            p0_eff_wb_pnew         = fconv_prf_wb_pnew;
+            p0_eff_wb_rob_idx      = fconv_prf_wb_rob_idx;
+            p0_eff_wb_rob_epoch    = fconv_prf_wb_rob_epoch;
+            p0_eff_wb_mispredict   = 1'b0;
+            p0_eff_wb_exception    = 1'b0;
+            p0_eff_wb_cause        = 5'd0;
+            p0_eff_wb_fflags       = fconv_prf_wb_fflags;
+            p0_eff_wb_target       = 64'd0;
+            p0_eff_wb_actual_taken = 1'b0;
+            p0_eff_wb_pc           = 64'd0;
+            p0_eff_wb_br_type      = BR_TYPE_COND;
+            p0_eff_wb_ghr          = '0;
+            p0_eff_wb_is_ctrl      = 1'b0;
+        end else begin
+            p0_eff_wb_valid        = 1'b0;
+            p0_eff_wb_data         = 64'd0;
+            p0_eff_wb_pnew         = 7'd0;
+            p0_eff_wb_rob_idx      = '0;
+            p0_eff_wb_rob_epoch    = '0;
+            p0_eff_wb_mispredict   = 1'b0;
+            p0_eff_wb_exception    = 1'b0;
+            p0_eff_wb_cause        = 5'd0;
+            p0_eff_wb_fflags       = 5'd0;
+            p0_eff_wb_target       = 64'd0;
+            p0_eff_wb_actual_taken = 1'b0;
+            p0_eff_wb_pc           = 64'd0;
+            p0_eff_wb_br_type      = BR_TYPE_COND;
+            p0_eff_wb_ghr          = '0;
+            p0_eff_wb_is_ctrl      = 1'b0;
+        end
+    end
+
+    // Port 4 FPRF Writeback Arbitration (Priority: FMA > FDIV > FCONV > test_inject)
+    always_comb begin
+        if (fma_out_valid) begin
+            p4_fprf_wb_valid     = 1'b1;
+            p4_fprf_wb_data      = fma_out_data;
+            p4_fprf_wb_preg      = fma_out_prd_fp;
+            p4_fprf_wb_rob_idx   = fma_out_rob_idx;
+            p4_fprf_wb_rob_epoch = fma_out_rob_epoch;
+            p4_fprf_wb_fflags    = fma_out_fflags;
+        end else if (fdiv_out_valid) begin
+            p4_fprf_wb_valid     = 1'b1;
+            p4_fprf_wb_data      = fdiv_out_data;
+            p4_fprf_wb_preg      = fdiv_out_prd_fp;
+            p4_fprf_wb_rob_idx   = fdiv_out_rob_idx;
+            p4_fprf_wb_rob_epoch = fdiv_out_rob_epoch;
+            p4_fprf_wb_fflags    = fdiv_out_fflags;
+        end else if (fconv_fprf_wb_valid) begin
+            p4_fprf_wb_valid     = 1'b1;
+            p4_fprf_wb_data      = fconv_fprf_wb_data;
+            p4_fprf_wb_preg      = fconv_fprf_wb_prd_fp;
+            p4_fprf_wb_rob_idx   = fconv_fprf_wb_rob_idx;
+            p4_fprf_wb_rob_epoch = fconv_fprf_wb_rob_epoch;
+            p4_fprf_wb_fflags    = fconv_fprf_wb_fflags;
+        end else if (w0_fp_valid_i) begin
+            p4_fprf_wb_valid     = 1'b1;
+            p4_fprf_wb_data      = w0_fp_data_i;
+            p4_fprf_wb_preg      = w0_fp_paddr_i;
+            p4_fprf_wb_rob_idx   = '0;
+            p4_fprf_wb_rob_epoch = '0;
+            p4_fprf_wb_fflags    = '0;
+        end else begin
+            p4_fprf_wb_valid     = 1'b0;
+            p4_fprf_wb_data      = 64'd0;
+            p4_fprf_wb_preg      = 6'd0;
+            p4_fprf_wb_rob_idx   = '0;
+            p4_fprf_wb_rob_epoch = '0;
+            p4_fprf_wb_fflags    = 5'd0;
+        end
+    end
+
+    // -------------------------------------------------------------------------
     // 6. Upstream Completion Interface (to M1 Substrate)
     // -------------------------------------------------------------------------
-    assign comp_valid_o[0]          = p0_wb_valid && !flush_valid_i;
-    assign comp_rob_idx_o[0]        = p0_wb_rob_idx;
-    assign comp_epoch_o[0]          = p0_wb_rob_epoch;
-    assign comp_preg_o[0]           = p0_wb_pnew;
-    assign comp_branch_mispred_o[0] = p0_wb_mispredict && !p0_wb_exception;
-    assign comp_exception_o[0]      = p0_wb_exception;
-    assign comp_cause_o[0]          = p0_wb_cause;
+    assign comp_valid_o[0]          = p0_eff_wb_valid && !flush_valid_i;
+    assign comp_rob_idx_o[0]        = p0_eff_wb_rob_idx;
+    assign comp_epoch_o[0]          = p0_eff_wb_rob_epoch;
+    assign comp_preg_o[0]           = p0_eff_wb_pnew;
+    assign comp_branch_mispred_o[0] = p0_eff_wb_mispredict && !p0_eff_wb_exception;
+    assign comp_exception_o[0]      = p0_eff_wb_exception;
+    assign comp_cause_o[0]          = p0_eff_wb_cause;
+    assign comp_fflags_o[0]         = p0_eff_wb_fflags;
 
     assign comp_valid_o[1]          = p1_wb_valid && !flush_valid_i;
     assign comp_rob_idx_o[1]        = p1_wb_rob_idx;
@@ -1166,6 +1646,7 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[1] = 1'b0;
     assign comp_exception_o[1]      = 1'b0;
     assign comp_cause_o[1]          = 5'd0;
+    assign comp_fflags_o[1]         = 5'd0;
 
     // Port 2 (LSU AGU0) Completion
     assign comp_valid_o[2]          = p2_comp_valid && !flush_valid_i;
@@ -1175,6 +1656,7 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[2] = 1'b0;
     assign comp_exception_o[2]      = p2_comp_exception;
     assign comp_cause_o[2]          = p2_comp_cause;
+    assign comp_fflags_o[2]         = 5'd0;
 
     // Port 3 (LSU AGU1) Completion (§5.1, PROP_M7_10)
     assign comp_valid_o[3]          = p3_comp_valid && !flush_valid_i;
@@ -1184,12 +1666,30 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[3] = 1'b0;
     assign comp_exception_o[3]      = p3_comp_exception;
     assign comp_cause_o[3]          = p3_comp_cause;
+    assign comp_fflags_o[3]         = 5'd0;
+
+    // Port 4 (FP Execution Pipeline) Completion (§6.1, PROP_M8_11)
+    assign comp_valid_o[4]          = p4_fprf_wb_valid && !flush_valid_i && !w0_fp_valid_i;
+    assign comp_rob_idx_o[4]        = p4_fprf_wb_rob_idx;
+    assign comp_epoch_o[4]          = p4_fprf_wb_rob_epoch;
+    assign comp_preg_o[4]           = 7'd0;
+    assign comp_branch_mispred_o[4] = 1'b0;
+    assign comp_exception_o[4]      = 1'b0;
+    assign comp_cause_o[4]          = 5'd0;
+    assign comp_fflags_o[4]         = p4_fprf_wb_fflags;
+
+    assign comp_fp_wb_valid_o[0]    = p4_fprf_wb_valid && comp_ack_i[4] && !w0_fp_valid_i;
+    assign comp_fp_wb_preg_o[0]     = p4_fprf_wb_preg;
+    assign comp_fp_wb_valid_o[1]    = 1'b0;
+    assign comp_fp_wb_preg_o[1]     = 6'd0;
+    assign comp_fp_wb_valid_o[2]    = 1'b0;
+    assign comp_fp_wb_preg_o[2]     = 6'd0;
 
     // -------------------------------------------------------------------------
     // 7. Lifetime-Gated Branch Recovery Interface (Section 2.4.3)
     // -------------------------------------------------------------------------
     wire flush_active = flush_valid_i || fl_reconstructing_i;
-    wire recover_fire = comp_valid_o[0] && comp_branch_mispred_o[0] && comp_ack_i[0] &&
+    wire recover_fire = p0_wb_valid && p0_wb_mispredict && comp_ack_i[0] &&
                         !flush_active && !recovering_i;
 
     assign recover_valid_o           = recover_fire;
@@ -1205,18 +1705,18 @@ module fursoy_s1_backend
     // -------------------------------------------------------------------------
     // 8. Predictor Training Interface (Port 0 Completion)
     // -------------------------------------------------------------------------
-    assign train_valid_o         = comp_valid_o[0] && comp_ack_i[0] && !p0_wb_exception && p0_wb_is_ctrl;
-    assign train_pc_o            = p0_wb_pc;
-    assign train_actual_taken_o  = p0_wb_actual_taken;
-    assign train_actual_target_o = p0_wb_target;
-    assign train_br_type_o       = p0_wb_br_type;
-    assign train_ghr_o           = p0_wb_ghr;
+    assign train_valid_o         = comp_valid_o[0] && comp_ack_i[0] && !p0_eff_wb_exception && p0_eff_wb_is_ctrl;
+    assign train_pc_o            = p0_eff_wb_pc;
+    assign train_actual_taken_o  = p0_eff_wb_actual_taken;
+    assign train_actual_target_o = p0_eff_wb_target;
+    assign train_br_type_o       = p0_eff_wb_br_type;
+    assign train_ghr_o           = p0_eff_wb_ghr;
 
     // -------------------------------------------------------------------------
     // Simulation Assertions
     // -------------------------------------------------------------------------
 `ifndef SYNTHESIS
-    wire prf_w0_we = p0_wb_valid && comp_ack_i[0] && (p0_wb_pnew != 7'd0);
+    wire prf_w0_we = p0_eff_wb_valid && comp_ack_i[0] && (p0_eff_wb_pnew != 7'd0);
     wire prf_w1_we = p1_wb_valid && comp_ack_i[1] && (p1_wb_pnew != 7'd0);
     wire prf_w2_we = p2_comp_valid && comp_ack_i[2] && !p2_comp_exception && (p2_comp_preg != 7'd0);
     logic flush_check_q;
@@ -1244,7 +1744,7 @@ module fursoy_s1_backend
                 if (prf_w2_we && !comp_ack_i[2]) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write on Port 2 without accepted completion!");
                 end
-                if (prf_w0_we && (p0_wb_pnew == 7'd0)) begin
+                if (prf_w0_we && (p0_eff_wb_pnew == 7'd0)) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write to p0 on Port 0!");
                 end
                 if (prf_w1_we && (p1_wb_pnew == 7'd0)) begin

@@ -78,15 +78,15 @@ inline uint8_t calc_rob_dist(uint8_t idx, uint8_t head) {
     return (48 - head) + idx;
 }
 
-// Packed struct field accessors for VlWide<12> iq_entry_t (364 bits total with 108b GHR)
+// Packed struct field accessors for VlWide<12> iq_entry_t (375 bits total with M8 fields)
 inline uint8_t get_uop_rob_idx(const VlWide<12>& uop) {
-    return (uop[8] >> 2) & 0x3F;
+    return (uop[8] >> 12) & 0x3F;
 }
 inline uint8_t get_uop_pnew(const VlWide<12>& uop) {
-    return (uop[8] >> 8) & 0x7F;
+    return (uop[8] >> 18) & 0x7F;
 }
 inline bool get_uop_is_branch(const VlWide<12>& uop) {
-    return (uop[3] >> 25) & 1;
+    return (uop[4] >> 3) & 1;
 }
 
 class IntIQTB {
