@@ -36,6 +36,8 @@ RTL_FILES = [
     ROOT / "rtl/core/fursoy_s1_fdiv.sv",
     ROOT / "rtl/core/fursoy_s1_fconv.sv",
     ROOT / "rtl/core/fursoy_s1_fp_iq.sv",
+    ROOT / "rtl/core/fursoy_s1_vrf.sv",
+    ROOT / "rtl/core/fursoy_s1_vec_iq.sv",
     ROOT / "rtl/core/fursoy_s1_backend.sv",
     ROOT / "rtl/core/fursoy_s1_bpu.sv",
     ROOT / "rtl/core/fursoy_s1_ptw.sv",
@@ -70,7 +72,7 @@ def main():
 
     report = {
         "status": "pass" if run.returncode == 0 else "fail",
-        "scope": "Fursoy Slice-1 Milestone 8 Phase C Core RTL (Floating-Point Memory Operations & Dual-Domain Forwarding)",
+        "scope": "Fursoy Slice-1 Milestone 8 Phase D Core RTL (Vector Execution Subsystem RVV 1.0 Architecture & Interface Contract)",
         "observed_at_utc": datetime.now(timezone.utc).isoformat(),
         "command": cmd,
         "verilator_version": subprocess.run(["verilator", "--version"], capture_output=True, text=True).stdout.strip(),

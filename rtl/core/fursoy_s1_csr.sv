@@ -72,6 +72,22 @@ module fursoy_s1_csr
     input  logic [1:0]        retire_fp_dest_valid_i,
     input  logic [4:0]        retire_fflags_i      [1:0],
 
+    // Milestone 8 Phase D Vector Retirement Interface
+    input  logic [1:0]        retire_vec_dest_valid_i,
+
+    // Milestone 8 Phase D Vector Configuration & Fault-Only-First Interface
+    input  logic              vec_cfg_valid_i,
+    input  logic [63:0]       vec_cfg_avl_i,
+    input  logic [63:0]       vec_cfg_vtype_i,
+    input  logic              vec_cfg_rs1_is_zero_i,
+    input  logic              vec_cfg_rd_is_zero_i,
+    output logic [63:0]       vec_cfg_new_vl_o,
+    output logic [63:0]       vec_cfg_new_vtype_o,
+    output logic              vec_cfg_illegal_o,
+
+    input  logic              fof_fault_valid_i,
+    input  logic [63:0]       fof_fault_elem_i,
+
     // -------------------------------------------------------------------------
     // Architectural State Outputs
     // -------------------------------------------------------------------------
@@ -83,6 +99,15 @@ module fursoy_s1_csr
     output logic [1:0]        mstatus_fs_o,
     output logic [2:0]        frm_o,
     output logic [4:0]        fflags_o,
+
+    // Milestone 8 Vector Context Outputs
+    output logic [1:0]        mstatus_vs_o,
+    output logic [63:0]       vtype_o,
+    output logic [63:0]       vl_o,
+    output logic [63:0]       vstart_o,
+    output logic [63:0]       vcsr_o,
+    output logic [1:0]        vxrm_o,
+    output logic              vxsat_o,
 
     // Redirect & Flush Outputs
     output logic              sys_redirect_valid_o,
@@ -150,22 +175,37 @@ module fursoy_s1_csr
     logic [2:0] frm_q;
     logic [4:0] fflags_q;
 
+    // Milestone 8 Phase D Vector CSR Registers
+    logic [63:0] vtype_q;
+    logic [63:0] vl_q;
+    logic [63:0] vstart_q;
+    logic [1:0]  vxrm_q;
+    logic        vxsat_q;
+
     // Effective privilege mode and mstatus incorporating external injection
     wire [1:0]  eff_priv    = (priv_mode_i != 2'b11) ? priv_mode_i : priv_mode_q;
     /* verilator lint_off UNUSEDSIGNAL */
     wire [63:0] raw_mstatus = (mstatus_i != 64'd0) ? mstatus_i : mstatus_q;
     /* verilator lint_on UNUSEDSIGNAL */
     wire [1:0]  eff_fs      = raw_mstatus[14:13];
-    wire        eff_sd      = (eff_fs == 2'b11);
-    wire [63:0] eff_mstatus = {eff_sd, raw_mstatus[62:15], eff_fs, raw_mstatus[12:0]};
+    wire [1:0]  eff_vs      = raw_mstatus[10:9];
+    wire        eff_sd      = (eff_fs == 2'b11) || (eff_vs == 2'b11);
+    wire [63:0] eff_mstatus = {eff_sd, raw_mstatus[62:15], eff_fs, raw_mstatus[12:11], eff_vs, raw_mstatus[8:0]};
 
     // Connect architectural outputs
     assign priv_mode_o  = eff_priv;
     assign mstatus_o    = eff_mstatus;
     assign satp_o       = satp_q;
     assign mstatus_fs_o = eff_fs;
+    assign mstatus_vs_o = eff_vs;
     assign frm_o        = frm_q;
     assign fflags_o     = fflags_q;
+    assign vtype_o      = vtype_q;
+    assign vl_o         = vl_q;
+    assign vstart_o     = vstart_q;
+    assign vcsr_o       = {61'd0, vxrm_q, vxsat_q};
+    assign vxrm_o       = vxrm_q;
+    assign vxsat_o      = vxsat_q;
 
     assign csr_mepc_o   = mepc_q;
     assign csr_mcause_o = mcause_q;
@@ -176,8 +216,8 @@ module fursoy_s1_csr
     assign csr_mtvec_o  = mtvec_q;
     assign csr_stvec_o  = stvec_q;
 
-    // Aliased supervisor CSR values (incorporating FS [14:13] and SD [63])
-    wire [63:0] sstatus_val = {eff_sd, 29'd0, 2'b10, 12'd0, mstatus_q[19:18], 3'd0, eff_fs, 4'd0, mstatus_q[8], 2'd0, mstatus_q[5], 3'd0, mstatus_q[1], 1'b0};
+    // Aliased supervisor CSR values (incorporating FS [14:13], VS [10:9] and SD [63])
+    wire [63:0] sstatus_val = {eff_sd, 29'd0, 2'b10, 12'd0, mstatus_q[19:18], 3'd0, eff_fs, 2'b00, eff_vs, mstatus_q[8], 2'd0, mstatus_q[5], 3'd0, mstatus_q[1], 1'b0};
     wire [63:0] sie_val     = mie_q & mideleg_q & 64'h222;
     wire [63:0] sip_val     = mip_q & mideleg_q & 64'h222;
 
@@ -200,6 +240,24 @@ module fursoy_s1_csr
             12'h001: old_csr_val = {59'd0, fflags_q};
             12'h002: old_csr_val = {61'd0, frm_q};
             12'h003: old_csr_val = {56'd0, frm_q, fflags_q};
+
+            // Milestone 8 Phase D Vector CSRs
+            12'h008: old_csr_val = vstart_q;
+            12'h009: old_csr_val = {63'd0, vxsat_q};
+            12'h00a: old_csr_val = {62'd0, vxrm_q};
+            12'h00f: old_csr_val = {61'd0, vxrm_q, vxsat_q};
+            12'hc20: begin
+                old_csr_val   = vl_q;
+                csr_read_only = 1'b1;
+            end
+            12'hc21: begin
+                old_csr_val   = vtype_q;
+                csr_read_only = 1'b1;
+            end
+            12'hc22: begin
+                old_csr_val   = 64'd32; // VLENB = VLEN/8 = 32
+                csr_read_only = 1'b1;
+            end
 
             // M-mode CSRs
             12'h300: old_csr_val = mstatus_q;
@@ -329,6 +387,19 @@ module fursoy_s1_csr
                     else if ((p0_sys_csr_addr_i == 12'h001 || p0_sys_csr_addr_i == 12'h002 || p0_sys_csr_addr_i == 12'h003) && (eff_fs == 2'b00)) begin
                         sys_illegal = 1'b1;
                     end
+                    // Milestone 8 Phase D: Vector CSR Gating (vstart, vxsat, vxrm, vcsr, vl, vtype, vlenb)
+                    // If mstatus.VS == 2'b00 (Off), ANY access from ANY mode raises Illegal Instruction (Cause 2)!
+                    else if ((p0_sys_csr_addr_i == 12'h008 || p0_sys_csr_addr_i == 12'h009 ||
+                              p0_sys_csr_addr_i == 12'h00a || p0_sys_csr_addr_i == 12'h00f ||
+                              p0_sys_csr_addr_i == 12'hc20 || p0_sys_csr_addr_i == 12'hc21 ||
+                              p0_sys_csr_addr_i == 12'hc22) && (eff_vs == 2'b00)) begin
+                        sys_illegal = 1'b1;
+                    end
+                end
+
+                // Milestone 8 Phase D: Vector configuration instructions (vsetvli, vsetvl, vsetivli)
+                VEC_VSETVLI, VEC_VSETVL, VEC_VSETIVLI: begin
+                    if (eff_vs == 2'b00) sys_illegal = 1'b1;
                 end
 
                 default: begin
@@ -365,7 +436,71 @@ module fursoy_s1_csr
     );
 
     // =========================================================================
-    // 4. Sequential Architectural State & Retirement Handling
+    // 4. Milestone 8 Phase D Vector Configuration Evaluation Logic (vsetvl*)
+    // =========================================================================
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic void eval_vtype_legal(
+        input  logic [63:0] in_vtype,
+        output logic [63:0] out_vtype,
+        output logic [8:0]  out_vlmax,
+        output logic        out_vill
+    );
+        logic [2:0] sew;
+        logic [2:0] lmul;
+        sew  = in_vtype[5:3];
+        lmul = in_vtype[2:0];
+        // Check illegal conditions per RVV 1.0 §3.1:
+        // 1. Reserved upper bits [62:8] != 0
+        // 2. vsew > 3 (SEW > 64)
+        // 3. vlmul == 3'b100 (reserved)
+        // 4. SEW/LMUL > ELEN (64)
+        if ((in_vtype[62:8] != 55'd0) ||
+            (sew > 3'd3) ||
+            (lmul == 3'b100) ||
+            (lmul == 3'b111 && sew == 3'd3) || // LMUL=1/2, SEW=64
+            (lmul == 3'b110 && sew >= 3'd2) || // LMUL=1/4, SEW>=32
+            (lmul == 3'b101 && sew >= 3'd1)    // LMUL=1/8, SEW>=16
+           ) begin
+            out_vill  = 1'b1;
+            out_vtype = 64'h8000_0000_0000_0000;
+            out_vlmax = 9'd0;
+        end else begin
+            vtype_bundle_t bundle;
+            out_vill     = 1'b0;
+            out_vtype    = {56'd0, in_vtype[7:0]};
+            bundle.vill  = 1'b0;
+            bundle.vma   = in_vtype[7];
+            bundle.vta   = in_vtype[6];
+            bundle.vsew  = vsew_t'(sew);
+            bundle.vlmul = vlmul_t'(lmul);
+            out_vlmax    = calc_vlmax(bundle);
+        end
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    logic [63:0] cfg_next_vtype;
+    logic [8:0]  cfg_next_vlmax;
+    logic        cfg_next_vill;
+
+    always_comb begin
+        eval_vtype_legal(vec_cfg_vtype_i, cfg_next_vtype, cfg_next_vlmax, cfg_next_vill);
+        vec_cfg_new_vtype_o = cfg_next_vtype;
+        vec_cfg_illegal_o   = cfg_next_vill;
+        if (cfg_next_vill) begin
+            vec_cfg_new_vl_o = 64'd0;
+        end else if (vec_cfg_rs1_is_zero_i && !vec_cfg_rd_is_zero_i) begin
+            vec_cfg_new_vl_o = {55'd0, cfg_next_vlmax};
+        end else if (vec_cfg_rs1_is_zero_i && vec_cfg_rd_is_zero_i) begin
+            vec_cfg_new_vl_o = vl_q;
+        end else if (vec_cfg_avl_i <= {55'd0, cfg_next_vlmax}) begin
+            vec_cfg_new_vl_o = vec_cfg_avl_i;
+        end else begin
+            vec_cfg_new_vl_o = {55'd0, cfg_next_vlmax};
+        end
+    end
+
+    // =========================================================================
+    // 5. Sequential Architectural State & Retirement Handling
     // =========================================================================
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
@@ -397,6 +532,13 @@ module fursoy_s1_csr
             // Milestone 8 FP CSRs Reset
             frm_q        <= 3'd0;
             fflags_q     <= 5'd0;
+
+            // Milestone 8 Phase D Vector CSRs Reset
+            vtype_q      <= 64'h8000_0000_0000_0000; // vill = 1 at reset
+            vl_q         <= 64'd0;
+            vstart_q     <= 64'd0;
+            vxrm_q       <= 2'd0;
+            vxsat_q      <= 1'b0;
 
             hpm_we_o     <= 1'b0;
             hpm_waddr_o  <= '0;
@@ -451,6 +593,30 @@ module fursoy_s1_csr
                 if ((retire_valid_i[0] && retire_fp_dest_valid_i[0] && !retire_exception_i) ||
                     (retire_valid_i[1] && retire_fp_dest_valid_i[1] && !retire_exception_i)) begin
                     fflags_q <= fflags_q | eff_retire_fflags;
+                end
+            end
+
+            // Milestone 8 Phase D: In-order Vector instruction retirement
+            // Transitions mstatus.VS to Dirty (2'b11) and asserts mstatus.SD
+            if ((retire_valid_i[0] && retire_vec_dest_valid_i[0] && !retire_exception_i) ||
+                (retire_valid_i[1] && retire_vec_dest_valid_i[1] && !retire_exception_i)) begin
+                mstatus_q[10:9] <= 2'b11; // VS Dirty
+            end
+
+            // Milestone 8 Phase D: Vector Configuration Update (vsetvli, vsetvl, vsetivli)
+            if (vec_cfg_valid_i) begin
+                if (eff_vs != 2'b00) begin
+                    vtype_q         <= vec_cfg_new_vtype_o;
+                    vl_q            <= vec_cfg_new_vl_o;
+                    mstatus_q[10:9] <= 2'b11; // VS Dirty
+                end
+            end
+
+            // Milestone 8 Phase D: Fault-Only-First Load Handling
+            // Non-zero element fault suppresses trap and truncates vl (PROP_M8_35)
+            if (fof_fault_valid_i) begin
+                if (fof_fault_elem_i > 64'd0 && fof_fault_elem_i < vl_q) begin
+                    vl_q <= fof_fault_elem_i;
                 end
             end
 
@@ -552,9 +718,28 @@ module fursoy_s1_csr
                                     mstatus_q[14:13] <= 2'b11; // Dirty
                                 end
 
+                                // Milestone 8 Phase D Vector CSRs
+                                12'h008: begin // vstart
+                                    vstart_q <= pending_sys_q.write_val;
+                                    mstatus_q[10:9] <= 2'b11; // VS Dirty
+                                end
+                                12'h009: begin // vxsat
+                                    vxsat_q <= pending_sys_q.write_val[0];
+                                    mstatus_q[10:9] <= 2'b11; // VS Dirty
+                                end
+                                12'h00A: begin // vxrm
+                                    vxrm_q <= pending_sys_q.write_val[1:0];
+                                    mstatus_q[10:9] <= 2'b11; // VS Dirty
+                                end
+                                12'h00F: begin // vcsr
+                                    vxsat_q <= pending_sys_q.write_val[0];
+                                    vxrm_q  <= pending_sys_q.write_val[2:1];
+                                    mstatus_q[10:9] <= 2'b11; // VS Dirty
+                                end
+
                                 12'h300: begin // mstatus
                                     mstatus_q <= 64'h0000_000a_0000_0000 |
-                                                 (pending_sys_q.write_val & 64'h0000_0000_007e_79aa) |
+                                                 (pending_sys_q.write_val & 64'h0000_0000_007e_7faa) |
                                                  (pending_sys_q.write_val[12:11] == 2'b10 ? 64'h1800 : 64'd0);
                                     sys_redirect_valid_o  <= 1'b1;
                                     sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
@@ -578,6 +763,7 @@ module fursoy_s1_csr
                                     mstatus_q[1]     <= pending_sys_q.write_val[1];     // SIE
                                     mstatus_q[5]     <= pending_sys_q.write_val[5];     // SPIE
                                     mstatus_q[8]     <= pending_sys_q.write_val[8];     // SPP
+                                    mstatus_q[10:9]  <= pending_sys_q.write_val[10:9];  // VS
                                     mstatus_q[14:13] <= pending_sys_q.write_val[14:13]; // FS
                                     mstatus_q[18]    <= pending_sys_q.write_val[18];    // SUM
                                     mstatus_q[19]    <= pending_sys_q.write_val[19];    // MXR

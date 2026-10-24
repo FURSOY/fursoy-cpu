@@ -43,6 +43,11 @@ module fursoy_s1_rob
     input  fpreg_t                 alloc_prd_fp_i     [1:0],
     input  fpreg_t                 alloc_pold_fp_i    [1:0],
 
+    // Milestone 8 Phase D Vector Allocation Fields
+    input  logic [1:0]             alloc_is_vec_i,
+    input  logic [1:0]             alloc_vec_dest_valid_i,
+    input  vreg_t                  alloc_prd_vec_i    [1:0],
+
     output rob_idx_t               alloc_rob_idx_o    [1:0],
     output rob_epoch_t             alloc_rob_epoch_o  [1:0],
     output logic [1:0]             alloc_ready_o, // [0]: >=1 slot, [1]: >=2 slots
@@ -90,6 +95,11 @@ module fursoy_s1_rob
     output fpreg_t                 retire_prd_fp_o    [1:0],
     output fpreg_t                 retire_pold_fp_o   [1:0],
     output logic [4:0]             retire_fflags_o    [1:0],
+
+    // Milestone 8 Phase D Vector Retirement Fields
+    output logic [1:0]             retire_is_vec_o,
+    output logic [1:0]             retire_vec_dest_valid_o,
+    output vreg_t                  retire_prd_vec_o   [1:0],
 
     // Precise Exception / Flush Trigger at ROB Head
     output logic                   retire_exception_o,
@@ -319,6 +329,10 @@ module fursoy_s1_rob
     assign retire_pold_fp_o[0]       = entry0.pold_fp;
     assign retire_fflags_o[0]        = entry0_fflags_eff;
 
+    assign retire_is_vec_o[0]         = entry0.is_vec;
+    assign retire_vec_dest_valid_o[0] = entry0.vec_dest_valid;
+    assign retire_prd_vec_o[0]        = entry0.prd_vec;
+
     assign retire_valid_o[1]     = retire_grant[1];
     assign retire_rd_o[1]        = entry1.rd;
     assign retire_pnew_o[1]      = entry1.pnew;
@@ -334,6 +348,10 @@ module fursoy_s1_rob
     assign retire_prd_fp_o[1]        = entry1.prd_fp;
     assign retire_pold_fp_o[1]       = entry1.pold_fp;
     assign retire_fflags_o[1]        = entry1_fflags_eff;
+
+    assign retire_is_vec_o[1]         = entry1.is_vec;
+    assign retire_vec_dest_valid_o[1] = entry1.vec_dest_valid;
+    assign retire_prd_vec_o[1]        = entry1.prd_vec;
 
     logic [1:0] num_retire;
     assign num_retire = (retire_grant == 2'b11) ? 2'd2 :
@@ -540,6 +558,10 @@ module fursoy_s1_rob
                     entries_q[tail_q].prd_fp         <= alloc_prd_fp_i[0];
                     entries_q[tail_q].pold_fp        <= alloc_pold_fp_i[0];
                     entries_q[tail_q].fflags         <= 5'd0;
+                    // Milestone 8 Vector fields
+                    entries_q[tail_q].is_vec         <= alloc_is_vec_i[0];
+                    entries_q[tail_q].vec_dest_valid <= alloc_vec_dest_valid_i[0];
+                    entries_q[tail_q].prd_vec        <= alloc_prd_vec_i[0];
                 end
 
                 if (alloc_valid_i[1]) begin
@@ -563,6 +585,10 @@ module fursoy_s1_rob
                     entries_q[tail1_comb].prd_fp         <= alloc_prd_fp_i[1];
                     entries_q[tail1_comb].pold_fp        <= alloc_pold_fp_i[1];
                     entries_q[tail1_comb].fflags         <= 5'd0;
+                    // Milestone 8 Vector fields
+                    entries_q[tail1_comb].is_vec         <= alloc_is_vec_i[1];
+                    entries_q[tail1_comb].vec_dest_valid <= alloc_vec_dest_valid_i[1];
+                    entries_q[tail1_comb].prd_vec        <= alloc_prd_vec_i[1];
                 end
 
                 tail_q  <= inc48(tail_q, {1'b0, num_alloc});

@@ -48,6 +48,10 @@ module fursoy_s1_substrate
     input  logic                   uop0_fp_dest_valid_i,
     input  fareg_t                 uop0_fs3_i,
     input  logic [2:0]             uop0_frm_i,
+    // Milestone 8 Phase D Vector Renaming Inputs
+    input  logic                   uop0_is_vec_i,
+    input  logic                   uop0_vec_dest_valid_i,
+    input  vreg_t                  uop0_prd_vec_i,
 
     input  logic                   uop1_valid_i,
     input  areg_t                  uop1_rs1_i,
@@ -60,6 +64,10 @@ module fursoy_s1_substrate
     input  logic                   uop1_fp_dest_valid_i,
     input  fareg_t                 uop1_fs3_i,
     input  logic [2:0]             uop1_frm_i,
+    // Milestone 8 Phase D Vector Renaming Inputs
+    input  logic                   uop1_is_vec_i,
+    input  logic                   uop1_vec_dest_valid_i,
+    input  vreg_t                  uop1_prd_vec_i,
 
     // Downstream backpressure (e.g. from Issue Queues)
     input  logic [1:0]             dispatch_ready_i,
@@ -171,6 +179,11 @@ module fursoy_s1_substrate
     output fpreg_t                 retire_prd_fp_o       [1:0],
     output fpreg_t                 retire_pold_fp_o      [1:0],
     output logic [4:0]             retire_fflags_o       [1:0],
+
+    // Milestone 8 Phase D Vector Retirement Fields
+    output logic [1:0]             retire_is_vec_o,
+    output logic [1:0]             retire_vec_dest_valid_o,
+    output vreg_t                  retire_prd_vec_o      [1:0],
 
     // Precise Exception Signaled at ROB Head
     output logic                   retire_exception_o,
@@ -301,6 +314,25 @@ module fursoy_s1_substrate
     logic [4:0]      rob_retire_fflags [1:0];
     logic [1:0]      rob_rec_pnew_fp_valid;
     fpreg_t          rob_rec_pnew_fp [1:0];
+
+    // ROB Vector signals
+    logic [1:0]      rob_alloc_is_vec;
+    logic [1:0]      rob_alloc_vec_dest_valid;
+    vreg_t           rob_alloc_prd_vec [1:0];
+    logic [1:0]      rob_retire_is_vec;
+    logic [1:0]      rob_retire_vec_dest_valid;
+    vreg_t           rob_retire_prd_vec [1:0];
+
+    assign rob_alloc_is_vec[0]         = uop0_is_vec_i;
+    assign rob_alloc_is_vec[1]         = uop1_is_vec_i;
+    assign rob_alloc_vec_dest_valid[0] = uop0_vec_dest_valid_i;
+    assign rob_alloc_vec_dest_valid[1] = uop1_vec_dest_valid_i;
+    assign rob_alloc_prd_vec[0]        = uop0_prd_vec_i;
+    assign rob_alloc_prd_vec[1]        = uop1_prd_vec_i;
+
+    assign retire_is_vec_o             = rob_retire_is_vec;
+    assign retire_vec_dest_valid_o     = rob_retire_vec_dest_valid;
+    assign retire_prd_vec_o            = rob_retire_prd_vec;
 
     // ROB signals
     logic [1:0]      rob_alloc_valid;
@@ -734,6 +766,9 @@ module fursoy_s1_substrate
         .alloc_fp_dest_valid_i(rob_alloc_fp_dest_valid),
         .alloc_prd_fp_i       (rob_alloc_prd_fp),
         .alloc_pold_fp_i      (rob_alloc_pold_fp),
+        .alloc_is_vec_i       (rob_alloc_is_vec),
+        .alloc_vec_dest_valid_i(rob_alloc_vec_dest_valid),
+        .alloc_prd_vec_i      (rob_alloc_prd_vec),
         .alloc_rob_idx_o      (rob_alloc_idx),
         .alloc_rob_epoch_o    (rob_alloc_epoch),
         .alloc_ready_o        (rob_alloc_ready),
@@ -767,6 +802,9 @@ module fursoy_s1_substrate
         .retire_prd_fp_o      (rob_retire_prd_fp),
         .retire_pold_fp_o     (rob_retire_pold_fp),
         .retire_fflags_o      (rob_retire_fflags),
+        .retire_is_vec_o      (rob_retire_is_vec),
+        .retire_vec_dest_valid_o(rob_retire_vec_dest_valid),
+        .retire_prd_vec_o     (rob_retire_prd_vec),
         .retire_exception_o   (retire_exception_o),
         .retire_exc_cause_o   (retire_exc_cause_o),
         .retire_exc_pc_o      (retire_exc_pc_o),

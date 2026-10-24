@@ -1,0 +1,31 @@
+{
+  "timestamp_utc": "2026-10-24T14:05:06.050470+00:00",
+  "phase": "M8 Phase D: Vector Execution Subsystem (RVV 1.0) Architecture & Interface Contract",
+  "production_rtl_manifest_sha256": "bbaee110421deee5edbaa87a2768458407c540101d531f684f441d8c700e91b9",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m8-fp-vector-v1.md",
+    "version": "1.1",
+    "sha256": "55a4fa1623c073d9b06d7384f7ea3ce0ad0824b7f240819179962994b68d92e6"
+  },
+  "unit_verification": {
+    "status": "pass",
+    "total_properties_tested": 10,
+    "properties_passed": 10,
+    "passed_properties": [
+      "PROP_M8_27",
+      "PROP_M8_28",
+      "PROP_M8_29",
+      "PROP_M8_30",
+      "PROP_M8_31",
+      "PROP_M8_32",
+      "PROP_M8_33",
+      "PROP_M8_34",
+      "PROP_M8_35",
+      "PROP_M8_36"
+    ],
+    "torture_ops_completed": 75000,
+    "torture_mismatches": 0
+  },
+  "elapsed_seconds": 4.46,
+  "overall_status": "PASS"
+}

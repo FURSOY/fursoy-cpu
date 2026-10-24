@@ -86,6 +86,10 @@ module fursoy_s1_core
     input  logic                   uop0_fp_dest_valid_i,
     input  fareg_t                 uop0_fs3_i,
     input  logic [2:0]             uop0_frm_i,
+    // Milestone 8 Phase D Vector Renaming Inputs
+    input  logic                   uop0_is_vec_i,
+    input  logic                   uop0_vec_dest_valid_i,
+    input  vreg_t                  uop0_prd_vec_i,
 
     // Uop 1 Input
     input  logic                   uop1_valid_i,
@@ -107,6 +111,10 @@ module fursoy_s1_core
     input  logic                   uop1_fp_dest_valid_i,
     input  fareg_t                 uop1_fs3_i,
     input  logic [2:0]             uop1_frm_i,
+    // Milestone 8 Phase D Vector Renaming Inputs
+    input  logic                   uop1_is_vec_i,
+    input  logic                   uop1_vec_dest_valid_i,
+    input  vreg_t                  uop1_prd_vec_i,
 
     // Acceptance Acknowledgment to Decode / Frontend
     output logic [1:0]             rename_ack_o,
@@ -235,6 +243,11 @@ module fursoy_s1_core
     output fpreg_t                 retire_pold_fp_o      [1:0],
     output logic [4:0]             retire_fflags_o       [1:0],
 
+    // Milestone 8 Phase D Vector Retirement Outputs
+    output logic [1:0]             retire_is_vec_o,
+    output logic [1:0]             retire_vec_dest_valid_o,
+    output vreg_t                  retire_prd_vec_o      [1:0],
+
     // Milestone 8 Phase A FP Free List & Status Observability
     output logic [FL_FP_CNT_W-1:0] fl_fp_count_o,
     output logic [1:0]             fl_fp_ready_o,
@@ -245,6 +258,50 @@ module fursoy_s1_core
     output logic [1:0]             mstatus_fs_o,
     output logic [2:0]             fcsr_frm_o,
     output logic [4:0]             fcsr_fflags_o,
+
+    // Milestone 8 Phase D Vector Architectural & Context Outputs
+    output logic [1:0]             mstatus_vs_o,
+    output logic [63:0]            vtype_o,
+    output logic [63:0]            vl_o,
+    output logic [63:0]            vstart_o,
+    output logic [63:0]            vcsr_o,
+    output logic [3:0]             bank_collision_o,
+    output logic                   viq_full_o,
+    output logic [3:0]             viq_count_o,
+
+    // Vector Testbench Direct Interaction Ports
+    input  logic                   test_vrf_w_valid_i,
+    input  vreg_t                  test_vrf_w_paddr_i,
+    input  logic [31:0]            test_vrf_w_byte_mask_i,
+    input  logic [255:0]           test_vrf_w_data_i,
+    input  vreg_t                  probe_vrf_paddr_i,
+    output logic [255:0]           probe_vrf_pdata_o,
+
+    input  logic                   test_vec_cfg_valid_i,
+    input  logic [63:0]            test_vec_cfg_avl_i,
+    input  logic [63:0]            test_vec_cfg_vtype_i,
+    input  logic                   test_vec_cfg_rs1_is_zero_i,
+    input  logic                   test_vec_cfg_rd_is_zero_i,
+
+    input  logic                   test_fof_fault_valid_i,
+    input  logic [63:0]            test_fof_fault_elem_i,
+
+    input  logic                   test_viq_alloc_valid_i,
+    input  rob_idx_t               test_viq_alloc_rob_idx_i,
+    input  uop_class_t             test_viq_alloc_uop_class_i,
+    input  uop_subop_t             test_viq_alloc_sub_op_i,
+    input  vreg_t                  test_viq_alloc_vd_i,
+    input  vreg_t                  test_viq_alloc_vs1_i,
+    input  vreg_t                  test_viq_alloc_vs2_i,
+    input  logic                   test_viq_alloc_vm_i,
+    input  vtype_bundle_t          test_viq_alloc_vtype_i,
+    input  logic [8:0]             test_viq_alloc_vl_i,
+    input  logic                   test_viq_issue_ready_i,
+    output logic                   viq_issue_valid_o,
+    output vreg_t                  viq_issue_vd_o,
+    output logic [4:0]             viq_issue_beat_idx_o,
+    output logic [4:0]             viq_issue_total_beats_o,
+    output logic                   viq_issue_is_last_beat_o,
 
     // -------------------------------------------------------------------------
     // External Memory Interconnect & Translation Interface (M3 L1D Channels)
@@ -585,6 +642,10 @@ module fursoy_s1_core
     wire        sub_uop0_fp_dest_valid = frontend_en_i ? 1'b0 : uop0_fp_dest_valid_i;
     wire fareg_t sub_uop0_fs3          = frontend_en_i ? 5'd0 : uop0_fs3_i;
 
+    wire        sub_uop0_is_vec         = frontend_en_i ? 1'b0 : uop0_is_vec_i;
+    wire        sub_uop0_vec_dest_valid = frontend_en_i ? 1'b0 : uop0_vec_dest_valid_i;
+    wire vreg_t sub_uop0_prd_vec        = frontend_en_i ? 6'd0 : uop0_prd_vec_i;
+
     wire        sub_uop1_valid     = frontend_en_i ? fe_uop1_valid     : uop1_valid_i;
     wire areg_t sub_uop1_rs1       = frontend_en_i ? fe_uop1.rs1       : uop1_rs1_i;
     wire areg_t sub_uop1_rs2       = frontend_en_i ? fe_uop1.rs2       : uop1_rs2_i;
@@ -594,6 +655,9 @@ module fursoy_s1_core
     wire        sub_uop1_is_fp         = frontend_en_i ? 1'b0 : uop1_is_fp_i;
     wire        sub_uop1_fp_dest_valid = frontend_en_i ? 1'b0 : uop1_fp_dest_valid_i;
     wire fareg_t sub_uop1_fs3          = frontend_en_i ? 5'd0 : uop1_fs3_i;
+    wire        sub_uop1_is_vec         = frontend_en_i ? 1'b0 : uop1_is_vec_i;
+    wire        sub_uop1_vec_dest_valid = frontend_en_i ? 1'b0 : uop1_vec_dest_valid_i;
+    wire vreg_t sub_uop1_prd_vec        = frontend_en_i ? 6'd0 : uop1_prd_vec_i;
 
     // Substrate to CSR / Core FP retirement wires
     logic [1:0] sub_retire_is_fp;
@@ -602,11 +666,27 @@ module fursoy_s1_core
     fpreg_t     sub_retire_pold_fp [1:0];
     logic [4:0] sub_retire_fflags [1:0];
 
+    // Substrate to CSR / Core Vector retirement wires
+    logic [1:0]  sub_retire_is_vec;
+    logic [1:0]  sub_retire_vec_dest_valid;
+    vreg_t       sub_retire_prd_vec [1:0];
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [63:0] unused_vec_cfg_new_vl;
+    logic [63:0] unused_vec_cfg_new_vtype;
+    logic        unused_vec_cfg_illegal;
+    logic [1:0]  unused_vxrm;
+    logic        unused_vxsat;
+    /* verilator lint_on UNUSEDSIGNAL */
+
     assign retire_is_fp_o         = sub_retire_is_fp;
     assign retire_fp_dest_valid_o = sub_retire_fp_dest_valid;
     assign retire_prd_fp_o        = sub_retire_prd_fp;
     assign retire_pold_fp_o       = sub_retire_pold_fp;
     assign retire_fflags_o        = sub_retire_fflags;
+
+    assign retire_is_vec_o         = sub_retire_is_vec;
+    assign retire_vec_dest_valid_o = sub_retire_vec_dest_valid;
+    assign retire_prd_vec_o        = sub_retire_prd_vec;
 
     // Combined FP writeback completion bus for substrate
     wire [2:0]   int_comp_fp_wb_valid = be_comp_fp_wb_valid | comp_fp_wb_valid_i | {test_fp_w2_valid_i, test_fp_w1_valid_i, test_fp_w0_valid_i};
@@ -708,6 +788,9 @@ module fursoy_s1_core
         .uop0_fp_dest_valid_i    (sub_uop0_fp_dest_valid),
         .uop0_fs3_i              (sub_uop0_fs3),
         .uop0_frm_i              (uop0_frm_i),
+        .uop0_is_vec_i           (sub_uop0_is_vec),
+        .uop0_vec_dest_valid_i   (sub_uop0_vec_dest_valid),
+        .uop0_prd_vec_i          (sub_uop0_prd_vec),
 
         .uop1_valid_i            (sub_uop1_valid),
         .uop1_rs1_i              (sub_uop1_rs1),
@@ -719,6 +802,9 @@ module fursoy_s1_core
         .uop1_fp_dest_valid_i    (sub_uop1_fp_dest_valid),
         .uop1_fs3_i              (sub_uop1_fs3),
         .uop1_frm_i              (uop1_frm_i),
+        .uop1_is_vec_i           (sub_uop1_is_vec),
+        .uop1_vec_dest_valid_i   (sub_uop1_vec_dest_valid),
+        .uop1_prd_vec_i          (sub_uop1_prd_vec),
 
         .dispatch_ready_i        (int_dispatch_ready),
         .rename_ack_o            (int_rename_ack),
@@ -816,6 +902,10 @@ module fursoy_s1_core
         .retire_prd_fp_o         (sub_retire_prd_fp),
         .retire_pold_fp_o        (sub_retire_pold_fp),
         .retire_fflags_o         (sub_retire_fflags),
+
+        .retire_is_vec_o         (sub_retire_is_vec),
+        .retire_vec_dest_valid_o (sub_retire_vec_dest_valid),
+        .retire_prd_vec_o        (sub_retire_prd_vec),
 
         .retire_exception_o      (retire_exception_o),
         .retire_exc_cause_o      (retire_exc_cause_o),
@@ -1195,6 +1285,22 @@ module fursoy_s1_core
         .retire_fp_dest_valid_i  (sub_retire_fp_dest_valid),
         .retire_fflags_i         (sub_retire_fflags),
 
+        // Milestone 8 Phase D Vector Retirement Interface
+        .retire_vec_dest_valid_i (sub_retire_vec_dest_valid),
+
+        // Milestone 8 Phase D Vector Configuration & Fault-Only-First Interface
+        .vec_cfg_valid_i         (test_vec_cfg_valid_i),
+        .vec_cfg_avl_i           (test_vec_cfg_avl_i),
+        .vec_cfg_vtype_i         (test_vec_cfg_vtype_i),
+        .vec_cfg_rs1_is_zero_i   (test_vec_cfg_rs1_is_zero_i),
+        .vec_cfg_rd_is_zero_i    (test_vec_cfg_rd_is_zero_i),
+        .vec_cfg_new_vl_o        (unused_vec_cfg_new_vl),
+        .vec_cfg_new_vtype_o     (unused_vec_cfg_new_vtype),
+        .vec_cfg_illegal_o       (unused_vec_cfg_illegal),
+
+        .fof_fault_valid_i       (test_fof_fault_valid_i),
+        .fof_fault_elem_i        (test_fof_fault_elem_i),
+
         // Architectural State Outputs
         .priv_mode_o             (csr_priv_mode),
         .mstatus_o               (csr_mstatus),
@@ -1204,6 +1310,15 @@ module fursoy_s1_core
         .mstatus_fs_o            (mstatus_fs_o),
         .frm_o                   (fcsr_frm_o),
         .fflags_o                (fcsr_fflags_o),
+
+        // Milestone 8 Phase D Vector Context Outputs
+        .mstatus_vs_o            (mstatus_vs_o),
+        .vtype_o                 (vtype_o),
+        .vl_o                    (vl_o),
+        .vstart_o                (vstart_o),
+        .vcsr_o                  (vcsr_o),
+        .vxrm_o                  (unused_vxrm),
+        .vxsat_o                 (unused_vxsat),
 
         // Redirect & Flush Outputs
         .sys_redirect_valid_o    (csr_redirect_valid),
@@ -1233,6 +1348,99 @@ module fursoy_s1_core
         .hpm_waddr_o             (hpm_waddr),
         .hpm_wdata_o             (hpm_wdata)
     );
+
+    // =========================================================================
+    // 4. Milestone 8 Phase D Vector Register File (VRF)
+    // =========================================================================
+    /* verilator lint_off PINCONNECTEMPTY */
+    fursoy_s1_vrf u_vrf (
+        .clk_i                   (clk_i),
+        .rst_i                   (rst_i),
+
+        .raddr0_v_i              (6'd0),
+        .ren0_bank_i             (4'd0),
+        .rdata0_v_o              (),
+
+        .raddr1_v_i              (6'd0),
+        .ren1_bank_i             (4'd0),
+        .rdata1_v_o              (),
+
+        .raddr2_v_i              (6'd0),
+        .ren2_bank_i             (4'd0),
+        .rdata2_v_o              (),
+
+        .w0_valid_i              (1'b0),
+        .w0_paddr_i              (6'd0),
+        .w0_bank_mask_i          (4'd0),
+        .w0_byte_mask_i          (32'd0),
+        .w0_data_i               (256'd0),
+
+        .bank_collision_o        (bank_collision_o),
+
+        .test_w_valid_i          (test_vrf_w_valid_i),
+        .test_w_paddr_i          (test_vrf_w_paddr_i),
+        .test_w_byte_mask_i      (test_vrf_w_byte_mask_i),
+        .test_w_data_i           (test_vrf_w_data_i),
+
+        .probe_paddr_i           (probe_vrf_paddr_i),
+        .probe_pdata_o           (probe_vrf_pdata_o)
+    );
+
+    // =========================================================================
+    // 5. Milestone 8 Phase D Decoupled Vector Issue Queue (VIQ8)
+    // =========================================================================
+    fursoy_s1_vec_iq u_viq (
+        .clk_i                   (clk_i),
+        .rst_i                   (rst_i),
+        .flush_valid_i           (core_flush_valid),
+        .recover_valid_i         (int_recover_valid),
+        .recover_rob_idx_i       (int_recover_rob_idx),
+        .rob_head_i              (int_rob_head),
+
+        .alloc_valid_i           (test_viq_alloc_valid_i),
+        .alloc_rob_idx_i         (test_viq_alloc_rob_idx_i),
+        .alloc_rob_epoch_i       (4'd0),
+        .alloc_uop_class_i       (test_viq_alloc_uop_class_i),
+        .alloc_sub_op_i          (test_viq_alloc_sub_op_i),
+        .alloc_vd_i              (test_viq_alloc_vd_i),
+        .alloc_vs1_i             (test_viq_alloc_vs1_i),
+        .alloc_vs2_i             (test_viq_alloc_vs2_i),
+        .alloc_vm_i              (test_viq_alloc_vm_i),
+        .alloc_vs1_ready_i       (1'b1),
+        .alloc_vs2_ready_i       (1'b1),
+        .alloc_vm_ready_i        (1'b1),
+        .alloc_vtype_i           (test_viq_alloc_vtype_i),
+        .alloc_vl_i              (test_viq_alloc_vl_i),
+        .alloc_vstart_i          (9'd0),
+        .alloc_imm_i             (64'd0),
+        .alloc_ready_o           (),
+
+        .wb_v_valid_i            (1'b0),
+        .wb_v_paddr_i            (6'd0),
+
+        .issue_ready_i           (test_viq_issue_ready_i),
+        .issue_valid_o           (viq_issue_valid_o),
+        .issue_rob_idx_o         (),
+        .issue_rob_epoch_o       (),
+        .issue_uop_class_o       (),
+        .issue_sub_op_o          (),
+        .issue_vd_o              (viq_issue_vd_o),
+        .issue_vs1_o             (),
+        .issue_vs2_o             (),
+        .issue_vm_o              (),
+        .issue_beat_idx_o        (viq_issue_beat_idx_o),
+        .issue_total_beats_o     (viq_issue_total_beats_o),
+        .issue_is_last_beat_o    (viq_issue_is_last_beat_o),
+        .issue_bank_mask_o       (),
+        .issue_vtype_o           (),
+        .issue_vl_o              (),
+        .issue_vstart_o          (),
+        .issue_imm_o             (),
+
+        .viq_full_o              (viq_full_o),
+        .viq_count_o             (viq_count_o)
+    );
+    /* verilator lint_on PINCONNECTEMPTY */
 
     logic              int_train_valid;
     logic [63:0]       int_train_pc;

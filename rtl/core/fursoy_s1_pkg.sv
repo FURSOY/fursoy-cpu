@@ -59,6 +59,118 @@ package fursoy_s1_pkg;
     } fcsr_t;
 
     // -------------------------------------------------------------------------
+    // Milestone 8 Phase D Vector Architectural Dimensions & Types (RVV 1.0)
+    // Reference: docs/architecture/slice1-m8-fp-vector-v1.md Section 8, Section 10
+    // -------------------------------------------------------------------------
+    localparam int unsigned VLEN           = 256;      // Vector Register Length in bits
+    localparam int unsigned ELEN           = 64;       // Maximum Element Width in bits
+    localparam int unsigned VLENB          = VLEN / 8; // Vector Register Length in bytes (32)
+    localparam int unsigned VRF_NUM_PREGS  = 48;       // 48 Physical Vector Registers
+    localparam int unsigned VRF_NUM_BANKS  = 4;        // 4 Banks x 64 bits per physical register
+    localparam int unsigned VRF_BANK_WIDTH = 64;       // 64-bit Bank Width
+    localparam int unsigned VIQ_DEPTH      = 8;        // 8-entry Decoupled Vector Issue Queue
+    localparam int unsigned VIQ_IDX_W      = 3;        // $clog2(8)
+
+    typedef logic [5:0] vreg_t;     // 6-bit physical vector register index (0..47)
+    typedef logic [4:0] areg_v_t;   // 5-bit architectural vector register index (v0..v31)
+    typedef logic [2:0] viq_idx_t;  // 3-bit VIQ index
+
+    // Vector SEW (Selected Element Width)
+    typedef enum logic [2:0] {
+        VSEW_8  = 3'b000, // 8-bit elements
+        VSEW_16 = 3'b001, // 16-bit elements
+        VSEW_32 = 3'b010, // 32-bit elements
+        VSEW_64 = 3'b011  // 64-bit elements
+    } vsew_t;
+
+    // Vector LMUL (Register Grouping Multiplier)
+    typedef enum logic [2:0] {
+        VLMUL_1        = 3'b000, // LMUL = 1
+        VLMUL_2        = 3'b001, // LMUL = 2
+        VLMUL_4        = 3'b010, // LMUL = 4
+        VLMUL_8        = 3'b011, // LMUL = 8
+        VLMUL_RESERVED = 3'b100, // Reserved (vill=1)
+        VLMUL_F8       = 3'b101, // LMUL = 1/8
+        VLMUL_F4       = 3'b110, // LMUL = 1/4
+        VLMUL_F2       = 3'b111  // LMUL = 1/2
+    } vlmul_t;
+
+    // Vector Type Configuration Structure
+    typedef struct packed {
+        logic       vill;   // Bit 63: Illegal vtype value
+        logic       vma;    // Bit 7: Mask Agnostic (1=agnostic, 0=undisturbed)
+        logic       vta;    // Bit 6: Tail Agnostic (1=agnostic, 0=undisturbed)
+        vsew_t      vsew;   // Bits [5:3]: Selected Element Width
+        vlmul_t     vlmul;  // Bits [2:0]: Vector Register Grouping
+    } vtype_bundle_t;
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic logic [8:0] calc_vlmax(input vtype_bundle_t vt);
+        if (vt.vill) return 9'd0;
+        case (vt.vlmul)
+            VLMUL_1: begin
+                case (vt.vsew)
+                    VSEW_8:  return 9'd32;
+                    VSEW_16: return 9'd16;
+                    VSEW_32: return 9'd8;
+                    VSEW_64: return 9'd4;
+                    default: return 9'd0;
+                endcase
+            end
+            VLMUL_2: begin
+                case (vt.vsew)
+                    VSEW_8:  return 9'd64;
+                    VSEW_16: return 9'd32;
+                    VSEW_32: return 9'd16;
+                    VSEW_64: return 9'd8;
+                    default: return 9'd0;
+                endcase
+            end
+            VLMUL_4: begin
+                case (vt.vsew)
+                    VSEW_8:  return 9'd128;
+                    VSEW_16: return 9'd64;
+                    VSEW_32: return 9'd32;
+                    VSEW_64: return 9'd16;
+                    default: return 9'd0;
+                endcase
+            end
+            VLMUL_8: begin
+                case (vt.vsew)
+                    VSEW_8:  return 9'd256;
+                    VSEW_16: return 9'd128;
+                    VSEW_32: return 9'd64;
+                    VSEW_64: return 9'd32;
+                    default: return 9'd0;
+                endcase
+            end
+            VLMUL_F2: begin
+                case (vt.vsew)
+                    VSEW_8:  return 9'd16;
+                    VSEW_16: return 9'd8;
+                    VSEW_32: return 9'd4;
+                    default: return 9'd0;
+                endcase
+            end
+            VLMUL_F4: begin
+                case (vt.vsew)
+                    VSEW_8:  return 9'd8;
+                    VSEW_16: return 9'd4;
+                    default: return 9'd0;
+                endcase
+            end
+            VLMUL_F8: begin
+                case (vt.vsew)
+                    VSEW_8:  return 9'd4;
+                    default: return 9'd0;
+                endcase
+            end
+            default: return 9'd0;
+        endcase
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // -------------------------------------------------------------------------
     // Micro-operation Rename Input Structure (2-wide)
     // -------------------------------------------------------------------------
     typedef struct packed {
@@ -131,6 +243,10 @@ package fursoy_s1_pkg;
         fpreg_t     prd_fp;
         fpreg_t     pold_fp;
         logic [4:0] fflags;
+        // Milestone 8 Phase D Vector Extensions
+        logic       is_vec;
+        logic       vec_dest_valid;
+        vreg_t      prd_vec;
     } rob_entry_t;
 
     // -------------------------------------------------------------------------
@@ -206,7 +322,8 @@ package fursoy_s1_pkg;
         UOP_AMO       = 4'd11,
         UOP_FENCE     = 4'd12,
         UOP_SYSTEM    = 4'd13,
-        UOP_FP        = 4'd14
+        UOP_FP        = 4'd14,
+        UOP_VEC       = 4'd15
     } uop_class_t;
 
     typedef enum logic [7:0] {
@@ -400,7 +517,32 @@ package fursoy_s1_pkg;
         MEM_FLW       = 8'd164,
         MEM_FLD       = 8'd165,
         MEM_FSW       = 8'd166,
-        MEM_FSD       = 8'd167
+        MEM_FSD       = 8'd167,
+        // Milestone 8 Phase D Vector Sub-Operations
+        VEC_VSETVLI   = 8'd168,
+        VEC_VSETVL    = 8'd169,
+        VEC_VSETIVLI  = 8'd170,
+        // Vector Memory Operations
+        VEC_VLE       = 8'd171,
+        VEC_VSE       = 8'd172,
+        VEC_VLSE      = 8'd173,
+        VEC_VSSE      = 8'd174,
+        VEC_VLUXEI    = 8'd175,
+        VEC_VSOXEI    = 8'd176,
+        VEC_VLEFF     = 8'd177,
+        // Vector Arithmetic & Logic
+        VEC_VADD      = 8'd178,
+        VEC_VSUB      = 8'd179,
+        VEC_VMUL      = 8'd180,
+        VEC_VDIV      = 8'd181,
+        VEC_VAND      = 8'd182,
+        VEC_VOR       = 8'd183,
+        VEC_VXOR      = 8'd184,
+        VEC_VREDSUM   = 8'd185,
+        VEC_VSLIDEUP  = 8'd186,
+        VEC_VSLIDEDOWN= 8'd187,
+        VEC_VMAND     = 8'd188,
+        VEC_VMOR      = 8'd189
     } uop_subop_t;
 
     // -------------------------------------------------------------------------
@@ -433,6 +575,8 @@ package fursoy_s1_pkg;
         rob_epoch_t     rob_epoch;
         logic [63:0]    pc;
     } fpiq_entry_t;
+
+
 
     localparam int unsigned GHR_WIDTH = 108; // 108-bit GHR for Milestone 6 Phase A TAGE-Lite
     typedef logic [GHR_WIDTH-1:0] ghr_t;
