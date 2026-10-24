@@ -34,6 +34,7 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "cf08268b3b900a3233b35ddb6b4d10b3cb8aa988656f103aefcb717109b827d2",  # M8 Phase B Final
     "69a94959bb1a03684f35146a940b119b85cef3e365a695f67221b0c83acd6a2f",  # M8 Phase C Final
     "b5f823b9dcb8395127193852f6afcdf31518fbb4e9dd270d9e7c3920cdc0350f",  # M8 Phase D Final
+    "c3cdd842b5373b1371dfaf33ac9da198d84eb3bf4783b104f90dc180d1604408",  # M8 Phase E Final
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m6-frontend-opt-v1.md"
 SPEC_VERSION = "1.1"

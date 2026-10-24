@@ -280,6 +280,11 @@ module fursoy_s1_backend
     output logic              event_snoop_hit_o,
     output logic              event_snoop_replay_o,
 
+    // Milestone 8 FP Telemetry Events (Section 10.2)
+    output logic              event_fp_issue_o,
+    output logic              event_fp_fma_busy_o,
+    output logic              event_fp_fdiv_stall_o,
+
     // Milestone 8 Phase A Floating-Point Register File Interface
     /* verilator lint_off UNUSEDSIGNAL */
     input  fpreg_t            r0_fp_paddr_i,
@@ -1838,6 +1843,11 @@ module fursoy_s1_backend
         end
     end
 `endif
+
+    // Milestone 8 FP Telemetry Assignments
+    assign event_fp_issue_o      = fp_issue_valid;
+    assign event_fp_fma_busy_o   = fp_rf_valid_q || fma_out_valid;
+    assign event_fp_fdiv_stall_o = fdiv_busy;
 
 endmodule
 

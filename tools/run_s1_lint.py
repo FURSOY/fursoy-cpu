@@ -72,7 +72,7 @@ def main():
 
     report = {
         "status": "pass" if run.returncode == 0 else "fail",
-        "scope": "Fursoy Slice-1 Milestone 8 Phase D Core RTL (Vector Execution Subsystem RVV 1.0 Architecture & Interface Contract)",
+        "scope": "Fursoy Slice-1 Milestone 8 Closeout Core RTL (HPM Telemetry Expansion, CPI Conservation & Milestone 8 Closeout)",
         "observed_at_utc": datetime.now(timezone.utc).isoformat(),
         "command": cmd,
         "verilator_version": subprocess.run(["verilator", "--version"], capture_output=True, text=True).stdout.strip(),

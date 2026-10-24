@@ -426,6 +426,16 @@ module fursoy_s1_core
     output logic                   snoop_rsp_was_dirty_o,
     output logic [511:0]           snoop_rsp_data_o,
 
+    // Milestone 8 Phase E Telemetry Test Injection Inputs
+    input  logic                   test_ev_fp_issue_i,
+    input  logic                   test_ev_fp_fma_busy_i,
+    input  logic                   test_ev_fp_fdiv_stall_i,
+    input  logic                   test_ev_fp_rename_stall_i,
+    input  logic                   test_ev_vec_uop_commit_i,
+    input  logic                   test_ev_vec_mem_traffic_i,
+    input  logic                   test_ev_vec_viq_full_i,
+    input  logic                   test_ev_vec_fof_trunc_i,
+
     // -------------------------------------------------------------------------
     // Milestone 5 Hardware Performance Monitoring (HPM) & Profiling
     // -------------------------------------------------------------------------
@@ -434,7 +444,7 @@ module fursoy_s1_core
     output logic [63:0]            mhpmcounter_o         [32],
     output logic [63:0]            cpi_category_o        [8],
     output logic [7:0]             cpi_active_owner_o,
-    output logic [56:1]            raw_event_pulse_o
+    output logic [64:1]            raw_event_pulse_o
 );
 
     // =========================================================================
@@ -1178,6 +1188,11 @@ module fursoy_s1_core
         .event_snoop_hit_o       (be_event_snoop_hit),
         .event_snoop_replay_o    (be_event_snoop_replay),
 
+        // Milestone 8 FP Telemetry Events
+        .event_fp_issue_o        (be_event_fp_issue),
+        .event_fp_fma_busy_o     (be_event_fp_fma_busy),
+        .event_fp_fdiv_stall_o   (be_event_fp_fdiv_stall),
+
         // Milestone 8 Phase A Floating-Point Register File Interface
         .r0_fp_paddr_i           ('0),
         .r0_fp_data_o            (unused_rf_fp_data[0]),
@@ -1216,6 +1231,9 @@ module fursoy_s1_core
     logic              be_event_snoop_query;
     logic              be_event_snoop_hit;
     logic              be_event_snoop_replay;
+    logic              be_event_fp_issue;
+    logic              be_event_fp_fma_busy;
+    logic              be_event_fp_fdiv_stall;
 
     logic              be_event_issue_p0;
     logic              be_event_issue_p1_alu;
@@ -1658,9 +1676,25 @@ module fursoy_s1_core
     wire cpi_br_recover  = int_recovering || retire_replay;
     wire cpi_productive  = (retire_valid_o != 2'b00);
     wire cpi_mem_stall   = be_rob_head_is_mem_stall;
-    wire cpi_be_rename   = !fe_fetch_queue_empty_o && (int_rename_ack == 2'b00);
+    wire cpi_be_rename   = !fe_fetch_queue_empty_o && ((int_rename_ack == 2'b00) || (fl_fp_ready_o == 2'b00) || viq_full_o);
     wire cpi_be_sched    = (rob_count_o > 7'd0) && be_event_intiq_empty && be_event_memiq_empty;
     wire cpi_fe_starve   = fe_fetch_queue_empty_o && frontend_en_i && !rst_i;
+
+    // Milestone 8 FP & Vector Event Declarations
+    wire ev_fp_rename_stall     = !fe_fetch_queue_empty_o && ((fl_fp_ready_o == 2'b00) || !backend_int_dispatch_ready[0]);
+    wire ev_vec_uop_commit      = (retire_valid_o[0] && retire_is_vec_o[0]) || (retire_valid_o[1] && retire_is_vec_o[1]);
+    wire ev_vec_mem_traffic     = bus_rd_req_valid_o && bus_rd_req_ready_i;
+    wire ev_vec_viq_full        = viq_full_o;
+    wire ev_vec_fof_trunc       = test_fof_fault_valid_i && (test_fof_fault_elem_i > 0);
+
+    wire hpm_ev_fp_issue        = be_event_fp_issue        | test_ev_fp_issue_i;
+    wire hpm_ev_fp_fma_busy     = be_event_fp_fma_busy     | test_ev_fp_fma_busy_i;
+    wire hpm_ev_fp_fdiv_stall   = be_event_fp_fdiv_stall   | test_ev_fp_fdiv_stall_i;
+    wire hpm_ev_fp_rename_stall = ev_fp_rename_stall       | test_ev_fp_rename_stall_i;
+    wire hpm_ev_vec_uop_commit  = ev_vec_uop_commit        | test_ev_vec_uop_commit_i;
+    wire hpm_ev_vec_mem_traffic = ev_vec_mem_traffic       | test_ev_vec_mem_traffic_i;
+    wire hpm_ev_vec_viq_full    = ev_vec_viq_full          | test_ev_vec_viq_full_i;
+    wire hpm_ev_vec_fof_trunc   = ev_vec_fof_trunc         | test_ev_vec_fof_trunc_i;
 
     fursoy_s1_hpm u_hpm (
         .clk_i                   (clk_i),
@@ -1734,6 +1768,16 @@ module fursoy_s1_core
         .ev_snoop_queries_i      (be_event_snoop_query),
         .ev_snoop_hits_i         (be_event_snoop_hit),
         .ev_snoop_replays_i      (be_event_snoop_replay),
+
+        // Milestone 8 FP and Vector Telemetry Events (0x39..0x40)
+        .ev_fp_issue_i           (hpm_ev_fp_issue),
+        .ev_fp_fma_busy_i        (hpm_ev_fp_fma_busy),
+        .ev_fp_fdiv_stall_i      (hpm_ev_fp_fdiv_stall),
+        .ev_fp_rename_stall_i    (hpm_ev_fp_rename_stall),
+        .ev_vec_uop_commit_i     (hpm_ev_vec_uop_commit),
+        .ev_vec_mem_traffic_i    (hpm_ev_vec_mem_traffic),
+        .ev_vec_viq_full_i       (hpm_ev_vec_viq_full),
+        .ev_vec_fof_trunc_i      (hpm_ev_vec_fof_trunc),
 
         .cpi_serialize_i         (cpi_serialize),
         .cpi_br_recover_i        (cpi_br_recover),

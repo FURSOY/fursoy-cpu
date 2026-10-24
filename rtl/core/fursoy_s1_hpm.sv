@@ -121,6 +121,16 @@ module fursoy_s1_hpm
     input  logic              ev_snoop_hits_i,             // 0x37: EV_SNOOP_HITS
     input  logic              ev_snoop_replays_i,          // 0x38: EV_SNOOP_REPLAYS
 
+    // Milestone 8 FP and Vector Telemetry Events (0x39 .. 0x40, §10.2)
+    input  logic              ev_fp_issue_i,               // 0x39: EV_FP_ISSUE
+    input  logic              ev_fp_fma_busy_i,            // 0x3A: EV_FP_FMA_BUSY
+    input  logic              ev_fp_fdiv_stall_i,          // 0x3B: EV_FP_FDIV_STALL
+    input  logic              ev_fp_rename_stall_i,        // 0x3C: EV_FP_RENAME_STALL
+    input  logic              ev_vec_uop_commit_i,         // 0x3D: EV_VEC_UOP_COMMIT
+    input  logic              ev_vec_mem_traffic_i,        // 0x3E: EV_VEC_MEM_TRAFFIC
+    input  logic              ev_vec_viq_full_i,           // 0x3F: EV_VEC_VIQ_FULL
+    input  logic              ev_vec_fof_trunc_i,          // 0x40: EV_VEC_FOF_TRUNC
+
     // -------------------------------------------------------------------------
     // Deterministic Single-Owner CPI Classification Predicates (Section 9.1)
     // -------------------------------------------------------------------------
@@ -140,7 +150,7 @@ module fursoy_s1_hpm
     output logic [63:0]       mhpmcounter_o        [32],
     output logic [63:0]       cpi_category_o       [8],
     output logic [7:0]        cpi_active_owner_o,
-    output logic [56:1]       raw_event_pulse_o
+    output logic [64:1]       raw_event_pulse_o
 );
 
     // =========================================================================
@@ -182,73 +192,81 @@ module fursoy_s1_hpm
                                                    (pending_mispred_type_q == BR_TYPE_CORO));
 
     // =========================================================================
-    // 2. Hardware Performance Event Value Multiplexer (0x01 .. 0x38)
+    // 2. Hardware Performance Event Value Multiplexer (0x01 .. 0x40)
     // =========================================================================
-    logic [63:0] event_val [57]; // 0x00 .. 0x38
+    logic [63:0] event_val [65]; // 0x00 .. 0x40
 
     always_comb begin
-        event_val[6'h00] = 64'd0;
-        event_val[6'h01] = {63'd0, ev_fetch_cycles_i};
-        event_val[6'h02] = {63'd0, ev_fetch_blocks_i};
-        event_val[6'h03] = {62'd0, ev_fetch_uops_i};
-        event_val[6'h04] = {63'd0, ev_fetch_fq_starved_i};
-        event_val[6'h05] = {63'd0, ev_fetch_fq_full_i};
-        event_val[6'h06] = {63'd0, ev_fetch_odd_slot_i};
-        event_val[6'h07] = {63'd0, ev_l1i_hits_i};
-        event_val[6'h08] = {63'd0, ev_l1i_misses_i};
-        event_val[6'h09] = {62'd0, ev_l1i_imshr_occ_i};
-        event_val[6'h0A] = {63'd0, ev_itlb_misses_i};
-        event_val[6'h0B] = {63'd0, ev_btb_queries_i};
-        event_val[6'h0C] = {63'd0, ev_btb_hits_i};
-        event_val[6'h0D] = {63'd0, ev_bpu_cond_pred_i};
-        event_val[6'h0E] = {63'd0, ev_bpu_dir_mispred};
-        event_val[6'h0F] = {63'd0, ev_bpu_tgt_mispred};
-        event_val[6'h10] = {63'd0, ev_ras_call_push_i};
-        event_val[6'h11] = {63'd0, ev_ras_ret_pop_i};
-        event_val[6'h12] = {63'd0, ev_ras_ret_mispred};
-        event_val[6'h13] = {62'd0, ev_rename_uops_i};
-        event_val[6'h14] = {63'd0, ev_stall_rob_full_i};
-        event_val[6'h15] = {63'd0, ev_stall_intiq_full_i};
-        event_val[6'h16] = {63'd0, ev_stall_memiq_full_i};
-        event_val[6'h17] = {63'd0, ev_stall_lq_full_i};
-        event_val[6'h18] = {63'd0, ev_stall_sq_full_i};
-        event_val[6'h19] = {63'd0, ev_stall_chkpt_full_i};
-        event_val[6'h1A] = {63'd0, ev_stall_recovery_i};
-        event_val[6'h1B] = {63'd0, ev_issue_port0_i};
-        event_val[6'h1C] = {63'd0, ev_issue_port1_alu_i};
-        event_val[6'h1D] = {63'd0, ev_issue_port1_mul_i};
-        event_val[6'h1E] = {63'd0, ev_issue_port1_div_i};
-        event_val[6'h1F] = {63'd0, ev_issue_port2_agu_i};
-        event_val[6'h20] = {63'd0, ev_port1_wb_stall_i};
-        event_val[6'h21] = {63'd0, ev_intiq_empty_i};
-        event_val[6'h22] = {63'd0, ev_memiq_empty_i};
-        event_val[6'h23] = {63'd0, ev_load_issued_i};
-        event_val[6'h24] = {63'd0, ev_load_speculative_i}; // Phase B only (0 in Phase A)
-        event_val[6'h25] = {63'd0, ev_load_fwd_exact_i};
-        event_val[6'h26] = {63'd0, ev_load_fwd_partial_i};
-        event_val[6'h27] = {63'd0, ev_load_raw_violat_i};  // Phase B only (0 in Phase A)
-        event_val[6'h28] = {63'd0, ev_l1d_hits_i};
-        event_val[6'h29] = {63'd0, ev_l1d_misses_i};
-        event_val[6'h2A] = {61'd0, ev_l1d_mshr_occ_i};
-        event_val[6'h2B] = {63'd0, ev_l1d_wbb_full_i};
-        event_val[6'h2C] = {63'd0, ev_dtlb_misses_i};
-        event_val[6'h2D] = {63'd0, ev_retire_cycles_0_i};
-        event_val[6'h2E] = {63'd0, ev_retire_cycles_1_i};
-        event_val[6'h2F] = {63'd0, ev_retire_cycles_2_i};
-        event_val[6'h30] = {63'd0, ev_serialize_cycles_i};
-        event_val[6'h31] = {63'd0, ev_mem_dual_issue_i};
-        event_val[6'h32] = {62'd0, ev_l1d_bank_access_i};
-        event_val[6'h33] = {63'd0, ev_l1d_bank_conflict_i};
-        event_val[6'h34] = {63'd0, ev_l1d_bank_broadcast_i};
-        event_val[6'h35] = {63'd0, ev_store_drain_concurrent_i};
-        event_val[6'h36] = {63'd0, ev_snoop_queries_i};
-        event_val[6'h37] = {63'd0, ev_snoop_hits_i};
-        event_val[6'h38] = {63'd0, ev_snoop_replays_i};
+        event_val[7'h00] = 64'd0;
+        event_val[7'h01] = {63'd0, ev_fetch_cycles_i};
+        event_val[7'h02] = {63'd0, ev_fetch_blocks_i};
+        event_val[7'h03] = {62'd0, ev_fetch_uops_i};
+        event_val[7'h04] = {63'd0, ev_fetch_fq_starved_i};
+        event_val[7'h05] = {63'd0, ev_fetch_fq_full_i};
+        event_val[7'h06] = {63'd0, ev_fetch_odd_slot_i};
+        event_val[7'h07] = {63'd0, ev_l1i_hits_i};
+        event_val[7'h08] = {63'd0, ev_l1i_misses_i};
+        event_val[7'h09] = {62'd0, ev_l1i_imshr_occ_i};
+        event_val[7'h0A] = {63'd0, ev_itlb_misses_i};
+        event_val[7'h0B] = {63'd0, ev_btb_queries_i};
+        event_val[7'h0C] = {63'd0, ev_btb_hits_i};
+        event_val[7'h0D] = {63'd0, ev_bpu_cond_pred_i};
+        event_val[7'h0E] = {63'd0, ev_bpu_dir_mispred};
+        event_val[7'h0F] = {63'd0, ev_bpu_tgt_mispred};
+        event_val[7'h10] = {63'd0, ev_ras_call_push_i};
+        event_val[7'h11] = {63'd0, ev_ras_ret_pop_i};
+        event_val[7'h12] = {63'd0, ev_ras_ret_mispred};
+        event_val[7'h13] = {62'd0, ev_rename_uops_i};
+        event_val[7'h14] = {63'd0, ev_stall_rob_full_i};
+        event_val[7'h15] = {63'd0, ev_stall_intiq_full_i};
+        event_val[7'h16] = {63'd0, ev_stall_memiq_full_i};
+        event_val[7'h17] = {63'd0, ev_stall_lq_full_i};
+        event_val[7'h18] = {63'd0, ev_stall_sq_full_i};
+        event_val[7'h19] = {63'd0, ev_stall_chkpt_full_i};
+        event_val[7'h1A] = {63'd0, ev_stall_recovery_i};
+        event_val[7'h1B] = {63'd0, ev_issue_port0_i};
+        event_val[7'h1C] = {63'd0, ev_issue_port1_alu_i};
+        event_val[7'h1D] = {63'd0, ev_issue_port1_mul_i};
+        event_val[7'h1E] = {63'd0, ev_issue_port1_div_i};
+        event_val[7'h1F] = {63'd0, ev_issue_port2_agu_i};
+        event_val[7'h20] = {63'd0, ev_port1_wb_stall_i};
+        event_val[7'h21] = {63'd0, ev_intiq_empty_i};
+        event_val[7'h22] = {63'd0, ev_memiq_empty_i};
+        event_val[7'h23] = {63'd0, ev_load_issued_i};
+        event_val[7'h24] = {63'd0, ev_load_speculative_i}; // Phase B only (0 in Phase A)
+        event_val[7'h25] = {63'd0, ev_load_fwd_exact_i};
+        event_val[7'h26] = {63'd0, ev_load_fwd_partial_i};
+        event_val[7'h27] = {63'd0, ev_load_raw_violat_i};  // Phase B only (0 in Phase A)
+        event_val[7'h28] = {63'd0, ev_l1d_hits_i};
+        event_val[7'h29] = {63'd0, ev_l1d_misses_i};
+        event_val[7'h2A] = {61'd0, ev_l1d_mshr_occ_i};
+        event_val[7'h2B] = {63'd0, ev_l1d_wbb_full_i};
+        event_val[7'h2C] = {63'd0, ev_dtlb_misses_i};
+        event_val[7'h2D] = {63'd0, ev_retire_cycles_0_i};
+        event_val[7'h2E] = {63'd0, ev_retire_cycles_1_i};
+        event_val[7'h2F] = {63'd0, ev_retire_cycles_2_i};
+        event_val[7'h30] = {63'd0, ev_serialize_cycles_i};
+        event_val[7'h31] = {63'd0, ev_mem_dual_issue_i};
+        event_val[7'h32] = {62'd0, ev_l1d_bank_access_i};
+        event_val[7'h33] = {63'd0, ev_l1d_bank_conflict_i};
+        event_val[7'h34] = {63'd0, ev_l1d_bank_broadcast_i};
+        event_val[7'h35] = {63'd0, ev_store_drain_concurrent_i};
+        event_val[7'h36] = {63'd0, ev_snoop_queries_i};
+        event_val[7'h37] = {63'd0, ev_snoop_hits_i};
+        event_val[7'h38] = {63'd0, ev_snoop_replays_i};
+        event_val[7'h39] = {63'd0, ev_fp_issue_i};
+        event_val[7'h3A] = {63'd0, ev_fp_fma_busy_i};
+        event_val[7'h3B] = {63'd0, ev_fp_fdiv_stall_i};
+        event_val[7'h3C] = {63'd0, ev_fp_rename_stall_i};
+        event_val[7'h3D] = {63'd0, ev_vec_uop_commit_i};
+        event_val[7'h3E] = {63'd0, ev_vec_mem_traffic_i};
+        event_val[7'h3F] = {63'd0, ev_vec_viq_full_i};
+        event_val[7'h40] = {63'd0, ev_vec_fof_trunc_i};
     end
 
     // Raw pulse output for observability
     always_comb begin
-        for (int e = 1; e <= 56; e++) begin
+        for (int e = 1; e <= 64; e++) begin
             raw_event_pulse_o[e] = (event_val[e] != 64'd0);
         end
     end
@@ -288,7 +306,7 @@ module fursoy_s1_hpm
     // =========================================================================
     // 4. Programmable Performance Counters & Selectors (hpmcounter3..31)
     // =========================================================================
-    logic [5:0]  mhpmevent_q   [3:31];
+    logic [6:0]  mhpmevent_q   [3:31];
     logic [63:0] mhpmcounter_q [3:31];
 
     generate
@@ -298,18 +316,18 @@ module fursoy_s1_hpm
 
             always_ff @(posedge clk_i) begin
                 if (rst_i) begin
-                    mhpmevent_q[c]   <= 6'd0;
+                    mhpmevent_q[c]   <= 7'd0;
                     mhpmcounter_q[c] <= 64'd0;
                 end else begin
                     // Selector update
                     if (sel_we) begin
-                        mhpmevent_q[c] <= csr_wdata_i[5:0];
+                        mhpmevent_q[c] <= csr_wdata_i[6:0];
                     end
 
                     // Counter update: CSR write overrides hardware increment
                     if (cnt_we) begin
                         mhpmcounter_q[c] <= csr_wdata_i;
-                    end else if (mhpmevent_q[c] <= 6'h38) begin
+                    end else if (mhpmevent_q[c] <= 7'h40) begin
                         mhpmcounter_q[c] <= mhpmcounter_q[c] + event_val[mhpmevent_q[c]];
                     end
                 end
@@ -416,7 +434,7 @@ module fursoy_s1_hpm
                 end else if (csr_raddr_i >= 12'hC03 && csr_raddr_i <= 12'hC1F) begin
                     csr_rdata_o = mhpmcounter_q[csr_raddr_i[4:0]];
                 end else if (csr_raddr_i >= 12'h323 && csr_raddr_i <= 12'h33F) begin
-                    csr_rdata_o = {58'd0, mhpmevent_q[csr_raddr_i[4:0]]};
+                    csr_rdata_o = {57'd0, mhpmevent_q[csr_raddr_i[4:0]]};
                 end else begin
                     csr_hit_o   = 1'b0;
                     csr_rdata_o = 64'd0;
