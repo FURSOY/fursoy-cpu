@@ -258,6 +258,11 @@ public:
         dut->bus_wr_req_ready_i     = 1;
         dut->bus_wr_rsp_valid_i     = 0;
 
+        dut->mmio_req_ready_i       = 1;
+        dut->mmio_rsp_valid_i       = 0;
+        dut->mmio_rsp_rdata_i       = 0;
+        dut->mmio_rsp_error_i       = 0;
+
         dut->test_inject_valid_i    = 0;
         dut->test_inject_data_i     = 0;
         dut->test_inject_pnew_i     = 0;
@@ -518,7 +523,7 @@ ProfileMetrics run_workload_pointer_chasing(B4TB& tb) {
         tb.write_mem_dword(data_base + i * 64, next);
     }
 
-    tb.write_mem_word(base + 0, rv_lui(1, (data_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0, rv_auipc(1, (data_base - base) >> 12));
     tb.write_mem_word(base + 4, rv_addi(2, 0, 64));
     tb.write_mem_word(base + 8,  rv_ld(1, 1, 0));
     tb.write_mem_word(base + 12, rv_addi(2, 2, -1));
@@ -557,15 +562,15 @@ ProfileMetrics run_workload_stream_memcpy(B4TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80004000ULL;
-    uint64_t src_base = 0x80030000ULL;
-    uint64_t dst_base = 0x80040000ULL;
+    uint64_t src_base = 0x80034000ULL;
+    uint64_t dst_base = 0x80044004ULL;
 
     for (int i = 0; i < 32; i++) {
         tb.write_mem_dword(src_base + i * 8, 0x1111222233334444ULL + i);
     }
 
-    tb.write_mem_word(base + 0,  rv_lui(1, (src_base >> 12) & 0xFFFFF));
-    tb.write_mem_word(base + 4,  rv_lui(2, (dst_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (src_base - (base + 0)) >> 12));
+    tb.write_mem_word(base + 4,  rv_auipc(2, (dst_base - (base + 4)) >> 12));
     tb.write_mem_word(base + 8,  rv_addi(3, 0, 32));
     tb.write_mem_word(base + 12, rv_ld(4, 1, 0));
     tb.write_mem_word(base + 16, rv_sd(4, 2, 0));
@@ -656,7 +661,7 @@ ProfileMetrics run_workload_raw_stress(B4TB& tb) {
 
     tb.write_mem_dword(data_base, 0x1234567890ABCDEFULL);
 
-    tb.write_mem_word(base + 0,  rv_lui(1, (data_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (data_base - base) >> 12));
     tb.write_mem_word(base + 4,  rv_addi(2, 0, 32));
     tb.write_mem_word(base + 8,  rv_addi(4, 0, 0));
     tb.write_mem_word(base + 12, rv_sd(2, 1, 0));
@@ -770,7 +775,7 @@ void test_core_intiq_speculative_load_replay(B4TB& tb) {
     tb.write_mem_dword(data_base, 0x5555AAAA5555AAAAULL);
 
     // Tight store-load sequence designed to trigger forwarding and verify replay safety with ALU ops
-    tb.write_mem_word(base + 0,  rv_lui(1, (data_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (data_base - base) >> 12));
     tb.write_mem_word(base + 4,  rv_addi(2, 0, 42));
     tb.write_mem_word(base + 8,  rv_sd(2, 1, 0));
     tb.write_mem_word(base + 12, rv_ld(3, 1, 0));

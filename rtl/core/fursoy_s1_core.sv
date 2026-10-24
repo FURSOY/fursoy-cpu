@@ -465,8 +465,27 @@ module fursoy_s1_core
     output logic [63:0]            mhpmcounter_o         [32],
     output logic [63:0]            cpi_category_o        [8],
     output logic [7:0]             cpi_active_owner_o,
-    output logic [64:1]            raw_event_pulse_o
+    output logic [64:1]            raw_event_pulse_o,
+
+    // -------------------------------------------------------------------------
+    // Dedicated Uncached MMIO Channel (Core Master -> SoC Crossbar, §4.1)
+    // -------------------------------------------------------------------------
+    output logic                   mmio_req_valid_o,
+    output logic [63:0]            mmio_req_addr_o,
+    output logic                   mmio_req_is_store_o,
+    output logic                   mmio_req_write_o,
+    output logic [2:0]             mmio_req_size_o,
+    output logic [63:0]            mmio_req_wdata_o,
+    output logic [7:0]             mmio_req_wstrb_o,
+    input  logic                   mmio_req_ready_i,
+
+    input  logic                   mmio_rsp_valid_i,
+    input  logic [63:0]            mmio_rsp_rdata_i,
+    input  logic                   mmio_rsp_error_i,
+    output logic                   mmio_rsp_ready_o
 );
+
+    assign mmio_req_write_o = mmio_req_is_store_o;
 
     // =========================================================================
     // Internal Interconnect Wires
@@ -1251,7 +1270,19 @@ module fursoy_s1_core
         .w2_fp_data_i            (test_fp_w2_data_i),
 
         .probe_fp_paddr_i        (probe_fp_paddr_i),
-        .probe_fp_pdata_o        (probe_fp_pdata_o)
+        .probe_fp_pdata_o        (probe_fp_pdata_o),
+
+        .mmio_req_valid_o        (mmio_req_valid_o),
+        .mmio_req_addr_o         (mmio_req_addr_o),
+        .mmio_req_is_store_o     (mmio_req_is_store_o),
+        .mmio_req_size_o         (mmio_req_size_o),
+        .mmio_req_wdata_o        (mmio_req_wdata_o),
+        .mmio_req_wstrb_o        (mmio_req_wstrb_o),
+        .mmio_req_ready_i        (mmio_req_ready_i),
+        .mmio_rsp_valid_i        (mmio_rsp_valid_i),
+        .mmio_rsp_rdata_i        (mmio_rsp_rdata_i),
+        .mmio_rsp_error_i        (mmio_rsp_error_i),
+        .mmio_rsp_ready_o        (mmio_rsp_ready_o)
     );
 
     /* verilator lint_off UNUSEDSIGNAL */
@@ -1333,6 +1364,7 @@ module fursoy_s1_core
         .retire_exception_i      (retire_exception_o),
         .retire_exc_cause_i      (retire_exc_cause_o),
         .retire_exc_pc_i         (retire_exc_pc_o),
+        .retire_exc_val_i        (mmio_req_addr_o),
 
         // Milestone 8 Phase A Floating-Point Retirement Interface
         .retire_fp_dest_valid_i  (sub_retire_fp_dest_valid),

@@ -275,10 +275,23 @@ module fursoy_s1_ptw
                 end
 
                 PTW_REQ_MEM: begin
-                    mem_req_valid_o <= 1'b1;
-                    mem_req_addr_o  <= active_pte_addr;
-                    if (mem_req_ready_i) begin
-                        ptw_state_q <= PTW_WAIT_RSP;
+                    if (!is_dram_pa(active_pte_addr)) begin
+                        // reject_ptw_mmio (§2.4, PROP_M9_10 / PROP_M9_12):
+                        // Translation request resolving to address outside DRAM aperture raises page fault without issuing bus request
+                        mem_req_valid_o    <= 1'b0;
+                        rsp_valid_q        <= 1'b1;
+                        rsp_pa_q           <= '0;
+                        rsp_page_fault_q   <= 1'b1;
+                        rsp_access_fault_q <= 1'b0;
+                        rsp_level_q        <= 2'd0;
+                        rsp_pte_q          <= 64'd0;
+                        ptw_state_q        <= PTW_SEND_RSP;
+                    end else begin
+                        mem_req_valid_o <= 1'b1;
+                        mem_req_addr_o  <= active_pte_addr;
+                        if (mem_req_ready_i) begin
+                            ptw_state_q <= PTW_WAIT_RSP;
+                        end
                     end
                 end
 

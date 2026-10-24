@@ -314,7 +314,23 @@ module fursoy_s1_backend
     input  logic [63:0]       w2_fp_data_i,
 
     input  fpreg_t            probe_fp_paddr_i,
-    output logic [63:0]       probe_fp_pdata_o
+    output logic [63:0]       probe_fp_pdata_o,
+
+    // -------------------------------------------------------------------------
+    // Dedicated Uncached MMIO Master Channel (§4.1)
+    // -------------------------------------------------------------------------
+    output logic              mmio_req_valid_o,
+    output logic [63:0]       mmio_req_addr_o,
+    output logic              mmio_req_is_store_o,
+    output logic [2:0]        mmio_req_size_o,
+    output logic [63:0]       mmio_req_wdata_o,
+    output logic [7:0]        mmio_req_wstrb_o,
+    input  logic              mmio_req_ready_i,
+
+    input  logic              mmio_rsp_valid_i,
+    input  logic [63:0]       mmio_rsp_rdata_i,
+    input  logic              mmio_rsp_error_i,
+    output logic              mmio_rsp_ready_o
 );
 
     // -------------------------------------------------------------------------
@@ -1385,7 +1401,19 @@ module fursoy_s1_backend
         .event_store_drain_concurrent_o(event_store_drain_concurrent_o),
         .event_snoop_query_o     (event_snoop_query_o),
         .event_snoop_hit_o       (event_snoop_hit_o),
-        .event_snoop_replay_o    (event_snoop_replay_o)
+        .event_snoop_replay_o    (event_snoop_replay_o),
+
+        .mmio_req_valid_o        (mmio_req_valid_o),
+        .mmio_req_addr_o         (mmio_req_addr_o),
+        .mmio_req_is_store_o     (mmio_req_is_store_o),
+        .mmio_req_size_o         (mmio_req_size_o),
+        .mmio_req_wdata_o        (mmio_req_wdata_o),
+        .mmio_req_wstrb_o        (mmio_req_wstrb_o),
+        .mmio_req_ready_i        (mmio_req_ready_i),
+        .mmio_rsp_valid_i        (mmio_rsp_valid_i),
+        .mmio_rsp_rdata_i        (mmio_rsp_rdata_i),
+        .mmio_rsp_error_i        (mmio_rsp_error_i),
+        .mmio_rsp_ready_o        (mmio_rsp_ready_o)
     );
 
     wire is1_is_mul = (is1_uop.uop_class == UOP_MUL);

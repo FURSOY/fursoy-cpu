@@ -1,0 +1,33 @@
+{
+  "timestamp_utc": "2026-10-24T19:33:03.686337+00:00",
+  "phase": "M9 Phase B: Uncached MMIO Pipeline & LSU Bypass Channel",
+  "production_rtl_manifest_sha256": "128c675f924dc208bc73026b8263aab90583173855c87d47a316907c83460912",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m9-soc-linux-v1.md",
+    "version": "1.1",
+    "sha256": "bb353f632ec909b3270522e289d994cc90a34f18ab323705a9010e1070181347"
+  },
+  "unit_verification": {
+    "phase": "Phase B",
+    "total_properties": 6,
+    "passed_properties_count": 6,
+    "status": "pass",
+    "randomized_torture_operations": 25500,
+    "torture_seeds": [
+      42,
+      20260920,
+      20261009
+    ],
+    "torture_mismatches": 0,
+    "properties": [
+      "PROP_M9_07",
+      "PROP_M9_08",
+      "PROP_M9_09",
+      "PROP_M9_10",
+      "PROP_M9_11",
+      "PROP_M9_12"
+    ]
+  },
+  "elapsed_seconds": 7.8,
+  "overall_status": "PASS"
+}

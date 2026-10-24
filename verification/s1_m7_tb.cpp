@@ -261,6 +261,11 @@ public:
         dut->bus_wr_req_ready_i     = 1;
         dut->bus_wr_rsp_valid_i     = 0;
 
+        dut->mmio_req_ready_i       = 1;
+        dut->mmio_rsp_valid_i       = 0;
+        dut->mmio_rsp_rdata_i       = 0;
+        dut->mmio_rsp_error_i       = 0;
+
         dut->snoop_req_valid_i      = 0;
         dut->snoop_req_addr_i       = 0;
         dut->snoop_req_type_i       = 0;
@@ -513,7 +518,7 @@ ProfileMetrics run_workload_pointer_chasing(M7TB& tb) {
         tb.write_mem_dword(data_base + i * 64, next);
     }
 
-    tb.write_mem_word(base + 0, rv_lui(1, (data_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0, rv_auipc(1, (data_base - base) >> 12));
     tb.write_mem_word(base + 4, rv_addi(2, 0, 64));
     tb.write_mem_word(base + 8,  rv_ld(1, 1, 0));
     tb.write_mem_word(base + 12, rv_addi(2, 2, -1));
@@ -552,15 +557,15 @@ ProfileMetrics run_workload_stream_memcpy(M7TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80004000ULL;
-    uint64_t src_base = 0x80030000ULL;
-    uint64_t dst_base = 0x80040000ULL;
+    uint64_t src_base = 0x80034000ULL;
+    uint64_t dst_base = 0x80044004ULL;
 
     for (int i = 0; i < 32; i++) {
         tb.write_mem_dword(src_base + i * 8, 0x1111222233334444ULL + i);
     }
 
-    tb.write_mem_word(base + 0,  rv_lui(1, (src_base >> 12) & 0xFFFFF));
-    tb.write_mem_word(base + 4,  rv_lui(2, (dst_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (src_base - (base + 0)) >> 12));
+    tb.write_mem_word(base + 4,  rv_auipc(2, (dst_base - (base + 4)) >> 12));
     tb.write_mem_word(base + 8,  rv_addi(3, 0, 32));
     tb.write_mem_word(base + 12, rv_ld(4, 1, 0));
     tb.write_mem_word(base + 16, rv_sd(4, 2, 0));
@@ -651,7 +656,7 @@ ProfileMetrics run_workload_raw_stress(M7TB& tb) {
 
     tb.write_mem_dword(data_base, 0x1234567890ABCDEFULL);
 
-    tb.write_mem_word(base + 0,  rv_lui(1, (data_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (data_base - base) >> 12));
     tb.write_mem_word(base + 4,  rv_addi(2, 0, 32));
     tb.write_mem_word(base + 8,  rv_addi(4, 0, 0));
     tb.write_mem_word(base + 12, rv_sd(2, 1, 0));
@@ -698,10 +703,10 @@ void test_core_m7_snoop_clean_inv(M7TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80000000ULL;
-    uint64_t test_addr = 0x10010000ULL;
+    uint64_t test_addr = 0x80010000ULL;
 
     tb.write_mem_dword(test_addr, 0x1122334455667788ULL);
-    tb.write_mem_word(base + 0,  rv_lui(1, (test_addr >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (test_addr - base) >> 12));
     tb.write_mem_word(base + 4,  rv_ld(2, 1, 0)); // Warm up line into L1D (clean)
     tb.write_mem_word(base + 8,  rv_addi(5, 0, 5));  // Spin loop counter (5 iterations)
     tb.write_mem_word(base + 12, rv_addi(5, 5, -1)); // loop body
@@ -747,11 +752,11 @@ void test_core_m7_snoop_read_dirty(M7TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80000000ULL;
-    uint64_t test_addr = 0x10012000ULL;
+    uint64_t test_addr = 0x80012000ULL;
     uint64_t dirty_data = 0x1234500000000789ULL;
 
     tb.write_mem_dword(test_addr, 0x1111ULL); // Warm up line in memory
-    tb.write_mem_word(base + 0,  rv_lui(1, (test_addr >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (test_addr - base) >> 12));
     tb.write_mem_word(base + 4,  rv_ld(10, 1, 0)); // Warm up line into L1D (clean)
     tb.write_mem_word(base + 8,  rv_lui(2, 0x12345));
     tb.write_mem_word(base + 12, rv_slli(2, 2, 32));
@@ -791,11 +796,11 @@ void test_core_m7_snoop_clean_inv_dirty(M7TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80000000ULL;
-    uint64_t test_addr = 0x10014000ULL;
+    uint64_t test_addr = 0x80014000ULL;
     uint64_t dirty_data = 0x1234500000000789ULL;
 
     tb.write_mem_dword(test_addr, 0x2222ULL); // Warm up line in memory
-    tb.write_mem_word(base + 0,  rv_lui(1, (test_addr >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (test_addr - base) >> 12));
     tb.write_mem_word(base + 4,  rv_ld(10, 1, 0)); // Warm up line into L1D
     tb.write_mem_word(base + 8,  rv_lui(2, 0x12345));
     tb.write_mem_word(base + 12, rv_slli(2, 2, 32));
@@ -850,11 +855,11 @@ void test_core_m7_snoop_mshr_collision(M7TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80000000ULL;
-    uint64_t test_addr = 0x10016000ULL;
+    uint64_t test_addr = 0x80016000ULL;
 
     tb.l1d_bus_delay = 12; // Hold refill in flight
 
-    tb.write_mem_word(base + 0,  rv_lui(1, (test_addr >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (test_addr - base) >> 12));
     tb.write_mem_word(base + 4,  rv_ld(2, 1, 0));    // Triggers L1D miss & allocates MSHR
     tb.write_mem_word(base + 8,  rv_addi(5, 0, 5));  // Spin loop counter
     tb.write_mem_word(base + 12, rv_addi(5, 5, -1));
@@ -911,26 +916,30 @@ void test_core_m7_snoop_wbb_collision(M7TB& tb) {
     // Populate set 5 across 4 ways with dirty stores
     uint64_t addr_way[5];
     for (int w = 0; w < 5; w++) {
-        addr_way[w] = 0x10010000ULL + (w * 0x1000ULL) + (5 << 6);
+        addr_way[w] = 0x80010000ULL + (w * 0x1000ULL) + (5 << 6);
     }
 
     // Write 4 dirty lines to set 5
     int code_idx = 0;
     for (int w = 0; w < 4; w++) {
-        tb.write_mem_word(base + code_idx * 4, rv_lui(1, (addr_way[w] >> 12) & 0xFFFFF));
+        uint64_t cur_pc = base + code_idx * 4;
+        uint64_t diff = addr_way[w] - cur_pc;
+        tb.write_mem_word(base + code_idx * 4, rv_auipc(1, diff >> 12));
         code_idx++;
         tb.write_mem_word(base + code_idx * 4, rv_addi(2, 0, 100 + w));
         code_idx++;
-        tb.write_mem_word(base + code_idx * 4, rv_sd(2, 1, (addr_way[w] & 0xFFF)));
+        tb.write_mem_word(base + code_idx * 4, rv_sd(2, 1, diff & 0xFFF));
         code_idx++;
     }
     tb.write_mem_word(base + code_idx * 4, rv_addi(10, 0, 80));
     code_idx++;
 
     // 5th line access to trigger eviction
-    tb.write_mem_word(base + code_idx * 4, rv_lui(3, (addr_way[4] >> 12) & 0xFFFFF));
+    uint64_t cur_pc = base + code_idx * 4;
+    uint64_t diff = addr_way[4] - cur_pc;
+    tb.write_mem_word(base + code_idx * 4, rv_auipc(3, diff >> 12));
     code_idx++;
-    tb.write_mem_word(base + code_idx * 4, rv_ld(4, 3, (addr_way[4] & 0xFFF)));
+    tb.write_mem_word(base + code_idx * 4, rv_ld(4, 3, diff & 0xFFF));
     code_idx++;
     tb.write_mem_word(base + code_idx * 4, rv_addi(11, 0, 90));
     code_idx++;
@@ -977,11 +986,11 @@ void test_core_m7_snoop_speculative_load_replay(M7TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80000000ULL;
-    uint64_t test_addr = 0x10018000ULL;
+    uint64_t test_addr = 0x80018000ULL;
 
     // Warm up test_addr in L1D
     tb.write_mem_dword(test_addr, 0x5566778899AABBCCULL);
-    tb.write_mem_word(base + 0,  rv_lui(1, (test_addr >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (test_addr - base) >> 12));
     tb.write_mem_word(base + 4,  rv_ld(2, 1, 0)); // Warm up
     tb.write_mem_word(base + 8,  rv_addi(6, 0, 1000));
     tb.write_mem_word(base + 12, rv_addi(7, 0, 3));
@@ -1023,13 +1032,13 @@ void test_core_m7_hpm_events_31_to_38(M7TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80000000ULL;
-    uint64_t data_base = 0x10050000ULL;
+    uint64_t data_base = 0x80050000ULL;
 
     uint64_t ev_before[57];
     for (int ev = 1; ev <= 56; ev++) ev_before[ev] = tb.raw_event_accum[ev];
 
     // Stimulate dual issue and bank accesses
-    tb.write_mem_word(base + 0,  rv_lui(1, (data_base >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 0,  rv_auipc(1, (data_base - base) >> 12));
     tb.write_mem_word(base + 4,  rv_ld(2, 1, 0));   // Bank 0
     tb.write_mem_word(base + 8,  rv_ld(3, 1, 8));   // Bank 1
     tb.write_mem_word(base + 12, rv_addi(4, 0, 42));

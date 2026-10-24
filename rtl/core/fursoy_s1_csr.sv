@@ -67,6 +67,7 @@ module fursoy_s1_csr
     input  logic              retire_exception_i,
     input  logic [4:0]        retire_exc_cause_i,
     input  logic [63:0]       retire_exc_pc_i,
+    input  logic [63:0]       retire_exc_val_i,
 
     // Milestone 8 Phase A Floating-Point Retirement Interface
     input  logic [1:0]        retire_fp_dest_valid_i,
@@ -756,8 +757,13 @@ module fursoy_s1_csr
                 if (trap_to_s) begin
                     sepc_q   <= retire_exc_pc_i;
                     scause_q <= {1'b0, 58'd0, retire_exc_cause_i};
-                    stval_q  <= (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12)
-                                ? retire_exc_pc_i : 64'd0;
+                    if (retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7) begin
+                        stval_q <= retire_exc_val_i;
+                    end else if (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12) begin
+                        stval_q <= retire_exc_pc_i;
+                    end else begin
+                        stval_q <= 64'd0;
+                    end
                     mstatus_q[5] <= mstatus_q[1]; // SPIE <= SIE
                     mstatus_q[1] <= 1'b0;         // SIE <= 0
                     mstatus_q[8] <= (priv_mode_q == 2'b01); // SPP <= (P == S)
@@ -771,8 +777,13 @@ module fursoy_s1_csr
                 end else begin
                     mepc_q   <= retire_exc_pc_i;
                     mcause_q <= {1'b0, 58'd0, retire_exc_cause_i};
-                    mtval_q  <= (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12)
-                                ? retire_exc_pc_i : 64'd0;
+                    if (retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7) begin
+                        mtval_q <= retire_exc_val_i;
+                    end else if (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12) begin
+                        mtval_q <= retire_exc_pc_i;
+                    end else begin
+                        mtval_q <= 64'd0;
+                    end
                     mstatus_q[7]     <= mstatus_q[3]; // MPIE <= MIE
                     mstatus_q[3]     <= 1'b0;         // MIE <= 0
                     mstatus_q[12:11] <= priv_mode_q;  // MPP <= P

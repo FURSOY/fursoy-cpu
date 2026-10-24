@@ -299,7 +299,23 @@ module fursoy_s1_lsu_queues
     input  logic [55:0]       snoop_req_addr_i,
     /* verilator lint_on UNUSEDSIGNAL */
     input  logic [1:0]        snoop_req_type_i,
-    output logic              event_snoop_replay_o
+    output logic              event_snoop_replay_o,
+
+    // -------------------------------------------------------------------------
+    // Dedicated Uncached MMIO Master Channel (§4.1)
+    // -------------------------------------------------------------------------
+    output logic              mmio_req_valid_o,
+    output logic [63:0]       mmio_req_addr_o,
+    output logic              mmio_req_is_store_o,
+    output logic [2:0]        mmio_req_size_o,      // 0=1B, 1=2B, 2=4B, 3=8B
+    output logic [63:0]       mmio_req_wdata_o,
+    output logic [7:0]        mmio_req_wstrb_o,     // Byte enable mask
+    input  logic              mmio_req_ready_i,
+
+    input  logic              mmio_rsp_valid_i,
+    input  logic [63:0]       mmio_rsp_rdata_i,
+    input  logic              mmio_rsp_error_i,
+    output logic              mmio_rsp_ready_o
 );
 
     // =========================================================================
@@ -477,6 +493,8 @@ module fursoy_s1_lsu_queues
                 sq_dealloc_comb[sq_drain_head_q] = 1'b1;
             end else if (sq_q[sq_drain_head_q].is_fence && l1d_quiescent_i) begin
                 sq_dealloc_comb[sq_drain_head_q] = 1'b1;
+            end else if (sq_q[sq_drain_head_q].is_mmio && sq_q[sq_drain_head_q].drained) begin
+                sq_dealloc_comb[sq_drain_head_q] = 1'b1;
             end
         end
         if (l1d_store_drain_valid_o && l1d_store_drain_done_i) begin
@@ -635,7 +653,7 @@ module fursoy_s1_lsu_queues
                                           !lq_q[l].page_fault && !lq_q[l].access_fault &&
                                           !lq_q[l].align_fault && !has_older_fence_l;
 
-                if (all_older_pa_valid_l || cand_is_eligible_spec_l) begin
+                if (!lq_q[l].is_mmio && (all_older_pa_valid_l || cand_is_eligible_spec_l)) begin
                     lq_entry_is_speculative[l] = !all_older_pa_valid_l;
 
                     for (int s = 0; s < SQ_DEPTH; s++) begin
@@ -791,6 +809,7 @@ module fursoy_s1_lsu_queues
 
     assign l1d_store_drain_valid_o  = sq_head_committed && !sq_q[sq_drain_head_q].drained &&
                                       !sq_q[sq_drain_head_q].is_fence &&
+                                      !sq_q[sq_drain_head_q].is_mmio &&
                                       (!sq_q[sq_drain_head_q].is_sc || sq_q[sq_drain_head_q].sc_success);
     assign l1d_store_drain_sq_idx_o = sq_drain_head_q;
     assign l1d_store_drain_pa_o     = sq_q[sq_drain_head_q].pa;
@@ -879,7 +898,8 @@ module fursoy_s1_lsu_queues
         lsu_retire0_allow_o = 1'b1;
         if (head0_lq_found) begin
             // 1. Must have finished writeback/completion
-            if (!lq_q[head0_lq_idx].wb_done && !lq_q[head0_lq_idx].completed) begin
+            if (!lq_q[head0_lq_idx].wb_done && !lq_q[head0_lq_idx].completed &&
+                !(mmio_comp_valid && !mmio_is_store_q && (head0_lq_idx == mmio_lq_idx_q))) begin
                 lsu_retire0_allow_o = 1'b0;
             end
             // 2. older_store_checks_complete(load)
@@ -923,7 +943,9 @@ module fursoy_s1_lsu_queues
 
     always_comb begin
         lsu_retire1_allow_o = 1'b1;
-        if (head1_lq_found) begin
+        if (mmio_comp_valid) begin
+            lsu_retire1_allow_o = 1'b0;
+        end else if (head1_lq_found) begin
             // 1. Must have finished writeback/completion
             if (!lq_q[head1_lq_idx].wb_done && !lq_q[head1_lq_idx].completed) begin
                 lsu_retire1_allow_o = 1'b0;
@@ -1106,6 +1128,7 @@ module fursoy_s1_lsu_queues
                     if (sq_q[s].is_fence && ((sq_drain_head_q != 4'(s)) || !l1d_quiescent_i)) continue;
                     if (sq_q[s].is_sc && (sq_q[s].rob_idx != rob_head_i)) continue;
                     if (sq_q[s].is_amo && ((sq_drain_head_q != 4'(s)) || (sq_q[s].rob_idx != rob_head_i))) continue;
+                    if (sq_q[s].is_mmio) continue;
 
                     if (!has_store || (comp_s_dist < dist_store)) begin
                         has_conflict = 1'b0;
@@ -1144,6 +1167,135 @@ module fursoy_s1_lsu_queues
         end
     end
 
+    // =========================================================================
+    // Uncached MMIO Pipeline Controller (§4, PROP_M9_07..PROP_M9_12)
+    // =========================================================================
+    typedef enum logic [1:0] {
+        MMIO_IDLE     = 2'd0,
+        MMIO_REQ      = 2'd1,
+        MMIO_WAIT_RSP = 2'd2
+    } mmio_state_t;
+
+    mmio_state_t mmio_state_q;
+    logic        mmio_is_store_q;
+    lq_idx_t     mmio_lq_idx_q;
+    sq_idx_t     mmio_sq_idx_q;
+    rob_idx_t    mmio_rob_idx_q;
+    rob_epoch_t  mmio_rob_epoch_q;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [63:0] mmio_addr_q;
+    logic [2:0]  mmio_size_q;
+    uop_subop_t  mmio_subop_q;
+    preg_t       mmio_pnew_q;
+    logic        mmio_is_fp_q;
+    fpreg_t      mmio_prd_fp_q;
+    logic [63:0] mmio_wdata_q;
+    logic [7:0]  mmio_wstrb_q;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    assign mmio_rsp_ready_o = 1'b1;
+
+    logic        mmio_cand_valid;
+    logic        mmio_cand_is_store;
+    lq_idx_t     mmio_cand_lq_idx;
+    sq_idx_t     mmio_cand_sq_idx;
+    rob_idx_t    mmio_cand_rob_idx;
+    rob_epoch_t  mmio_cand_rob_epoch;
+    logic [63:0] mmio_cand_addr;
+    mem_size_t   mmio_cand_size;
+    uop_subop_t  mmio_cand_subop;
+    preg_t       mmio_cand_pnew;
+    logic        mmio_cand_is_fp;
+    fpreg_t      mmio_cand_prd_fp;
+    logic [63:0] mmio_cand_wdata;
+    logic [7:0]  mmio_cand_wstrb;
+
+    always_comb begin
+        mmio_cand_valid     = 1'b0;
+        mmio_cand_is_store  = 1'b0;
+        mmio_cand_lq_idx    = '0;
+        mmio_cand_sq_idx    = '0;
+        mmio_cand_rob_idx   = '0;
+        mmio_cand_rob_epoch = '0;
+        mmio_cand_addr      = '0;
+        mmio_cand_size      = MEM_SIZE_BYTE;
+        mmio_cand_subop     = MEM_LB;
+        mmio_cand_pnew      = '0;
+        mmio_cand_is_fp     = 1'b0;
+        mmio_cand_prd_fp    = '0;
+        mmio_cand_wdata     = 64'd0;
+        mmio_cand_wstrb     = 8'd0;
+
+        if (!flush_valid_i && !recover_valid_i) begin
+            // 1. MMIO Load at ROB head (all older stores resolved & drained)
+            for (int l = 0; l < LQ_DEPTH; l++) begin
+                if (lq_q[l].valid && lq_q[l].is_mmio && lq_q[l].pa_valid &&
+                    !lq_q[l].completed && !lq_q[l].align_fault &&
+                    !lq_q[l].page_fault && !lq_q[l].access_fault &&
+                    (lq_q[l].rob_idx == rob_head_i) &&
+                    (lq_q[l].sq_older_mask == 16'd0) && (sq_drain_head_q == sq_tail_q)) begin
+                    mmio_cand_valid     = 1'b1;
+                    mmio_cand_is_store  = 1'b0;
+                    mmio_cand_lq_idx    = 4'(l);
+                    mmio_cand_rob_idx   = lq_q[l].rob_idx;
+                    mmio_cand_rob_epoch = lq_q[l].rob_epoch;
+                    mmio_cand_addr      = {8'd0, lq_q[l].pa};
+                    mmio_cand_size      = lq_q[l].size;
+                    mmio_cand_subop     = lq_q[l].sub_op;
+                    mmio_cand_pnew      = lq_q[l].pnew;
+                    mmio_cand_is_fp     = lq_q[l].is_fp;
+                    mmio_cand_prd_fp    = lq_q[l].prd_fp;
+                    mmio_cand_wdata     = 64'd0;
+                    mmio_cand_wstrb     = 8'd0;
+                end
+            end
+
+            // 2. MMIO Store at ROB head (at drain head, data ready)
+            for (int s = 0; s < SQ_DEPTH; s++) begin
+                if (sq_q[s].valid && sq_q[s].is_mmio && sq_q[s].pa_valid && sq_q[s].data_valid &&
+                    !sq_q[s].completed && !sq_q[s].drained && !sq_q[s].exception_pending &&
+                    (sq_q[s].rob_idx == rob_head_i) && (4'(s) == sq_drain_head_q)) begin
+                    mmio_cand_valid     = 1'b1;
+                    mmio_cand_is_store  = 1'b1;
+                    mmio_cand_sq_idx    = 4'(s);
+                    mmio_cand_rob_idx   = sq_q[s].rob_idx;
+                    mmio_cand_rob_epoch = sq_q[s].rob_epoch;
+                    mmio_cand_addr      = {8'd0, sq_q[s].pa};
+                    mmio_cand_size      = sq_q[s].size;
+                    mmio_cand_subop     = sq_q[s].sub_op;
+                    mmio_cand_pnew      = sq_q[s].pnew;
+                    mmio_cand_is_fp     = sq_q[s].is_fp;
+                    mmio_cand_prd_fp    = '0;
+                    mmio_cand_wstrb     = sq_q[s].mask;
+                    mmio_cand_wdata     = format_store_payload(sq_q[s].data, sq_q[s].va[2:0], sq_q[s].size);
+                end
+            end
+        end
+    end
+
+    wire mmio_comp_valid = ((mmio_state_q == MMIO_WAIT_RSP) ||
+                            (mmio_state_q == MMIO_REQ && mmio_req_ready_i)) && mmio_rsp_valid_i;
+
+    logic [63:0] mmio_formatted_rdata;
+    always_comb begin
+        if (mmio_is_store_q) begin
+            mmio_formatted_rdata = 64'd0;
+        end else begin
+            logic [63:0] raw_fmt;
+            logic sign_ext;
+            case (mmio_subop_q)
+                MEM_LB, MEM_LH, MEM_LW: sign_ext = 1'b1;
+                default:                sign_ext = 1'b0;
+            endcase
+            raw_fmt = format_load_result(mmio_rsp_rdata_i, mmio_addr_q[2:0], mem_size_t'(mmio_size_q[1:0]), sign_ext);
+            if (mmio_subop_q == MEM_FLW) begin
+                mmio_formatted_rdata = {32'hFFFFFFFF, raw_fmt[31:0]};
+            end else begin
+                mmio_formatted_rdata = raw_fmt;
+            end
+        end
+    end
+
     // Dual-Completion Assignment Matrix (Table 5.2 / Section 5.1)
     always_comb begin
         p2_comp_valid     = 1'b0;
@@ -1173,7 +1325,22 @@ module fursoy_s1_lsu_queues
         p3_comp_is_fp     = 1'b0;
         p3_comp_prd_fp    = 6'd0;
 
-        if (has_store && has_l0) begin
+        if (mmio_comp_valid) begin
+            p2_comp_valid     = 1'b1;
+            p2_comp_rob_idx   = mmio_rob_idx_q;
+            p2_comp_epoch     = mmio_rob_epoch_q;
+            p2_comp_preg      = mmio_pnew_q;
+            p2_comp_exception = mmio_rsp_error_i;
+            p2_comp_cause     = mmio_is_store_q ? 5'd7 : 5'd5;
+            p2_comp_data      = mmio_formatted_rdata;
+            p2_comp_is_fp     = mmio_is_fp_q;
+            p2_comp_prd_fp    = mmio_prd_fp_q;
+            p2_clear_lq       = !mmio_is_store_q;
+            p2_cleared_lq_idx = mmio_lq_idx_q;
+            p2_clear_sq       = mmio_is_store_q;
+            p2_cleared_sq_idx = mmio_sq_idx_q;
+            sc_ok             = 1'b0;
+        end else if (has_store && has_l0) begin
             // Case 1: 1 Store + 1 Load ready -> Store to Port 2, Load to Port 3
             p2_comp_valid     = 1'b1;
             p2_comp_rob_idx   = sq_q[cand_store].rob_idx;
@@ -1316,6 +1483,26 @@ module fursoy_s1_lsu_queues
             m3_viol_valid_q   <= 1'b0;
             m3_viol_rob_idx_q <= '0;
             m3_viol_rob_epoch_q <= '0;
+            mmio_state_q        <= MMIO_IDLE;
+            mmio_req_valid_o    <= 1'b0;
+            mmio_req_addr_o     <= '0;
+            mmio_req_is_store_o <= 1'b0;
+            mmio_req_size_o     <= 3'd0;
+            mmio_req_wdata_o    <= '0;
+            mmio_req_wstrb_o    <= 8'd0;
+            mmio_is_store_q     <= 1'b0;
+            mmio_lq_idx_q       <= '0;
+            mmio_sq_idx_q       <= '0;
+            mmio_rob_idx_q      <= '0;
+            mmio_rob_epoch_q    <= '0;
+            mmio_addr_q         <= '0;
+            mmio_size_q         <= 3'd0;
+            mmio_subop_q        <= MEM_LB;
+            mmio_pnew_q         <= '0;
+            mmio_is_fp_q        <= 1'b0;
+            mmio_prd_fp_q       <= '0;
+            mmio_wdata_q        <= '0;
+            mmio_wstrb_q        <= 8'd0;
         end else begin
             dtlb_miss_alloc_o <= 1'b0;
 
@@ -1588,6 +1775,9 @@ module fursoy_s1_lsu_queues
                     sq_q[sq_drain_head_q].drained <= 1'b1;
                     sq_drain_head_q <= sq_drain_head_q + 4'd1;
                 end
+            end else if (sq_head_committed && sq_q[sq_drain_head_q].is_mmio && sq_q[sq_drain_head_q].drained) begin
+                sq_q[sq_drain_head_q].valid   <= 1'b0;
+                sq_drain_head_q <= sq_drain_head_q + 4'd1;
             end else if (l1d_store_drain_valid_o && l1d_store_drain_done_i) begin
                 sq_q[sq_drain_head_q].valid   <= 1'b0;
                 sq_q[sq_drain_head_q].drained <= 1'b1;
@@ -2023,6 +2213,75 @@ module fursoy_s1_lsu_queues
                     if (m3_viol_valid_q && (rob_dist(m3_viol_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i))) begin
                         m3_viol_valid_q <= 1'b0;
                     end
+                end
+            end
+
+            // -----------------------------------------------------------------
+            // N. Uncached MMIO State Machine (§4)
+            // -----------------------------------------------------------------
+            case (mmio_state_q)
+                MMIO_IDLE: begin
+                    mmio_req_valid_o <= 1'b0;
+                    if (mmio_cand_valid && !flush_valid_i) begin
+                        mmio_state_q        <= MMIO_REQ;
+                        mmio_req_valid_o    <= 1'b1;
+                        mmio_req_addr_o     <= mmio_cand_addr;
+                        mmio_req_is_store_o <= mmio_cand_is_store;
+                        mmio_req_size_o     <= {1'b0, mmio_cand_size};
+                        mmio_req_wdata_o    <= mmio_cand_wdata;
+                        mmio_req_wstrb_o    <= mmio_cand_wstrb;
+
+                        mmio_is_store_q     <= mmio_cand_is_store;
+                        mmio_lq_idx_q       <= mmio_cand_lq_idx;
+                        mmio_sq_idx_q       <= mmio_cand_sq_idx;
+                        mmio_rob_idx_q      <= mmio_cand_rob_idx;
+                        mmio_rob_epoch_q    <= mmio_cand_rob_epoch;
+                        mmio_addr_q         <= mmio_cand_addr;
+                        mmio_size_q         <= {1'b0, mmio_cand_size};
+                        mmio_subop_q        <= mmio_cand_subop;
+                        mmio_pnew_q         <= mmio_cand_pnew;
+                        mmio_is_fp_q        <= mmio_cand_is_fp;
+                        mmio_prd_fp_q       <= mmio_cand_prd_fp;
+                        mmio_wdata_q        <= mmio_cand_wdata;
+                        mmio_wstrb_q        <= mmio_cand_wstrb;
+                    end
+                end
+
+                MMIO_REQ: begin
+                    if (flush_valid_i && !mmio_req_ready_i) begin
+                        mmio_req_valid_o <= 1'b0;
+                        mmio_state_q     <= MMIO_IDLE;
+                    end else if (mmio_req_ready_i) begin
+                        mmio_req_valid_o <= 1'b0;
+                        if (mmio_rsp_valid_i) begin
+                            mmio_state_q <= MMIO_IDLE;
+                        end else begin
+                            mmio_state_q <= MMIO_WAIT_RSP;
+                        end
+                    end
+                end
+
+                MMIO_WAIT_RSP: begin
+                    mmio_req_valid_o <= 1'b0;
+                    if (mmio_rsp_valid_i) begin
+                        mmio_state_q <= MMIO_IDLE;
+                    end
+                end
+
+                default: begin
+                    mmio_state_q     <= MMIO_IDLE;
+                    mmio_req_valid_o <= 1'b0;
+                end
+            endcase
+
+            if (mmio_comp_valid) begin
+                if (!mmio_is_store_q) begin
+                    lq_q[mmio_lq_idx_q].completed   <= 1'b1;
+                    lq_q[mmio_lq_idx_q].wb_done     <= 1'b1;
+                    lq_q[mmio_lq_idx_q].result_data <= mmio_formatted_rdata;
+                end else begin
+                    sq_q[mmio_sq_idx_q].completed   <= 1'b1;
+                    sq_q[mmio_sq_idx_q].drained     <= 1'b1;
                 end
             end
         end
