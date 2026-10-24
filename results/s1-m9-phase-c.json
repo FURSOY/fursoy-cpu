@@ -1,0 +1,35 @@
+{
+  "timestamp_utc": "2026-10-24T21:11:30.016424+00:00",
+  "phase": "M9 Phase C: Slice-1 SoC Interconnect & Peripherals Integration",
+  "predecessor_core_manifest_sha256": "128c675f924dc208bc73026b8263aab90583173855c87d47a316907c83460912",
+  "production_rtl_manifest_sha256": "bb05e40583b91634b66407f86a3a7672903bcaa91028b863212322ec3ae90783",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m9-soc-linux-v1.md",
+    "version": "1.1",
+    "sha256": "bb353f632ec909b3270522e289d994cc90a34f18ab323705a9010e1070181347"
+  },
+  "unit_verification": {
+    "phase": "Phase C",
+    "total_properties": 6,
+    "passed_properties_count": 6,
+    "status": "pass",
+    "randomized_torture_operations": 25500,
+    "total_bus_transactions": 25598,
+    "torture_seeds": [
+      42,
+      20260920,
+      20261009
+    ],
+    "torture_mismatches": 0,
+    "properties": [
+      "PROP_M9_13",
+      "PROP_M9_14",
+      "PROP_M9_15",
+      "PROP_M9_16",
+      "PROP_M9_17",
+      "PROP_M9_18"
+    ]
+  },
+  "elapsed_seconds": 5.94,
+  "overall_status": "PASS"
+}
