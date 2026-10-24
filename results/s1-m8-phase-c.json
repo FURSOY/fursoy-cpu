@@ -1,0 +1,27 @@
+{
+  "timestamp_utc": "2026-10-24T12:42:51.563265+00:00",
+  "phase": "M8 Phase C: Floating-Point Memory Operations (FLW, FLD, FSW, FSD) & Dual-Domain Forwarding",
+  "production_rtl_manifest_sha256": "2bf90d3a973acb93450d9b98cb71d7d2bc3d8e186b269f20519914d8ae4add29",
+  "spec_reference": {
+    "document": "docs/architecture/slice1-m8-fp-vector-v1.md",
+    "version": "1.1",
+    "sha256": "55a4fa1623c073d9b06d7384f7ea3ce0ad0824b7f240819179962994b68d92e6"
+  },
+  "unit_verification": {
+    "status": "pass",
+    "total_properties_tested": 6,
+    "properties_passed": 6,
+    "passed_properties": [
+      "PROP_M8_21",
+      "PROP_M8_22",
+      "PROP_M8_23",
+      "PROP_M8_24",
+      "PROP_M8_25",
+      "PROP_M8_26"
+    ],
+    "torture_ops_completed": 75000,
+    "torture_mismatches": 0
+  },
+  "elapsed_seconds": 5.39,
+  "overall_status": "PASS"
+}

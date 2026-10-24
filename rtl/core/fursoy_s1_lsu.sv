@@ -54,6 +54,10 @@ module fursoy_s1_lsu
     input  rob_epoch_t        uop0_rob_epoch_i,
     input  logic              uop0_replay_safe_i,
     input  logic [63:0]       uop0_pc_i,
+    input  logic              uop0_is_fp_i,
+    input  fpreg_t            uop0_prd_fp_i,
+    input  fpreg_t            uop0_prs2_fp_i,
+    input  logic              uop0_prs2_fp_ready_i,
 
     // Uop 1 Dispatch Payload
     input  logic              uop1_valid_i,
@@ -69,6 +73,10 @@ module fursoy_s1_lsu
     input  rob_epoch_t        uop1_rob_epoch_i,
     input  logic              uop1_replay_safe_i,
     input  logic [63:0]       uop1_pc_i,
+    input  logic              uop1_is_fp_i,
+    input  fpreg_t            uop1_prd_fp_i,
+    input  fpreg_t            uop1_prs2_fp_i,
+    input  logic              uop1_prs2_fp_ready_i,
 
     // -------------------------------------------------------------------------
     // PRF Read Port 4 (Base), Port 5 (Store Data) & Port 6 (AGU1 Base) Operands
@@ -81,6 +89,10 @@ module fursoy_s1_lsu
 
     output preg_t             r6_paddr_o,
     input  logic [63:0]       r6_data_i,
+
+    // FPRF Read Port 3 (FP Store Data)
+    output fpreg_t            r3_fp_paddr_o,
+    input  logic [63:0]       r3_fp_data_i,
 
     // -------------------------------------------------------------------------
     // Writeback Snoop Buses for Tag Wakeup & Store Data Capture
@@ -107,6 +119,11 @@ module fursoy_s1_lsu
     input  preg_t             wb3_pnew_i,
     input  logic [63:0]       wb3_data_i,
 
+    // FPRF Port 4 Writeback Snoop
+    input  logic              wb0_fp_valid_i,
+    input  fpreg_t            wb0_fp_paddr_i,
+    input  logic [63:0]       wb0_fp_data_i,
+
     // -------------------------------------------------------------------------
     // In-Order Store Retirement Handshake at ROB Head
     // -------------------------------------------------------------------------
@@ -127,6 +144,11 @@ module fursoy_s1_lsu
     output logic [4:0]        p2_comp_cause_o,
     output logic [63:0]       p2_wb_data_o,
     input  logic              p2_comp_ack_i,
+    output logic              p2_comp_is_fp_o,
+    output fpreg_t            p2_comp_prd_fp_o,
+    output logic              p2_fp_wb_valid_o,
+    output fpreg_t            p2_fp_wb_paddr_o,
+    output logic [63:0]       p2_fp_wb_data_o,
 
     // -------------------------------------------------------------------------
     // Port 3 Validated Writeback Output (to M1 Substrate & PRF W3)
@@ -139,6 +161,11 @@ module fursoy_s1_lsu
     output logic [4:0]        p3_comp_cause_o,
     output logic [63:0]       p3_wb_data_o,
     input  logic              p3_comp_ack_i,
+    output logic              p3_comp_is_fp_o,
+    output fpreg_t            p3_comp_prd_fp_o,
+    output logic              p3_fp_wb_valid_o,
+    output fpreg_t            p3_fp_wb_paddr_o,
+    output logic [63:0]       p3_fp_wb_data_o,
 
     // -------------------------------------------------------------------------
     // External Memory Interconnect & Translation Interface
@@ -232,6 +259,7 @@ module fursoy_s1_lsu
             MEM_LB, MEM_LBU, MEM_SB:                 return MEM_SIZE_BYTE;
             MEM_LH, MEM_LHU, MEM_SH:                 return MEM_SIZE_HALF;
             MEM_LW, MEM_LWU, MEM_SW, MEM_LR_W, MEM_SC_W,
+            MEM_FLW, MEM_FSW,
             AMO_SWAP_W, AMO_ADD_W, AMO_XOR_W,
             AMO_AND_W, AMO_OR_W, AMO_MIN_W,
             AMO_MAX_W, AMO_MINU_W, AMO_MAXU_W:       return MEM_SIZE_WORD;
@@ -381,6 +409,10 @@ module fursoy_s1_lsu
     assign r6_paddr_o = memiq_issue1_uop.prs1;
     // Drive PRF Read Port 5 (Store Data)
     assign r5_paddr_o = uop0_is_store ? uop0_prs2_i : uop1_prs2_i; // Monitored during dispatch
+
+    // Drive FPRF Read Port 3 (FP Store Data)
+    assign r3_fp_paddr_o = (uop0_is_store && uop0_is_fp_i) ? uop0_prs2_fp_i :
+                           (uop1_is_store && uop1_is_fp_i) ? uop1_prs2_fp_i : 6'd0;
 
     // Read Operand Forwarding for Port 2 Base Address
     logic [63:0] agu0_base_operand;
@@ -715,6 +747,10 @@ module fursoy_s1_lsu
         .uop0_rob_epoch_i           (uop0_rob_epoch_i),
         .uop0_replay_safe_i         (uop0_replay_safe_i),
         .uop0_pc_i                  (uop0_pc_i),
+        .uop0_is_fp_i               (uop0_is_fp_i),
+        .uop0_prd_fp_i              (uop0_prd_fp_i),
+        .uop0_prs2_fp_i             (uop0_prs2_fp_i),
+        .uop0_prs2_fp_ready_i       (uop0_prs2_fp_ready_i),
 
         .uop1_valid_i               (uop1_valid_i),
         .uop1_class_i               (uop1_class_i),
@@ -728,6 +764,10 @@ module fursoy_s1_lsu
         .uop1_rob_epoch_i           (uop1_rob_epoch_i),
         .uop1_replay_safe_i         (uop1_replay_safe_i),
         .uop1_pc_i                  (uop1_pc_i),
+        .uop1_is_fp_i               (uop1_is_fp_i),
+        .uop1_prd_fp_i              (uop1_prd_fp_i),
+        .uop1_prs2_fp_i             (uop1_prs2_fp_i),
+        .uop1_prs2_fp_ready_i       (uop1_prs2_fp_ready_i),
 
         .agu_valid_i                (memiq_issue0_valid),
         .agu_is_store_i             ((memiq_issue0_uop.uop_class == UOP_STORE) || (memiq_issue0_uop.uop_class == UOP_AMO) || (memiq_issue0_uop.uop_class == UOP_FENCE)),
@@ -783,10 +823,14 @@ module fursoy_s1_lsu
         .trt_delivery_access_fault_i(trt_delivery_access_fault),
 
         .prf_r5_data_i              (r5_data_i),
+        .fprf_r3_data_i             (r3_fp_data_i),
         .wb0_valid_i                (wb0_valid_i),
         .wb0_comp_ack_i             (wb0_comp_ack_i),
         .wb0_pnew_i                 (wb0_pnew_i),
         .wb0_data_i                 (wb0_data_i),
+        .wb0_fp_valid_i             (wb0_fp_valid_i),
+        .wb0_fp_paddr_i             (wb0_fp_paddr_i),
+        .wb0_fp_data_i              (wb0_fp_data_i),
         .wb1_valid_i                (wb1_valid_i),
         .wb1_comp_ack_i             (wb1_comp_ack_i),
         .wb1_pnew_i                 (wb1_pnew_i),
@@ -865,6 +909,11 @@ module fursoy_s1_lsu
         .comp_cause_o               (p2_comp_cause_o),
         .wb_data_o                  (p2_wb_data_o),
         .comp_ack_i                 (p2_comp_ack_i),
+        .comp_is_fp_o               (p2_comp_is_fp_o),
+        .comp_prd_fp_o              (p2_comp_prd_fp_o),
+        .p2_fp_wb_valid_o           (p2_fp_wb_valid_o),
+        .p2_fp_wb_paddr_o           (p2_fp_wb_paddr_o),
+        .p2_fp_wb_data_o            (p2_fp_wb_data_o),
 
         .p3_comp_valid_o            (p3_comp_valid_o),
         .p3_comp_rob_idx_o          (p3_comp_rob_idx_o),
@@ -874,6 +923,11 @@ module fursoy_s1_lsu
         .p3_comp_cause_o            (p3_comp_cause_o),
         .p3_wb_data_o               (p3_wb_data_o),
         .p3_comp_ack_i              (p3_comp_ack_i),
+        .p3_comp_is_fp_o            (p3_comp_is_fp_o),
+        .p3_comp_prd_fp_o           (p3_comp_prd_fp_o),
+        .p3_fp_wb_valid_o           (p3_fp_wb_valid_o),
+        .p3_fp_wb_paddr_o           (p3_fp_wb_paddr_o),
+        .p3_fp_wb_data_o            (p3_fp_wb_data_o),
 
         .event_load_fwd_exact_o     (event_load_fwd_exact_o),
         .event_load_fwd_partial_o   (event_load_fwd_partial_o),

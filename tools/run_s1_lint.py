@@ -70,7 +70,7 @@ def main():
 
     report = {
         "status": "pass" if run.returncode == 0 else "fail",
-        "scope": "Fursoy Slice-1 Milestone 8 Phase B Core RTL (Production + Scalar FP Execution)",
+        "scope": "Fursoy Slice-1 Milestone 8 Phase C Core RTL (Floating-Point Memory Operations & Dual-Domain Forwarding)",
         "observed_at_utc": datetime.now(timezone.utc).isoformat(),
         "command": cmd,
         "verilator_version": subprocess.run(["verilator", "--version"], capture_output=True, text=True).stdout.strip(),

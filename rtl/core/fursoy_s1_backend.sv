@@ -373,6 +373,13 @@ module fursoy_s1_backend
     logic        p2_comp_exception;
     logic [4:0]  p2_comp_cause;
     logic [63:0] p2_wb_data;
+    logic        p2_comp_is_fp;
+    /* verilator lint_off UNUSEDSIGNAL */
+    fpreg_t      p2_comp_prd_fp;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic        p2_fp_wb_valid;
+    fpreg_t      p2_fp_wb_paddr;
+    logic [63:0] p2_fp_wb_data;
 
     // Port 3 LSU Completion wires
     logic        p3_comp_valid;
@@ -382,6 +389,16 @@ module fursoy_s1_backend
     logic        p3_comp_exception;
     logic [4:0]  p3_comp_cause;
     logic [63:0] p3_wb_data;
+    logic        p3_comp_is_fp;
+    /* verilator lint_off UNUSEDSIGNAL */
+    fpreg_t      p3_comp_prd_fp;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic        p3_fp_wb_valid;
+    fpreg_t      p3_fp_wb_paddr;
+    logic [63:0] p3_fp_wb_data;
+
+    // LSU FPRF Port 3 Read Addr
+    fpreg_t      lsu_r3_fp_paddr;
 
     // Port 0 / F2I Effective PRF Writeback Signals
     logic        p0_eff_wb_valid;
@@ -615,10 +632,10 @@ module fursoy_s1_backend
 
         .wb0_fp_valid_i     (p4_fprf_wb_valid),
         .wb0_fp_paddr_i     (p4_fprf_wb_preg),
-        .wb1_fp_valid_i     (w1_fp_valid_i),
-        .wb1_fp_paddr_i     (w1_fp_paddr_i),
-        .wb2_fp_valid_i     (w2_fp_valid_i),
-        .wb2_fp_paddr_i     (w2_fp_paddr_i),
+        .wb1_fp_valid_i     (p2_fp_wb_valid || w1_fp_valid_i),
+        .wb1_fp_paddr_i     (p2_fp_wb_valid ? p2_fp_wb_paddr : w1_fp_paddr_i),
+        .wb2_fp_valid_i     (p3_fp_wb_valid || w2_fp_valid_i),
+        .wb2_fp_paddr_i     (p3_fp_wb_valid ? p3_fp_wb_paddr : w2_fp_paddr_i),
 
         .fdiv_busy_i        (fdiv_busy),
         .fconv_fprf_busy_i  (fconv_fprf_busy),
@@ -743,13 +760,13 @@ module fursoy_s1_backend
         .r6_paddr_i     (r6_paddr),
         .r6_data_o      (r6_data),
 
-        .w2_valid_i     (p2_comp_valid),
+        .w2_valid_i     (p2_comp_valid && !p2_comp_is_fp),
         .w2_comp_ack_i  (comp_ack_i[2]),
         .w2_comp_exception_i (p2_comp_exception),
         .w2_paddr_i     (p2_comp_preg),
         .w2_data_i      (p2_wb_data),
 
-        .w3_valid_i     (p3_comp_valid),
+        .w3_valid_i     (p3_comp_valid && !p3_comp_is_fp),
         .w3_comp_ack_i  (comp_ack_i[3]),
         .w3_comp_exception_i (p3_comp_exception),
         .w3_paddr_i     (p3_comp_preg),
@@ -774,20 +791,20 @@ module fursoy_s1_backend
         .rdata1_fp_o    (r1_fp_data),
         .raddr2_fp_i    (fp_rf_uop_q.prs3_fp),
         .rdata2_fp_o    (r2_fp_data),
-        .raddr3_fp_i    (r3_fp_paddr_i),
+        .raddr3_fp_i    (lsu_r3_fp_paddr != 6'd0 ? lsu_r3_fp_paddr : r3_fp_paddr_i),
         .rdata3_fp_o    (r3_fp_data),
 
         .w0_valid_i     (p4_fprf_wb_valid),
         .w0_paddr_i     (p4_fprf_wb_preg),
         .w0_data_i      (p4_fprf_wb_data),
 
-        .w1_valid_i     (w1_fp_valid_i),
-        .w1_paddr_i     (w1_fp_paddr_i),
-        .w1_data_i      (w1_fp_data_i),
+        .w1_valid_i     (p2_fp_wb_valid || w1_fp_valid_i),
+        .w1_paddr_i     (p2_fp_wb_valid ? p2_fp_wb_paddr : w1_fp_paddr_i),
+        .w1_data_i      (p2_fp_wb_valid ? p2_fp_wb_data : w1_fp_data_i),
 
-        .w2_valid_i     (w2_fp_valid_i),
-        .w2_paddr_i     (w2_fp_paddr_i),
-        .w2_data_i      (w2_fp_data_i),
+        .w2_valid_i     (p3_fp_wb_valid || w2_fp_valid_i),
+        .w2_paddr_i     (p3_fp_wb_valid ? p3_fp_wb_paddr : w2_fp_paddr_i),
+        .w2_data_i      (p3_fp_wb_valid ? p3_fp_wb_data : w2_fp_data_i),
 
         .probe_paddr_i  (probe_fp_paddr_i),
         .probe_pdata_o  (probe_fp_pdata_o)
@@ -1202,6 +1219,10 @@ module fursoy_s1_backend
         .uop0_rob_epoch_i        (uop0_rob_epoch_i),
         .uop0_replay_safe_i      (uop0_replay_safe_i),
         .uop0_pc_i               (uop0_pc_i),
+        .uop0_is_fp_i            (uop0_is_fp_i),
+        .uop0_prd_fp_i           (uop0_prd_fp_i),
+        .uop0_prs2_fp_i          (uop0_prs2_fp_i),
+        .uop0_prs2_fp_ready_i    (uop0_prs2_fp_ready_i),
 
         .uop1_valid_i            (uop1_valid_i),
         .uop1_class_i            (uop1_class_i),
@@ -1216,6 +1237,10 @@ module fursoy_s1_backend
         .uop1_rob_epoch_i        (uop1_rob_epoch_i),
         .uop1_replay_safe_i      (uop1_replay_safe_i),
         .uop1_pc_i               (uop1_pc_i),
+        .uop1_is_fp_i            (uop1_is_fp_i),
+        .uop1_prd_fp_i           (uop1_prd_fp_i),
+        .uop1_prs2_fp_i          (uop1_prs2_fp_i),
+        .uop1_prs2_fp_ready_i    (uop1_prs2_fp_ready_i),
 
         .r4_paddr_o              (r4_paddr),
         .r4_data_i               (r4_data),
@@ -1223,6 +1248,8 @@ module fursoy_s1_backend
         .r5_data_i               (r5_data),
         .r6_paddr_o              (r6_paddr),
         .r6_data_i               (r6_data),
+        .r3_fp_paddr_o           (lsu_r3_fp_paddr),
+        .r3_fp_data_i            (r3_fp_data),
 
         .wb0_valid_i             (p0_eff_wb_valid),
         .wb0_comp_ack_i          (comp_ack_i[0]),
@@ -1246,6 +1273,10 @@ module fursoy_s1_backend
         .wb3_pnew_i              (p3_comp_preg),
         .wb3_data_i              (p3_wb_data),
 
+        .wb0_fp_valid_i          (p4_fprf_wb_valid),
+        .wb0_fp_paddr_i          (p4_fprf_wb_preg),
+        .wb0_fp_data_i           (p4_fprf_wb_data),
+
         .retire_valid_i          (retire_valid_i),
         .retire_pnew_i           (retire_pnew_i),
         .retire_pc_i             (retire_pc_i),
@@ -1260,6 +1291,11 @@ module fursoy_s1_backend
         .p2_comp_cause_o         (p2_comp_cause),
         .p2_wb_data_o            (p2_wb_data),
         .p2_comp_ack_i           (comp_ack_i[2]),
+        .p2_comp_is_fp_o         (p2_comp_is_fp),
+        .p2_comp_prd_fp_o        (p2_comp_prd_fp),
+        .p2_fp_wb_valid_o        (p2_fp_wb_valid),
+        .p2_fp_wb_paddr_o        (p2_fp_wb_paddr),
+        .p2_fp_wb_data_o         (p2_fp_wb_data),
 
         .p3_comp_valid_o         (p3_comp_valid),
         .p3_comp_rob_idx_o       (p3_comp_rob_idx),
@@ -1269,6 +1305,11 @@ module fursoy_s1_backend
         .p3_comp_cause_o         (p3_comp_cause),
         .p3_wb_data_o            (p3_wb_data),
         .p3_comp_ack_i           (comp_ack_i[3]),
+        .p3_comp_is_fp_o         (p3_comp_is_fp),
+        .p3_comp_prd_fp_o        (p3_comp_prd_fp),
+        .p3_fp_wb_valid_o        (p3_fp_wb_valid),
+        .p3_fp_wb_paddr_o        (p3_fp_wb_paddr),
+        .p3_fp_wb_data_o         (p3_fp_wb_data),
 
         .bus_rd_req_valid_o      (bus_rd_req_valid_o),
         .bus_rd_req_addr_o       (bus_rd_req_addr_o),
@@ -1652,7 +1693,7 @@ module fursoy_s1_backend
     assign comp_valid_o[2]          = p2_comp_valid && !flush_valid_i;
     assign comp_rob_idx_o[2]        = p2_comp_rob_idx;
     assign comp_epoch_o[2]          = p2_comp_epoch;
-    assign comp_preg_o[2]           = p2_comp_preg;
+    assign comp_preg_o[2]           = p2_comp_is_fp ? 7'd0 : p2_comp_preg;
     assign comp_branch_mispred_o[2] = 1'b0;
     assign comp_exception_o[2]      = p2_comp_exception;
     assign comp_cause_o[2]          = p2_comp_cause;
@@ -1662,7 +1703,7 @@ module fursoy_s1_backend
     assign comp_valid_o[3]          = p3_comp_valid && !flush_valid_i;
     assign comp_rob_idx_o[3]        = p3_comp_rob_idx;
     assign comp_epoch_o[3]          = p3_comp_epoch;
-    assign comp_preg_o[3]           = p3_comp_preg;
+    assign comp_preg_o[3]           = p3_comp_is_fp ? 7'd0 : p3_comp_preg;
     assign comp_branch_mispred_o[3] = 1'b0;
     assign comp_exception_o[3]      = p3_comp_exception;
     assign comp_cause_o[3]          = p3_comp_cause;
@@ -1680,10 +1721,10 @@ module fursoy_s1_backend
 
     assign comp_fp_wb_valid_o[0]    = p4_fprf_wb_valid && comp_ack_i[4] && !w0_fp_valid_i;
     assign comp_fp_wb_preg_o[0]     = p4_fprf_wb_preg;
-    assign comp_fp_wb_valid_o[1]    = 1'b0;
-    assign comp_fp_wb_preg_o[1]     = 6'd0;
-    assign comp_fp_wb_valid_o[2]    = 1'b0;
-    assign comp_fp_wb_preg_o[2]     = 6'd0;
+    assign comp_fp_wb_valid_o[1]    = p2_fp_wb_valid;
+    assign comp_fp_wb_preg_o[1]     = p2_fp_wb_paddr;
+    assign comp_fp_wb_valid_o[2]    = p3_fp_wb_valid;
+    assign comp_fp_wb_preg_o[2]     = p3_fp_wb_paddr;
 
     // -------------------------------------------------------------------------
     // 7. Lifetime-Gated Branch Recovery Interface (Section 2.4.3)
@@ -1718,7 +1759,7 @@ module fursoy_s1_backend
 `ifndef SYNTHESIS
     wire prf_w0_we = p0_eff_wb_valid && comp_ack_i[0] && (p0_eff_wb_pnew != 7'd0);
     wire prf_w1_we = p1_wb_valid && comp_ack_i[1] && (p1_wb_pnew != 7'd0);
-    wire prf_w2_we = p2_comp_valid && comp_ack_i[2] && !p2_comp_exception && (p2_comp_preg != 7'd0);
+    wire prf_w2_we = p2_comp_valid && comp_ack_i[2] && !p2_comp_exception && (p2_comp_preg != 7'd0) && !p2_comp_is_fp;
     logic flush_check_q;
 
     always_ff @(posedge clk_i) begin

@@ -395,7 +395,12 @@ package fursoy_s1_pkg;
         FP_FCVT_S_L   = 8'd160,
         FP_FCVT_D_L   = 8'd161,
         FP_FCVT_S_LU  = 8'd162,
-        FP_FCVT_D_LU  = 8'd163
+        FP_FCVT_D_LU  = 8'd163,
+        // Milestone 8 Phase C Floating-Point Memory Sub-Operations
+        MEM_FLW       = 8'd164,
+        MEM_FLD       = 8'd165,
+        MEM_FSW       = 8'd166,
+        MEM_FSD       = 8'd167
     } uop_subop_t;
 
     // -------------------------------------------------------------------------
@@ -627,6 +632,9 @@ package fursoy_s1_pkg;
         logic [63:0] forward_data;
         logic        completed;     // Reported to ROB
         logic [63:0] result_data;
+        // Milestone 8 Phase C FP Memory attributes
+        logic        is_fp;
+        fpreg_t      prd_fp;
     } lq_entry_t;
 
     // -------------------------------------------------------------------------
@@ -662,6 +670,9 @@ package fursoy_s1_pkg;
         logic        completed;     // Reported to ROB (bifurcated completion)
         logic        committed;     // Retired at ROB head; awaiting in-order L1D drain
         logic        drained;
+        // Milestone 8 Phase C FP Memory attributes
+        logic        is_fp;
+        fpreg_t      prs2_fp;
     } sq_entry_t;
 
     // -------------------------------------------------------------------------

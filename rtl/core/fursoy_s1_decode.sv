@@ -423,6 +423,40 @@ module fursoy_s1_decode
                 endcase
             end
 
+            // Floating-Point Loads (RV64F / RV64D)
+            7'b0000111: begin
+                uop.uop_class      = UOP_LOAD;
+                uop.is_fp          = 1'b1;
+                uop.fp_dest_valid  = 1'b1;
+                uop.rd             = inst[11:7]; // fd
+                uop.rs1            = inst[19:15]; // rs1 (integer base)
+                uop.rs2            = 5'd0;
+                uop.use_imm        = 1'b1;
+                uop.imm            = {{52{inst[31]}}, inst[31:20]};
+                case (funct3)
+                    3'b010: uop.sub_op = MEM_FLW;
+                    3'b011: uop.sub_op = MEM_FLD;
+                    default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
+                endcase
+            end
+
+            // Floating-Point Stores (RV64F / RV64D)
+            7'b0100111: begin
+                uop.uop_class      = UOP_STORE;
+                uop.is_fp          = 1'b1;
+                uop.fp_dest_valid  = 1'b0;
+                uop.rd             = 5'd0;
+                uop.rs1            = inst[19:15]; // rs1 (integer base)
+                uop.rs2            = inst[24:20]; // fs2 (floating-point store data)
+                uop.use_imm        = 1'b1;
+                uop.imm            = {{52{inst[31]}}, inst[31:25], inst[11:7]};
+                case (funct3)
+                    3'b010: uop.sub_op = MEM_FSW;
+                    3'b011: uop.sub_op = MEM_FSD;
+                    default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
+                endcase
+            end
+
             // Atomics (RV64A: LR/SC & AMO)
             7'b0101111: begin
                 amo_funct5 = inst[31:27];

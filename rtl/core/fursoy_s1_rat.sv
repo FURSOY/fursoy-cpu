@@ -132,8 +132,8 @@ module fursoy_s1_rat
     assign uop0_rs2_preg_o = (uop0_i.rs2 == 5'd0) ? 7'd0 : srat_q[uop0_i.rs2];
 
     // uop0/uop1 produce a destination register?
-    wire uop0_produces_rd = uop0_i.valid && (uop0_i.rd != 5'd0);
-    wire uop1_produces_rd = uop1_i.valid && (uop1_i.rd != 5'd0);
+    wire uop0_produces_rd = uop0_i.valid && (!uop0_i.fp_dest_valid) && (uop0_i.rd != 5'd0);
+    wire uop1_produces_rd = uop1_i.valid && (!uop1_i.fp_dest_valid) && (uop1_i.rd != 5'd0);
 
     // Intra-group RAW detection for uop1
     assign uop1_rs1_raw_uop0_o = uop0_produces_rd && (uop1_i.rs1 == uop0_i.rd);
@@ -152,13 +152,13 @@ module fursoy_s1_rat
     // Destination Pold Resolution & Intra-group WAW Handling
     // -------------------------------------------------------------------------
     // uop0 displaced Pold
-    assign uop0_pold_o = (uop0_i.rd == 5'd0) ? 7'd0 : srat_q[uop0_i.rd];
+    assign uop0_pold_o = ((uop0_i.rd == 5'd0) || uop0_i.fp_dest_valid) ? 7'd0 : srat_q[uop0_i.rd];
 
     // Intra-group WAW detection for uop1
     wire uop1_waw_uop0 = uop0_produces_rd && (uop1_i.rd == uop0_i.rd);
 
     // uop1 displaced Pold: if intra-group WAW, uop1's Pold is uop0's Pnew!
-    assign uop1_pold_o = (uop1_i.rd == 5'd0) ? 7'd0 :
+    assign uop1_pold_o = ((uop1_i.rd == 5'd0) || uop1_i.fp_dest_valid) ? 7'd0 :
                          uop1_waw_uop0       ? uop0_pnew_i :
                                                srat_q[uop1_i.rd];
 
@@ -323,7 +323,7 @@ module fursoy_s1_rat
                 if (rename_grant_i[0] && uop0_produces_rd) begin
                     srat_q[uop0_i.rd] <= uop0_pnew_i;
                 end
-                if (rename_grant_i[1] && (uop1_i.rd != 5'd0)) begin
+                if (rename_grant_i[1] && uop1_produces_rd) begin
                     srat_q[uop1_i.rd] <= uop1_pnew_i;
                 end
                 // Permanent p0 invariant
