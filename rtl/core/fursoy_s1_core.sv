@@ -398,6 +398,27 @@ module fursoy_s1_core
     output logic [63:0]            csr_stvec_o,
 
     // -------------------------------------------------------------------------
+    // Milestone 9 Phase A Asynchronous Interrupt Inputs & Observability
+    // -------------------------------------------------------------------------
+    input  logic                   irq_timer_i,
+    input  logic                   irq_software_i,
+    input  logic                   irq_external_i,
+    input  logic                   irq_seip_i,
+
+    output logic                   wfi_sleep_o,
+    output logic                   irq_pending_valid_o,
+    output logic [63:0]            irq_pending_cause_o,
+    output logic [63:0]            csr_mip_o,
+    output logic [63:0]            csr_mideleg_o,
+    output logic [63:0]            csr_sie_o,
+    output logic [63:0]            csr_sip_o,
+
+    // Milestone 9 Phase A Testbench Direct CSR State Injection Ports
+    input  logic                   test_csr_we_i,
+    input  logic [11:0]            test_csr_addr_i,
+    input  logic [63:0]            test_csr_wdata_i,
+
+    // -------------------------------------------------------------------------
     // Milestone 4 DTLB Test Injection & PTW Diagnostics
     // -------------------------------------------------------------------------
     input  logic                   test_dtlb_req_valid_i,
@@ -512,7 +533,7 @@ module fursoy_s1_core
 
     // Assign Output Diagnostics
     assign rename_ack_o       = int_rename_ack;
-    assign dispatch_ready_o   = int_dispatch_ready;
+    assign dispatch_ready_o   = int_dispatch_ready & {2{~csr_wfi_sleep}};
     assign recovering_o       = int_recovering;
     assign reconstructing_o   = int_reconstructing;
     assign rob_head_o         = int_rob_head;
@@ -568,6 +589,19 @@ module fursoy_s1_core
     logic              csr_sfence_vma_valid;
     logic [63:0]       csr_sfence_vma_va;
     logic [15:0]       csr_sfence_vma_asid;
+
+    // Milestone 9 Phase A CSR & Interrupt Interconnect Wires
+    logic              csr_irq_pending_valid;
+    logic [63:0]       csr_irq_pending_cause;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [1:0]        csr_irq_pending_priv;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic              csr_wfi_sleep;
+    logic [63:0]       fe_pc;
+
+    assign wfi_sleep_o         = csr_wfi_sleep;
+    assign irq_pending_valid_o = csr_irq_pending_valid;
+    assign irq_pending_cause_o = csr_irq_pending_cause;
 
     logic [63:0]       backend_p0_sys_rdata;
     logic              backend_p0_sys_illegal;
@@ -816,7 +850,7 @@ module fursoy_s1_core
         .uop1_vec_dest_valid_i   (sub_uop1_vec_dest_valid),
         .uop1_prd_vec_i          (sub_uop1_prd_vec),
 
-        .dispatch_ready_i        (int_dispatch_ready),
+        .dispatch_ready_i        (int_dispatch_ready & {2{~csr_wfi_sleep}}),
         .rename_ack_o            (int_rename_ack),
 
         .uop0_renamed_o          (sub_uop0_renamed),
@@ -883,6 +917,7 @@ module fursoy_s1_core
 
         // Flush
         .flush_valid_i           (core_flush_valid),
+        .irq_pending_i           (csr_irq_pending_valid),
 
         // Retirement (Serialization controller gates retire_ready_i when FENCE.I is at head, LSU gates when store check pending)
         .retire_ready_i          (frontend_en_i ? (retire_ready_i && fe_retire_ready) : retire_ready_i),
@@ -1364,7 +1399,36 @@ module fursoy_s1_core
         .hpm_csr_hit_i           (hpm_csr_hit),
         .hpm_we_o                (hpm_we),
         .hpm_waddr_o             (hpm_waddr),
-        .hpm_wdata_o             (hpm_wdata)
+        .hpm_wdata_o             (hpm_wdata),
+
+        // Milestone 9 Phase A: Asynchronous Interrupt Inputs
+        .irq_timer_i             (irq_timer_i),
+        .irq_software_i          (irq_software_i),
+        .irq_external_i          (irq_external_i),
+        .irq_seip_i              (irq_seip_i),
+
+        // Milestone 9 Phase A: ROB Head Instruction & Pipeline Status
+        .rob_empty_i             (rob_count_o == '0),
+        .rob_head_pc_i           (retire_pc_o[0]),
+        .fe_pc_i                 (fe_pc),
+        .recovering_i            (int_recovering),
+        .reconstructing_i        (int_reconstructing),
+        .retire_replay_i         (retire_replay),
+
+        // Milestone 9 Phase A: Candidate Interrupt Status & WFI Sleep Output
+        .irq_pending_valid_o     (csr_irq_pending_valid),
+        .irq_pending_cause_o     (csr_irq_pending_cause),
+        .irq_pending_priv_o      (csr_irq_pending_priv),
+        .wfi_sleep_o             (csr_wfi_sleep),
+        .csr_mip_o               (csr_mip_o),
+        .csr_mideleg_o           (csr_mideleg_o),
+        .csr_sie_o               (csr_sie_o),
+        .csr_sip_o               (csr_sip_o),
+
+        // Testbench Direct CSR State Injection Ports
+        .test_csr_we_i           (test_csr_we_i),
+        .test_csr_addr_i         (test_csr_addr_i),
+        .test_csr_wdata_i        (test_csr_wdata_i)
     );
 
     // =========================================================================
@@ -1476,6 +1540,7 @@ module fursoy_s1_core
         .clk_i                   (clk_i),
         .rst_i                   (rst_i),
         .frontend_en_i           (frontend_en_i),
+        .wfi_sleep_i             (csr_wfi_sleep),
 
         // Architectural System State & Privilege Mode
         .priv_mode_i             (eff_priv_mode),
@@ -1629,7 +1694,8 @@ module fursoy_s1_core
         .event_btb_hits_o        (fe_event_btb_hits),
         .event_bpu_cond_pred_o   (fe_event_bpu_cond_pred),
         .event_ras_call_push_o   (fe_event_ras_call_push),
-        .event_ras_ret_pop_o     (fe_event_ras_ret_pop)
+        .event_ras_ret_pop_o     (fe_event_ras_ret_pop),
+        .fe_pc_o                 (fe_pc)
     );
 
     logic              fe_event_fetch_cycles;

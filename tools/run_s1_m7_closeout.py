@@ -31,6 +31,7 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "69a94959bb1a03684f35146a940b119b85cef3e365a695f67221b0c83acd6a2f",  # M8 Phase C Final
     "b5f823b9dcb8395127193852f6afcdf31518fbb4e9dd270d9e7c3920cdc0350f",  # M8 Phase D Final
     "c3cdd842b5373b1371dfaf33ac9da198d84eb3bf4783b104f90dc180d1604408",  # M8 Phase E Final
+    "dd3d03b09557277172e8d1805fd139d58802a5b6fd873a908805e7c2f7615896",  # M9 Phase A
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m7-multibank-l1d-v1.md"
 SPEC_VERSION = "1.1"

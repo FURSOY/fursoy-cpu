@@ -135,7 +135,36 @@ module fursoy_s1_csr
     input  logic              hpm_csr_hit_i,
     output logic              hpm_we_o,
     output logic [11:0]       hpm_waddr_o,
-    output logic [63:0]       hpm_wdata_o
+    output logic [63:0]       hpm_wdata_o,
+
+    // Milestone 9 Phase A: Asynchronous Interrupt Inputs
+    input  logic              irq_timer_i,
+    input  logic              irq_software_i,
+    input  logic              irq_external_i,
+    input  logic              irq_seip_i,
+
+    // Milestone 9 Phase A: ROB Head Instruction & Pipeline Status
+    input  logic              rob_empty_i,
+    input  logic [63:0]       rob_head_pc_i,
+    input  logic [63:0]       fe_pc_i,
+    input  logic              recovering_i,
+    input  logic              reconstructing_i,
+    input  logic              retire_replay_i,
+
+    // Milestone 9 Phase A: Candidate Interrupt Status & WFI Sleep Output
+    output logic              irq_pending_valid_o,
+    output logic [63:0]       irq_pending_cause_o,
+    output logic [1:0]        irq_pending_priv_o,
+    output logic              wfi_sleep_o,
+    output logic [63:0]       csr_mip_o,
+    output logic [63:0]       csr_mideleg_o,
+    output logic [63:0]       csr_sie_o,
+    output logic [63:0]       csr_sip_o,
+
+    // Testbench Direct CSR State Injection Ports
+    input  logic              test_csr_we_i,
+    input  logic [11:0]       test_csr_addr_i,
+    input  logic [63:0]       test_csr_wdata_i
 );
 
     // =========================================================================
@@ -216,10 +245,107 @@ module fursoy_s1_csr
     assign csr_mtvec_o  = mtvec_q;
     assign csr_stvec_o  = stvec_q;
 
+    // Milestone 9 Phase A: WFI State Machine Registers
+    logic        wfi_sleep_q;
+    logic [63:0] wfi_resume_pc_q;
+
+    // Milestone 9 Phase A: Dynamic MIP Vector
+    wire [63:0] mip_val = {52'd0,
+                           irq_external_i,        1'b0, // [11:10] MEIP
+                           mip_q[9] | irq_seip_i, 1'b0, // [9:8]   SEIP
+                           irq_timer_i,           1'b0, // [7:6]   MTIP
+                           mip_q[5],              1'b0, // [5:4]   STIP
+                           irq_software_i,        1'b0, // [3:2]   MSIP
+                           mip_q[1],              1'b0  // [1:0]   SSIP
+                          };
+
+    assign csr_mip_o     = mip_val;
+    assign csr_mideleg_o = mideleg_q;
+    assign wfi_sleep_o   = wfi_sleep_q;
+
     // Aliased supervisor CSR values (incorporating FS [14:13], VS [10:9] and SD [63])
     wire [63:0] sstatus_val = {eff_sd, 29'd0, 2'b10, 12'd0, mstatus_q[19:18], 3'd0, eff_fs, 2'b00, eff_vs, mstatus_q[8], 2'd0, mstatus_q[5], 3'd0, mstatus_q[1], 1'b0};
     wire [63:0] sie_val     = mie_q & mideleg_q & 64'h222;
-    wire [63:0] sip_val     = mip_q & mideleg_q & 64'h222;
+    wire [63:0] sip_val     = mip_val & mideleg_q & 64'h222;
+
+    assign csr_sie_o = sie_val;
+    assign csr_sip_o = sip_val;
+
+    // Interrupt Evaluation & Priority Arbitration
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [63:0] pending_enabled = mip_val & mie_q;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    wire m_irq_global_en = (eff_priv < 2'b11) || (eff_priv == 2'b11 && eff_mstatus[3]);
+    wire s_irq_global_en = (eff_priv == 2'b00) || (eff_priv == 2'b01 && eff_mstatus[1]);
+
+    wire m_irq_eligible_mei = pending_enabled[11] && !mideleg_q[11] && m_irq_global_en;
+    wire m_irq_eligible_msi = pending_enabled[3]  && !mideleg_q[3]  && m_irq_global_en;
+    wire m_irq_eligible_mti = pending_enabled[7]  && !mideleg_q[7]  && m_irq_global_en;
+    wire m_irq_eligible_sei = pending_enabled[9]  && !mideleg_q[9]  && m_irq_global_en;
+    wire m_irq_eligible_ssi = pending_enabled[1]  && !mideleg_q[1]  && m_irq_global_en;
+    wire m_irq_eligible_sti = pending_enabled[5]  && !mideleg_q[5]  && m_irq_global_en;
+
+    wire s_irq_eligible_sei = pending_enabled[9] && mideleg_q[9] && s_irq_global_en;
+    wire s_irq_eligible_ssi = pending_enabled[1] && mideleg_q[1] && s_irq_global_en;
+    wire s_irq_eligible_sti = pending_enabled[5] && mideleg_q[5] && s_irq_global_en;
+
+    // M destination priority: MEI (11) > MSI (3) > MTI (7) > SEI (9) > SSI (1) > STI (5)
+    logic        m_irq_take;
+    logic [63:0] m_irq_cause;
+    always_comb begin
+        m_irq_take  = 1'b0;
+        m_irq_cause = 64'd0;
+        if (m_irq_eligible_mei) begin
+            m_irq_take  = 1'b1;
+            m_irq_cause = {1'b1, 59'd0, 4'd11}; // MEIP
+        end else if (m_irq_eligible_msi) begin
+            m_irq_take  = 1'b1;
+            m_irq_cause = {1'b1, 59'd0, 4'd3};  // MSIP
+        end else if (m_irq_eligible_mti) begin
+            m_irq_take  = 1'b1;
+            m_irq_cause = {1'b1, 59'd0, 4'd7};  // MTIP
+        end else if (m_irq_eligible_sei) begin
+            m_irq_take  = 1'b1;
+            m_irq_cause = {1'b1, 59'd0, 4'd9};  // SEIP (non-delegated)
+        end else if (m_irq_eligible_ssi) begin
+            m_irq_take  = 1'b1;
+            m_irq_cause = {1'b1, 59'd0, 4'd1};  // SSIP (non-delegated)
+        end else if (m_irq_eligible_sti) begin
+            m_irq_take  = 1'b1;
+            m_irq_cause = {1'b1, 59'd0, 4'd5};  // STI (non-delegated)
+        end
+    end
+
+    // S destination priority: SEI (9) > SSI (1) > STI (5)
+    logic        s_irq_take;
+    logic [63:0] s_irq_cause;
+    always_comb begin
+        s_irq_take  = 1'b0;
+        s_irq_cause = 64'd0;
+        if (!m_irq_take) begin
+            if (s_irq_eligible_sei) begin
+                s_irq_take  = 1'b1;
+                s_irq_cause = {1'b1, 59'd0, 4'd9}; // SEIP
+            end else if (s_irq_eligible_ssi) begin
+                s_irq_take  = 1'b1;
+                s_irq_cause = {1'b1, 59'd0, 4'd1}; // SSIP
+            end else if (s_irq_eligible_sti) begin
+                s_irq_take  = 1'b1;
+                s_irq_cause = {1'b1, 59'd0, 4'd5}; // STIP
+            end
+        end
+    end
+
+    wire irq_candidate_valid = m_irq_take || s_irq_take;
+    wire [63:0] irq_candidate_cause = m_irq_take ? m_irq_cause : s_irq_cause;
+    wire [1:0]  irq_candidate_priv  = m_irq_take ? 2'b11 : 2'b01;
+
+    assign irq_pending_valid_o = irq_candidate_valid;
+    assign irq_pending_cause_o = irq_candidate_cause;
+    assign irq_pending_priv_o  = irq_candidate_priv;
+
+    wire [63:0] captured_pc = (!rob_empty_i) ? rob_head_pc_i : fe_pc_i;
 
     // =========================================================================
     // 2. Port 0 Execution Stage: CSR Decode, Privilege Check, and RMW
@@ -272,7 +398,7 @@ module fursoy_s1_csr
             12'h341: old_csr_val = mepc_q;
             12'h342: old_csr_val = mcause_q;
             12'h343: old_csr_val = mtval_q;
-            12'h344: old_csr_val = mip_q;
+            12'h344: old_csr_val = mip_val;
 
             // Machine Identification (Read-Only 0)
             12'hf11, 12'hf12, 12'hf13, 12'hf14: begin
@@ -551,6 +677,8 @@ module fursoy_s1_csr
             sfence_vma_valid_o    <= 1'b0;
             sfence_vma_va_o       <= '0;
             sfence_vma_asid_o     <= '0;
+            wfi_sleep_q           <= 1'b0;
+            wfi_resume_pc_q       <= 64'd0;
         end else begin
             // Free-running cycle counter
             cycle_q <= cycle_q + 64'd1;
@@ -657,6 +785,77 @@ module fursoy_s1_csr
                     sys_flush_valid_o     <= 1'b1;
                 end
                 pending_sys_q.valid <= 1'b0;
+            end else if (wfi_sleep_q) begin
+                if (mip_val != 64'd0) begin
+                    wfi_sleep_q <= 1'b0;
+                    if (irq_candidate_valid) begin
+                        if (irq_candidate_priv == 2'b01) begin
+                            sepc_q   <= wfi_resume_pc_q;
+                            scause_q <= irq_candidate_cause;
+                            stval_q  <= 64'd0;
+                            mstatus_q[5] <= mstatus_q[1]; // SPIE <= SIE
+                            mstatus_q[1] <= 1'b0;         // SIE <= 0
+                            mstatus_q[8] <= (priv_mode_q == 2'b01); // SPP <= (P == S)
+                            priv_mode_q  <= 2'b01;        // privilege <= S
+
+                            sys_redirect_valid_o  <= 1'b1;
+                            sys_redirect_target_o <= (stvec_q[1:0] == 2'b01)
+                                                   ? ({stvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                                   : {stvec_q[63:2], 2'b00};
+                            sys_flush_valid_o     <= 1'b1;
+                        end else begin
+                            mepc_q   <= wfi_resume_pc_q;
+                            mcause_q <= irq_candidate_cause;
+                            mtval_q  <= 64'd0;
+                            mstatus_q[7]     <= mstatus_q[3]; // MPIE <= MIE
+                            mstatus_q[3]     <= 1'b0;         // MIE <= 0
+                            mstatus_q[12:11] <= priv_mode_q;  // MPP <= P
+                            priv_mode_q      <= 2'b11;        // privilege <= M
+
+                            sys_redirect_valid_o  <= 1'b1;
+                            sys_redirect_target_o <= (mtvec_q[1:0] == 2'b01)
+                                                   ? ({mtvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                                   : {mtvec_q[63:2], 2'b00};
+                            sys_flush_valid_o     <= 1'b1;
+                        end
+                    end else begin
+                        sys_redirect_valid_o  <= 1'b1;
+                        sys_redirect_target_o <= wfi_resume_pc_q;
+                        sys_flush_valid_o     <= 1'b1;
+                    end
+                end
+            end else if (irq_candidate_valid && !recovering_i && !reconstructing_i && !retire_replay_i) begin
+                // Asynchronous interrupt delivery at instruction boundary
+                if (irq_candidate_priv == 2'b01) begin
+                    sepc_q   <= captured_pc;
+                    scause_q <= irq_candidate_cause;
+                    stval_q  <= 64'd0;
+                    mstatus_q[5] <= mstatus_q[1]; // SPIE <= SIE
+                    mstatus_q[1] <= 1'b0;         // SIE <= 0
+                    mstatus_q[8] <= (priv_mode_q == 2'b01); // SPP <= (P == S)
+                    priv_mode_q  <= 2'b01;        // privilege <= S
+
+                    sys_redirect_valid_o  <= 1'b1;
+                    sys_redirect_target_o <= (stvec_q[1:0] == 2'b01)
+                                           ? ({stvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                           : {stvec_q[63:2], 2'b00};
+                    sys_flush_valid_o     <= 1'b1;
+                end else begin
+                    mepc_q   <= captured_pc;
+                    mcause_q <= irq_candidate_cause;
+                    mtval_q  <= 64'd0;
+                    mstatus_q[7]     <= mstatus_q[3]; // MPIE <= MIE
+                    mstatus_q[3]     <= 1'b0;         // MIE <= 0
+                    mstatus_q[12:11] <= priv_mode_q;  // MPP <= P
+                    priv_mode_q      <= 2'b11;        // privilege <= M
+
+                    sys_redirect_valid_o  <= 1'b1;
+                    sys_redirect_target_o <= (mtvec_q[1:0] == 2'b01)
+                                           ? ({mtvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                           : {mtvec_q[63:2], 2'b00};
+                    sys_flush_valid_o     <= 1'b1;
+                end
+                pending_sys_q.valid <= 1'b0;
             end else if (sys_retire_fire) begin
                 pending_sys_q.valid <= 1'b0;
 
@@ -696,7 +895,15 @@ module fursoy_s1_csr
                     end
 
                     SYS_WFI: begin
-                        // Legal architectural no-op
+                        if (mip_val != 64'd0) begin
+                            wfi_sleep_q           <= 1'b0;
+                            sys_redirect_valid_o  <= 1'b1;
+                            sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                            sys_flush_valid_o     <= 1'b1;
+                        end else begin
+                            wfi_sleep_q     <= 1'b1;
+                            wfi_resume_pc_q <= pending_sys_q.pc + 64'd4;
+                        end
                     end
 
                     SYS_CSRRW, SYS_CSRRS, SYS_CSRRC,
@@ -811,6 +1018,30 @@ module fursoy_s1_csr
                         end
                     end
 
+                    default: ;
+                endcase
+            end
+
+            // Testbench Direct CSR State Injection
+            if (test_csr_we_i) begin
+                unique case (test_csr_addr_i)
+                    12'h000: priv_mode_q <= test_csr_wdata_i[1:0];
+                    12'h300: mstatus_q   <= test_csr_wdata_i;
+                    12'h302: medeleg_q   <= test_csr_wdata_i & 64'hb3ff;
+                    12'h303: mideleg_q   <= test_csr_wdata_i & 64'h222;
+                    12'h304: mie_q       <= test_csr_wdata_i & 64'haaa;
+                    12'h305: mtvec_q     <= {test_csr_wdata_i[63:2], (test_csr_wdata_i[1:0] <= 2'b01) ? test_csr_wdata_i[1:0] : 2'b00};
+                    12'h100: begin
+                        mstatus_q[1]     <= test_csr_wdata_i[1];
+                        mstatus_q[5]     <= test_csr_wdata_i[5];
+                        mstatus_q[8]     <= test_csr_wdata_i[8];
+                    end
+                    12'h104: mie_q       <= (mie_q & ~(mideleg_q & 64'h222)) | (test_csr_wdata_i & (mideleg_q & 64'h222));
+                    12'h105: stvec_q     <= {test_csr_wdata_i[63:2], (test_csr_wdata_i[1:0] <= 2'b01) ? test_csr_wdata_i[1:0] : 2'b00};
+                    12'h341: mepc_q      <= {test_csr_wdata_i[63:2], 2'b00};
+                    12'h342: mcause_q    <= test_csr_wdata_i;
+                    12'h141: sepc_q      <= {test_csr_wdata_i[63:2], 2'b00};
+                    12'h142: scause_q    <= test_csr_wdata_i;
                     default: ;
                 endcase
             end

@@ -152,6 +152,8 @@ module fursoy_s1_substrate
     // In-Order Retirement Interface
     // -------------------------------------------------------------------------
     input  logic                   retire_ready_i,
+    // Milestone 9 Phase A: Asynchronous Interrupt Retirement Gate
+    input  logic                   irq_pending_i,
 
     // Milestone 5 Phase B1 Memory Disambiguation Violation & Replay
     input  logic                   lsu_violation_valid_i,
@@ -781,6 +783,7 @@ module fursoy_s1_substrate
         .comp_fflags_i        (comp_fflags_i),
         .comp_ack_o           (rob_comp_ack),
         .retire_ready_i       (retire_ready_i),
+        .irq_pending_i        (irq_pending_i),
         .lsu_violation_valid_i(lsu_violation_valid_i),
         .lsu_violation_rob_idx_i(lsu_violation_rob_idx_i),
         .lsu_violation_rob_epoch_i(lsu_violation_rob_epoch_i),

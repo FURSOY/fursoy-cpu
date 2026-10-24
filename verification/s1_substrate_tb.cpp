@@ -77,6 +77,7 @@ public:
 
         dut->flush_valid_i = 0;
         dut->retire_ready_i = 1;
+        dut->irq_pending_i = 0;
 
         dut->lsu_retire0_allow_i = 1;
         dut->lsu_retire1_allow_i = 1;

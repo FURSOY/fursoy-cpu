@@ -68,6 +68,8 @@ module fursoy_s1_rob
     // In-Order Retirement Interface (Retirement Stage at head_q)
     // -------------------------------------------------------------------------
     input  logic                   retire_ready_i,
+    // Milestone 9 Phase A: Asynchronous Interrupt Retirement Gate
+    input  logic                   irq_pending_i,
 
     // Milestone 5 Phase B1 Memory Disambiguation Violation & Replay
     input  logic                   lsu_violation_valid_i,
@@ -304,7 +306,7 @@ module fursoy_s1_rob
     logic [1:0] retire_grant;
     always_comb begin
         retire_grant = 2'b00;
-        if (retire_ready_i && !head_has_exception && !head_has_replay) begin
+        if (retire_ready_i && !head_has_exception && !head_has_replay && !irq_pending_i) begin
             if (uop1_can_retire) begin
                 retire_grant = 2'b11;
             end else if (uop0_can_retire) begin

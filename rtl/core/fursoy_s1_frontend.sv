@@ -34,6 +34,7 @@ module fursoy_s1_frontend
     input  logic              clk_i,
     input  logic              rst_i,
     input  logic              frontend_en_i,        // High = active, Low = held in reset
+    input  logic              wfi_sleep_i,
 
     // Architectural System State (from CSRs / Privilege Mode)
     input  logic [1:0]        priv_mode_i,          // 00=U, 01=S, 11=M
@@ -212,8 +213,13 @@ module fursoy_s1_frontend
     output logic              event_btb_hits_o,
     output logic              event_bpu_cond_pred_o,
     output logic              event_ras_call_push_o,
-    output logic              event_ras_ret_pop_o
+    output logic              event_ras_ret_pop_o,
+
+    // Milestone 9 Phase A: Architectural Fetch PC Export
+    output logic [63:0]       fe_pc_o
 );
+
+    assign fe_pc_o = f0_pc_q;
 
     // =========================================================================
     // Subsystem Interconnect Signals
@@ -362,6 +368,9 @@ module fursoy_s1_frontend
         end else if (early_jal_redirect) begin
             next_fetch_pc    = early_jal_target;
             next_fetch_valid = 1'b1;
+        end else if (wfi_sleep_i) begin
+            next_fetch_pc    = f0_pc_q;
+            next_fetch_valid = 1'b0;
         end else if (bpu_pred_redirect && !f2_stall_f0) begin
             next_fetch_pc    = bpu_pred_target;
             next_fetch_valid = 1'b1;
@@ -390,7 +399,7 @@ module fursoy_s1_frontend
     // =========================================================================
     // 2. Stage F1: Memory Request & ITLB Lookup
     // =========================================================================
-    wire f1_fire = f0_valid_q && !f2_stall_f1 && !itlb_busy && l1i_ready && !f3_exception_valid;
+    wire f1_fire = f0_valid_q && !wfi_sleep_i && !f2_stall_f1 && !itlb_busy && l1i_ready && !f3_exception_valid;
 
     /* verilator lint_off PINCONNECTEMPTY */
     // ITLB & Persistent ITRT

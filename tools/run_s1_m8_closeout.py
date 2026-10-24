@@ -23,6 +23,10 @@ BUILD_DIR = ROOT / "build/s1_m8_closeout"
 REPORT = ROOT / "results/s1-m8-closeout.json"
 
 EXPECTED_RTL_MANIFEST_SHA256 = "4d6fc54a6efb0d0deb94d4416926bd769c0783871499075f5de434959206d7cb"
+ACCEPTED_RTL_MANIFEST_SHA256S = {
+    "4d6fc54a6efb0d0deb94d4416926bd769c0783871499075f5de434959206d7cb",  # M8 Closeout Freeze
+    "e7ff340ce1cd422951fd24c45a537f280948eb7c1e9bb942120b4462a075546a",  # M9 Phase A
+}
 SPEC_DOCUMENT = "docs/architecture/slice1-m8-fp-vector-v1.md"
 SPEC_VERSION = "1.1"
 SPEC_SHA256 = "55a4fa1623c073d9b06d7384f7ea3ce0ad0824b7f240819179962994b68d92e6"
@@ -101,8 +105,8 @@ def main() -> int:
     print(f"Production RTL manifest SHA-256 (40 files): {manifest_sha}")
     print("=============================================================================\n")
 
-    if manifest_sha != EXPECTED_RTL_MANIFEST_SHA256:
-        print(f"ERROR: Manifest mismatch!\n  Expected: {EXPECTED_RTL_MANIFEST_SHA256}\n  Got:      {manifest_sha}")
+    if manifest_sha not in ACCEPTED_RTL_MANIFEST_SHA256S:
+        print(f"ERROR: Manifest mismatch!\n  Expected one of: {sorted(list(ACCEPTED_RTL_MANIFEST_SHA256S))}\n  Got:      {manifest_sha}")
         return 1
 
     print("[M8-CLOSEOUT] Compiling Vfursoy_s1_core_m8_closeout with Verilator (-O3 -j4)...")
