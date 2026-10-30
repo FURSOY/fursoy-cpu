@@ -55,6 +55,7 @@ module fursoy_s1_frontend
 
     // Priority 4: Port 0 Mispredict Recovery
     input  logic              recover_valid_i,
+    input  rob_idx_t          recover_rob_idx_i,
     input  chkpt_idx_t        recover_chkpt_id_i,
     input  logic              recover_actual_taken_i,
     input  logic [63:0]       recover_target_i,
@@ -371,7 +372,7 @@ module fursoy_s1_frontend
         end else if (wfi_sleep_i) begin
             next_fetch_pc    = f0_pc_q;
             next_fetch_valid = 1'b0;
-        end else if (bpu_pred_redirect && !f2_stall_f0) begin
+        end else if (bpu_pred_redirect && !f2_stall_f0 && (bpu_pred_target != 64'd0)) begin
             next_fetch_pc    = bpu_pred_target;
             next_fetch_valid = 1'b1;
         end else if (!f2_stall_f0 && itlb_rsp_valid && l1i_ready && !f3_exception_valid) begin
@@ -569,6 +570,84 @@ module fursoy_s1_frontend
     );
 
     // =========================================================================
+    // 2.1 BPU Prediction Metadata FIFO (F0 -> F3 Pipeline Synchronization)
+    // =========================================================================
+    typedef struct packed {
+        logic [63:0]       pc;
+        logic              slot0_btb_hit;
+        logic              slot0_pred_taken;
+        logic [63:0]       slot0_pred_target;
+        branch_type_t      slot0_br_type;
+        ghr_t              slot0_pre_ghr;
+        ras_chkpt_t        slot0_ras_chkpt;
+        tage_csr_bundle_t  slot0_csr_chkpt;
+        logic              slot1_btb_hit;
+        logic              slot1_pred_taken;
+        logic [63:0]       slot1_pred_target;
+        branch_type_t      slot1_br_type;
+        ghr_t              slot1_pre_ghr;
+        ras_chkpt_t        slot1_ras_chkpt;
+        tage_csr_bundle_t  slot1_csr_chkpt;
+    } bpu_meta_entry_t;
+
+    localparam int BPU_FIFO_DEPTH = 8;
+    bpu_meta_entry_t bpu_fifo_q [BPU_FIFO_DEPTH];
+    logic [2:0]      bpu_fifo_head_q;
+    logic [2:0]      bpu_fifo_tail_q;
+    logic [3:0]      bpu_fifo_count_q;
+
+    wire bpu_fifo_push = f1_to_l1i_valid && (bpu_fifo_count_q < 4'd8);
+    wire bpu_fifo_pop  = f3_valid && !stall_downstream && (bpu_fifo_count_q != 4'd0);
+
+    bpu_meta_entry_t bpu_push_entry;
+    always_comb begin
+        bpu_push_entry.pc                = f0_pc_q;
+        bpu_push_entry.slot0_btb_hit     = slot0_btb_hit;
+        bpu_push_entry.slot0_pred_taken  = slot0_pred_taken;
+        bpu_push_entry.slot0_pred_target = slot0_pred_target;
+        bpu_push_entry.slot0_br_type     = slot0_br_type;
+        bpu_push_entry.slot0_pre_ghr     = slot0_pre_ghr;
+        bpu_push_entry.slot0_ras_chkpt   = slot0_ras_chkpt;
+        bpu_push_entry.slot0_csr_chkpt   = slot0_csr_chkpt;
+        bpu_push_entry.slot1_btb_hit     = slot1_btb_hit;
+        bpu_push_entry.slot1_pred_taken  = slot1_pred_taken;
+        bpu_push_entry.slot1_pred_target = slot1_pred_target;
+        bpu_push_entry.slot1_br_type     = slot1_br_type;
+        bpu_push_entry.slot1_pre_ghr     = slot1_pre_ghr;
+        bpu_push_entry.slot1_ras_chkpt   = slot1_ras_chkpt;
+        bpu_push_entry.slot1_csr_chkpt   = slot1_csr_chkpt;
+    end
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i || !frontend_en_i || any_redirect || fence_i_frontend_purge) begin
+            bpu_fifo_head_q  <= 3'd0;
+            bpu_fifo_tail_q  <= 3'd0;
+            bpu_fifo_count_q <= 4'd0;
+        end else begin
+            case ({bpu_fifo_push, bpu_fifo_pop})
+                2'b10: begin
+                    bpu_fifo_q[bpu_fifo_tail_q] <= bpu_push_entry;
+                    bpu_fifo_tail_q             <= bpu_fifo_tail_q + 3'd1;
+                    bpu_fifo_count_q            <= bpu_fifo_count_q + 4'd1;
+                end
+                2'b01: begin
+                    bpu_fifo_head_q  <= bpu_fifo_head_q + 3'd1;
+                    bpu_fifo_count_q <= bpu_fifo_count_q - 4'd1;
+                end
+                2'b11: begin
+                    bpu_fifo_q[bpu_fifo_tail_q] <= bpu_push_entry;
+                    bpu_fifo_tail_q             <= bpu_fifo_tail_q + 3'd1;
+                    bpu_fifo_head_q             <= bpu_fifo_head_q + 3'd1;
+                end
+                default: ;
+            endcase
+        end
+    end
+
+    bpu_meta_entry_t f3_bpu_meta;
+    assign f3_bpu_meta = (bpu_fifo_count_q != 4'd0) ? bpu_fifo_q[bpu_fifo_head_q] : '0;
+
+    // =========================================================================
     // 3. Stage F2: Level-1 Instruction Cache (L1I) & Response Skid Buffer
     // =========================================================================
     wire pop0_req = rename_ack_i[0] && fq_pop0_valid;
@@ -659,7 +738,7 @@ module fursoy_s1_frontend
     wire is_jalr0   = slot0_eligible && !f3_exception_valid && (inst_slot0[6:0] == 7'b1100111);
     wire is_jalr1   = slot1_eligible && !f3_exception_valid && (inst_slot1[6:0] == 7'b1100111);
 
-    wire slot0_taken_branch   = is_branch0 && slot0_pred_taken;
+    wire slot0_taken_branch   = is_branch0 && f3_bpu_meta.slot0_pred_taken;
     wire slot0_taken_transfer = slot0_taken_branch || is_jal0 || is_jalr0;
 
     wire [63:0] computed_jal_target0 = pc_slot0 + jal_imm0;
@@ -667,8 +746,8 @@ module fursoy_s1_frontend
 
     // Gated Early JAL Redirect (Section 3.3):
     // early_jal_redirect = decoded_jal && !already_correctly_predicted
-    wire jal0_correctly_predicted = slot0_btb_hit && slot0_pred_taken && (slot0_pred_target == computed_jal_target0);
-    wire jal1_correctly_predicted = slot1_btb_hit && slot1_pred_taken && (slot1_pred_target == computed_jal_target1);
+    wire jal0_correctly_predicted = f3_bpu_meta.slot0_btb_hit && f3_bpu_meta.slot0_pred_taken && (f3_bpu_meta.slot0_pred_target == computed_jal_target0);
+    wire jal1_correctly_predicted = f3_bpu_meta.slot1_btb_hit && f3_bpu_meta.slot1_pred_taken && (f3_bpu_meta.slot1_pred_target == computed_jal_target1);
 
     wire jal0_needs_redirect = is_jal0 && !jal0_correctly_predicted;
     wire jal1_needs_redirect = is_jal1 && !jal1_correctly_predicted;
@@ -685,29 +764,29 @@ module fursoy_s1_frontend
     always_comb begin
         early_jal_redirect    = 1'b0;
         early_jal_target      = 64'd0;
-        early_jal_restore_ghr = slot0_pre_ghr;
-        early_jal_restore_ras = slot0_ras_chkpt;
-        early_jal_restore_csr = slot0_csr_chkpt;
+        early_jal_restore_ghr = f3_bpu_meta.slot0_pre_ghr;
+        early_jal_restore_ras = f3_bpu_meta.slot0_ras_chkpt;
+        early_jal_restore_csr = f3_bpu_meta.slot0_csr_chkpt;
 
         if (jal0_needs_redirect) begin
             early_jal_redirect    = 1'b1;
             early_jal_target      = computed_jal_target0;
-            early_jal_restore_ghr = slot0_pre_ghr;
-            early_jal_restore_ras = slot0_ras_chkpt;
-            early_jal_restore_csr = slot0_csr_chkpt;
+            early_jal_restore_ghr = f3_bpu_meta.slot0_pre_ghr;
+            early_jal_restore_ras = f3_bpu_meta.slot0_ras_chkpt;
+            early_jal_restore_csr = f3_bpu_meta.slot0_csr_chkpt;
         end else if (jal1_needs_redirect && !slot0_taken_transfer) begin
             early_jal_redirect    = 1'b1;
             early_jal_target      = computed_jal_target1;
-            early_jal_restore_ghr = slot1_pre_ghr;
-            early_jal_restore_ras = slot1_ras_chkpt;
-            early_jal_restore_csr = slot1_csr_chkpt;
+            early_jal_restore_ghr = f3_bpu_meta.slot1_pre_ghr;
+            early_jal_restore_ras = f3_bpu_meta.slot1_ras_chkpt;
+            early_jal_restore_csr = f3_bpu_meta.slot1_csr_chkpt;
         end
     end
 
     // Accurate branch type derivation
-    wire branch_type_t eff_br_type0 = slot0_btb_hit ? slot0_br_type :
+    wire branch_type_t eff_br_type0 = f3_bpu_meta.slot0_btb_hit ? f3_bpu_meta.slot0_br_type :
                                       classify_br(inst_slot0, is_branch0, is_jal0, is_jalr0);
-    wire branch_type_t eff_br_type1 = slot1_btb_hit ? slot1_br_type :
+    wire branch_type_t eff_br_type1 = f3_bpu_meta.slot1_btb_hit ? f3_bpu_meta.slot1_br_type :
                                       classify_br(inst_slot1, is_branch1, is_jal1, is_jalr1);
 
     // Packaging into Fetch Queue Entries
@@ -722,15 +801,15 @@ module fursoy_s1_frontend
         fq_entry0.exception_valid = f3_exception_valid && slot0_eligible;
         fq_entry0.exception_cause = f3_exception_cause;
         fq_entry0.fault_addr      = f3_fault_addr;
-        fq_entry0.pred_taken      = (is_branch0 || is_jal0 || is_jalr0) ? slot0_pred_taken : 1'b0;
-        fq_entry0.pred_target     = (is_branch0 || is_jal0 || is_jalr0) ? slot0_pred_target : 64'd0;
+        fq_entry0.pred_taken      = (is_branch0 || is_jal0 || is_jalr0) ? f3_bpu_meta.slot0_pred_taken : 1'b0;
+        fq_entry0.pred_target     = (is_branch0 || is_jal0 || is_jalr0) ? f3_bpu_meta.slot0_pred_target : 64'd0;
         fq_entry0.is_branch       = is_branch0;
         fq_entry0.is_jal          = is_jal0;
         fq_entry0.is_jalr         = is_jalr0;
         fq_entry0.br_type         = eff_br_type0;
-        fq_entry0.pre_branch_ghr  = slot0_pre_ghr;
-        fq_entry0.ras_chkpt       = slot0_ras_chkpt;
-        fq_entry0.csr_chkpt       = slot0_csr_chkpt;
+        fq_entry0.pre_branch_ghr  = f3_bpu_meta.slot0_pre_ghr;
+        fq_entry0.ras_chkpt       = f3_bpu_meta.slot0_ras_chkpt;
+        fq_entry0.csr_chkpt       = f3_bpu_meta.slot0_csr_chkpt;
 
         fq_entry1 = '0;
         // If Slot 0 is predicted taken branch or is a JAL/JALR, Slot 1 must not be enqueued!
@@ -740,15 +819,15 @@ module fursoy_s1_frontend
         fq_entry1.exception_valid = f3_exception_valid && slot1_eligible && !(slot0_eligible && slot0_taken_transfer);
         fq_entry1.exception_cause = f3_exception_cause;
         fq_entry1.fault_addr      = f3_fault_addr;
-        fq_entry1.pred_taken      = (is_branch1 || is_jal1 || is_jalr1) ? slot1_pred_taken : 1'b0;
-        fq_entry1.pred_target     = (is_branch1 || is_jal1 || is_jalr1) ? slot1_pred_target : 64'd0;
+        fq_entry1.pred_taken      = (is_branch1 || is_jal1 || is_jalr1) ? f3_bpu_meta.slot1_pred_taken : 1'b0;
+        fq_entry1.pred_target     = (is_branch1 || is_jal1 || is_jalr1) ? f3_bpu_meta.slot1_pred_target : 64'd0;
         fq_entry1.is_branch       = is_branch1;
         fq_entry1.is_jal          = is_jal1;
         fq_entry1.is_jalr         = is_jalr1;
         fq_entry1.br_type         = eff_br_type1;
-        fq_entry1.pre_branch_ghr  = slot1_pre_ghr;
-        fq_entry1.ras_chkpt       = slot1_ras_chkpt;
-        fq_entry1.csr_chkpt       = slot1_csr_chkpt;
+        fq_entry1.pre_branch_ghr  = f3_bpu_meta.slot1_pre_ghr;
+        fq_entry1.ras_chkpt       = f3_bpu_meta.slot1_ras_chkpt;
+        fq_entry1.csr_chkpt       = f3_bpu_meta.slot1_csr_chkpt;
     end
 
     // =========================================================================
@@ -852,6 +931,8 @@ module fursoy_s1_frontend
         .clk_i                    (clk_i),
         .rst_i                    (rst_i || !frontend_en_i),
         .flush_valid_i            (flush_valid_i),
+        .recover_valid_i          (recover_valid_i),
+        .recover_rob_idx_i        (recover_rob_idx_i),
 
         .alloc0_fence_i_i         (alloc0_fence_i_i),
         .alloc0_rob_idx_i         (alloc0_rob_idx_i),

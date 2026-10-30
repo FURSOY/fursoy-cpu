@@ -508,12 +508,14 @@ module fursoy_s1_decode
                 if (funct3 == 3'b000) begin
                     if (inst[31:20] == 12'h000) begin
                         // ECALL: cause 8 (U-mode), 9 (S-mode), 11 (M-mode)
+                        uop.uop_class = UOP_SYSTEM;
                         uop.exception = 1'b1;
                         uop.exc_cause = (priv_mode == 2'b11) ? 5'd11 :
                                         (priv_mode == 2'b01) ? 5'd9  : 5'd8;
                         uop.rd        = 5'd0;
                     end else if (inst[31:20] == 12'h001) begin
                         // EBREAK
+                        uop.uop_class = UOP_SYSTEM;
                         uop.exception = 1'b1;
                         uop.exc_cause = 5'd3; // Breakpoint
                         uop.rd        = 5'd0;
@@ -599,6 +601,11 @@ module fursoy_s1_decode
                 uop.exc_cause = 5'd2; // Illegal Instruction
             end
         endcase
+
+        if (uop.exception) begin
+            uop.uop_class = UOP_SYSTEM;
+            uop.rd        = 5'd0;
+        end
 
         return uop;
     endfunction

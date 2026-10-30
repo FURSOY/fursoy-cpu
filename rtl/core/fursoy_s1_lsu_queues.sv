@@ -460,7 +460,7 @@ module fursoy_s1_lsu_queues
     logic [15:0] sq_store_mask;
     always_comb begin
         for (int i = 0; i < SQ_DEPTH; i++) begin
-            sq_store_mask[i] = sq_q[i].valid && (sq_q[i].sub_op != MEM_FENCE_I);
+            sq_store_mask[i] = sq_q[i].valid && sq_q[i].committed;
         end
     end
     assign sq_empty_o       = (sq_store_mask == 16'd0);
@@ -533,7 +533,8 @@ module fursoy_s1_lsu_queues
 
     // Recovered SQ Tail Calculation on Branch Squash / Architectural Flush
     logic [3:0] next_drain_head;
-    assign next_drain_head = sq_dealloc_comb[sq_drain_head_q] ? (sq_drain_head_q + 4'd1) : sq_drain_head_q;
+    assign next_drain_head = (flush_valid_i && (!sq_q[sq_drain_head_q].valid || !sq_q[sq_drain_head_q].committed)) ? 4'd0 :
+                             ((!sq_q[sq_drain_head_q].valid && (sq_drain_head_q != sq_tail_q)) || sq_dealloc_comb[sq_drain_head_q]) ? (sq_drain_head_q + 4'd1) : sq_drain_head_q;
 
     logic [15:0] sq_surviving_mask;
     always_comb begin
@@ -1765,7 +1766,11 @@ module fursoy_s1_lsu_queues
             // -----------------------------------------------------------------
             // G. Committed Store Drain Deallocation
             // -----------------------------------------------------------------
-            if (sq_head_committed && sq_q[sq_drain_head_q].is_sc && !sq_q[sq_drain_head_q].sc_success) begin
+            if (flush_valid_i && (!sq_q[sq_drain_head_q].valid || !sq_q[sq_drain_head_q].committed)) begin
+                sq_drain_head_q <= '0;
+            end else if (!sq_q[sq_drain_head_q].valid && (sq_drain_head_q != sq_tail_q)) begin
+                sq_drain_head_q <= sq_drain_head_q + 4'd1;
+            end else if (sq_head_committed && sq_q[sq_drain_head_q].is_sc && !sq_q[sq_drain_head_q].sc_success) begin
                 sq_q[sq_drain_head_q].valid   <= 1'b0;
                 sq_q[sq_drain_head_q].drained <= 1'b1;
                 sq_drain_head_q <= sq_drain_head_q + 4'd1;
@@ -2095,7 +2100,9 @@ module fursoy_s1_lsu_queues
             end
 
             // SQ Tail Pointer Update
-            if (flush_valid_i || recover_valid_i) begin
+            if (flush_valid_i && (!sq_q[sq_drain_head_q].valid || !sq_q[sq_drain_head_q].committed)) begin
+                sq_tail_q <= '0;
+            end else if (flush_valid_i || recover_valid_i) begin
                 sq_tail_q <= recovered_sq_tail;
             end else begin
                 sq_tail_q <= sq_tail_q + {3'd0, sq_alloc0_fire} + {3'd0, sq_alloc1_fire};

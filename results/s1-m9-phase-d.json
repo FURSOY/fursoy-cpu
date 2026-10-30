@@ -1,0 +1,51 @@
+{
+  "milestone": "Milestone 9",
+  "phase": "Phase D",
+  "status": "PASS",
+  "timestamp_utc": "2026-10-30T09:27:47.865552+00:00",
+  "elapsed_seconds": 2.61,
+  "spec_authority": {
+    "document": "docs/architecture/slice1-m9-soc-linux-v1.md",
+    "version": "1.1",
+    "sha256": "bb353f632ec909b3270522e289d994cc90a34f18ab323705a9010e1070181347"
+  },
+  "manifests": {
+    "core_rtl_manifest_sha256": "e39bd500b2587dbc64351a9d5cfe115a602aed91cb5d2dac401739dd29f86100",
+    "soc_rtl_manifest_sha256": "a09a642f3fbc01230913c02899a2721f78e9cd1cca9faf8d235266dc1b9038a1"
+  },
+  "binaries_sha256": {
+    "dtb": "3075047009a57e6d419d3a8e90c12ee3ff8c539e5f848c6536720623a45fb6a5",
+    "firmware_elf": "16e88857398c193e9e55966679c154fe1a845e35da87109d4fe8bf3adac7bfd5",
+    "payload_elf": "5e90ebfc4938b94254e6e5c86603e482b73ba5d65af13e8f0becb2e3ede92d4c"
+  },
+  "simulation": {
+    "status": "pass",
+    "cycles": 51275,
+    "commits": 35937,
+    "properties_tested": 8,
+    "properties_passed": 8,
+    "prop_m9_19_base": "PASS",
+    "prop_m9_20_time": "PASS",
+    "prop_m9_21_dbcn": "PASS",
+    "prop_m9_22_handoff": "PASS",
+    "prop_m9_23_dtb": "PASS",
+    "prop_m9_24_earlycon": "PASS",
+    "prop_m9_25_mixed_priv": "PASS",
+    "prop_m9_26_torture": "PASS",
+    "torture_seeds_passed": 3,
+    "torture_events_completed": 150,
+    "seen_reset_pc": true,
+    "seen_handoff_pc": true,
+    "srst_halted": true
+  },
+  "properties_verified": [
+    "PROP_M9_19",
+    "PROP_M9_20",
+    "PROP_M9_21",
+    "PROP_M9_22",
+    "PROP_M9_23",
+    "PROP_M9_24",
+    "PROP_M9_25",
+    "PROP_M9_26"
+  ]
+}

@@ -27,6 +27,8 @@ module fursoy_s1_serialization
     input  logic              clk_i,
     input  logic              rst_i,
     input  logic              flush_valid_i,
+    input  logic              recover_valid_i,
+    input  rob_idx_t          recover_rob_idx_i,
 
     // -------------------------------------------------------------------------
     // Allocation Interface (at Rename / Dispatch)
@@ -110,8 +112,16 @@ module fursoy_s1_serialization
 
     assign retire_ready_o = !fence_i_hold;
 
+    wire fence_i_squashed = recover_valid_i && fence_i_pending_q &&
+        (rob_dist(fence_i_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+
+    wire alloc0_squashed = recover_valid_i &&
+        (rob_dist(alloc0_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire alloc1_squashed = recover_valid_i &&
+        (rob_dist(alloc1_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+
     always_ff @(posedge clk_i) begin
-        if (rst_i || flush_valid_i) begin
+        if (rst_i || flush_valid_i || fence_i_squashed) begin
             fence_i_pending_q         <= 1'b0;
             fence_i_rob_idx_q         <= '0;
             fence_i_rob_epoch_q       <= '0;
@@ -131,12 +141,12 @@ module fursoy_s1_serialization
 
             // Capture allocation token at dispatch/rename
             if (!fence_i_pending_q) begin
-                if (alloc0_fence_i_i) begin
+                if (alloc0_fence_i_i && !alloc0_squashed) begin
                     fence_i_pending_q   <= 1'b1;
                     fence_i_rob_idx_q   <= alloc0_rob_idx_i;
                     fence_i_rob_epoch_q <= alloc0_rob_epoch_i;
                     fence_i_pc_q        <= alloc0_pc_i;
-                end else if (alloc1_fence_i_i) begin
+                end else if (alloc1_fence_i_i && !alloc1_squashed) begin
                     fence_i_pending_q   <= 1'b1;
                     fence_i_rob_idx_q   <= alloc1_rob_idx_i;
                     fence_i_rob_epoch_q <= alloc1_rob_epoch_i;

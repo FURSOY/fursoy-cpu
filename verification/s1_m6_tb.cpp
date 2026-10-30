@@ -764,10 +764,10 @@ void test_core_m6_hpm_counter_mapping(M6TB& tb) {
     tb.write_mem_word(base + 16, rv_bne(20, 0, -8));
 
     // Post-loop:
-    // 2. Indirect jump to target_ind via register x5: triggers target mispredict (0x0F)
-    tb.write_mem_word(base + 20, rv_lui(5, (target_ind >> 12) & 0xFFFFF));
-    tb.write_mem_word(base + 24, rv_addi(5, 5, target_ind & 0xFFF));
-    tb.write_mem_word(base + 28, rv_jalr(0, 5, 0));
+    // 2. Indirect jump to target_ind via register x6: triggers target mispredict (0x0F)
+    tb.write_mem_word(base + 20, rv_lui(6, (target_ind >> 12) & 0xFFFFF));
+    tb.write_mem_word(base + 24, rv_addi(6, 6, target_ind & 0xFFF));
+    tb.write_mem_word(base + 28, rv_jalr(0, 6, 0));
 
     // func1:
     // Conditional branch: triggers 0x0D (EV_BPU_COND_PRED) and 0x0E (EV_BPU_DIR_MISPRED on iter 1)

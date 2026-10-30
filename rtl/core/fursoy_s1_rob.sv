@@ -279,9 +279,13 @@ module fursoy_s1_rob
         (lsu_violation_valid_i && (lsu_violation_rob_idx_i == head_next) &&
          (lsu_violation_rob_epoch_i == entry1.epoch));
 
+    wire head_in_recovery = recovering_q && (head_q == target_tail_q);
+
     // Replay detection at head (Prompt Rule 14, 19: Violation suppresses speculative exception)
-    wire head_has_replay    = entry0.valid && entry0.completed && entry0_mem_violation_eff;
-    wire head_has_exception = entry0.valid && entry0_completed_eff && entry0_exception_eff && !entry0_mem_violation_eff;
+    wire head_has_replay    = (count_q >= 7'd1) && entry0.valid && entry0.completed &&
+                              entry0_mem_violation_eff && !head_in_recovery;
+    wire head_has_exception = (count_q >= 7'd1) && entry0.valid && entry0_completed_eff &&
+                              entry0_exception_eff && !entry0_mem_violation_eff && !head_in_recovery;
 
     assign retire_replay_o    = head_has_replay;
     assign retire_replay_pc_o = entry0.pc;
@@ -514,13 +518,32 @@ module fursoy_s1_rob
                 // clear is_branch so in-order retirement does not double-free the checkpoint ID.
                 entries_q[recover_rob_idx_i].is_branch <= 1'b0;
 
-                if (tail_q == target_tail_comb) begin
-                    // No younger instructions were dispatched after this branch
-                    recovering_q <= 1'b0;
-                    count_q      <= count_q - {5'b0, num_retire};
+                if (recovering_q) begin
+                    // A recovery was already walking; commit the current cycle's squash steps
+                    if (rec_squash_cnt >= 2'd1) begin
+                        entries_q[rec_cand0].valid <= 1'b0;
+                    end
+                    if (rec_squash_cnt >= 2'd2) begin
+                        entries_q[rec_cand1].valid <= 1'b0;
+                    end
+
+                    tail_q  <= next_tail_comb;
+                    count_q <= count_q - {5'b0, num_retire} - {5'b0, rec_squash_cnt};
+
+                    if ((next_tail_comb == target_tail_comb) || (count_q <= ({5'b0, num_retire} + {5'b0, rec_squash_cnt}))) begin
+                        recovering_q <= 1'b0;
+                    end else begin
+                        recovering_q <= 1'b1;
+                    end
                 end else begin
-                    recovering_q <= 1'b1;
-                    count_q      <= count_q - {5'b0, num_retire};
+                    if (tail_q == target_tail_comb) begin
+                        // No younger instructions were dispatched after this branch
+                        recovering_q <= 1'b0;
+                        count_q      <= count_q - {5'b0, num_retire};
+                    end else begin
+                        recovering_q <= 1'b1;
+                        count_q      <= count_q - {5'b0, num_retire};
+                    end
                 end
             end else if (recovering_q) begin
                 // Walking backwards reclaiming squashed entries

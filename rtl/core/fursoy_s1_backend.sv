@@ -944,7 +944,7 @@ module fursoy_s1_backend
     wire p0_is_ctrl = (rf0_uop_q.uop_class == UOP_BRANCH) ||
                       (rf0_uop_q.uop_class == UOP_JAL)    ||
                       (rf0_uop_q.uop_class == UOP_JALR);
-    wire p0_is_sys  = (rf0_uop_q.uop_class == UOP_SYSTEM);
+    wire p0_is_sys  = (rf0_uop_q.uop_class == UOP_SYSTEM) && !rf0_uop_q.exception;
 
     assign p0_sys_valid_o     = rf0_valid_q && p0_is_sys;
     assign p0_sys_subop_o     = rf0_uop_q.sub_op;
@@ -1763,8 +1763,27 @@ module fursoy_s1_backend
     // 7. Lifetime-Gated Branch Recovery Interface (Section 2.4.3)
     // -------------------------------------------------------------------------
     wire flush_active = flush_valid_i || fl_reconstructing_i;
+
+    logic       active_rec_valid_q;
+    rob_idx_t   active_rec_rob_idx_q;
+
+    wire can_recover_older = active_rec_valid_q &&
+        (rob_dist(p0_wb_rob_idx, rob_head_i) < rob_dist(active_rec_rob_idx_q, rob_head_i));
+
     wire recover_fire = p0_wb_valid && p0_wb_mispredict && comp_ack_i[0] &&
-                        !flush_active && !recovering_i;
+                        !flush_active && (!recovering_i || can_recover_older);
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i || flush_valid_i) begin
+            active_rec_valid_q   <= 1'b0;
+            active_rec_rob_idx_q <= '0;
+        end else if (recover_fire) begin
+            active_rec_valid_q   <= 1'b1;
+            active_rec_rob_idx_q <= p0_wb_rob_idx;
+        end else if (!recovering_i) begin
+            active_rec_valid_q   <= 1'b0;
+        end
+    end
 
     assign recover_valid_o           = recover_fire;
     assign recover_rob_idx_o         = p0_wb_rob_idx;
@@ -1831,8 +1850,8 @@ module fursoy_s1_backend
                     $fatal(1, "[BACKEND ASSERTION FAILED] Faulting load wrote PRF!");
                 end
 
-                // 2. Branch recovery must not trigger while older recovery or flush is active
-                if (recover_valid_o && (recovering_i || flush_active)) begin
+                // 2. Branch recovery must not trigger while flush is active or an older recovery is active
+                if (recover_valid_o && (flush_active || (recovering_i && !can_recover_older))) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] Branch recovery fired while recovering_i or flush_active was asserted!");
                 end
 

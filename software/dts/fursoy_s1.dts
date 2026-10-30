@@ -1,0 +1,79 @@
+/dts-v1/;
+
+/ {
+    #address-cells = <2>;
+    #size-cells = <2>;
+    compatible = "fursoy,slice1-soc", "fursoy,fursoy-s1";
+    model = "Fursoy Slice-1 Out-of-Order Server SoC";
+
+    cpus {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        timebase-frequency = <10000000>; // 10 MHz CLINT timebase
+
+        cpu@0 {
+            device_type = "cpu";
+            reg = <0>;
+            status = "okay";
+            compatible = "riscv";
+            riscv,isa = "rv64imafdv_zba_zbb_zicsr_zifencei";
+            mmu-type = "riscv,sv39";
+
+            i-cache-size = <16384>;
+            i-cache-block-size = <64>;
+            i-cache-sets = <64>;
+            d-cache-size = <16384>;
+            d-cache-block-size = <64>;
+            d-cache-sets = <64>;
+
+            cpu0_intc: interrupt-controller {
+                #interrupt-cells = <1>;
+                compatible = "riscv,cpu-intc";
+                interrupt-controller;
+            };
+        };
+    };
+
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x0 0x80000000 0x0 0x10000000>; // 256 MB DRAM (0x8000_0000 - 0x8FFF_FFFF)
+    };
+
+    soc {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        compatible = "simple-bus";
+        ranges;
+
+        clint@2000000 {
+            compatible = "riscv,clint0";
+            reg = <0x0 0x02000000 0x0 0x00010000>;
+            interrupts-extended = <&cpu0_intc 3 &cpu0_intc 7>; // Software (3), Timer (7)
+        };
+
+        plic: interrupt-controller@c000000 {
+            compatible = "riscv,plic0", "sifive,plic-1.0.0";
+            reg = <0x0 0x0C000000 0x0 0x00400000>;
+            #interrupt-cells = <1>;
+            interrupt-controller;
+            riscv,ndev = <31>;
+            interrupts-extended = <&cpu0_intc 11 &cpu0_intc 9>; // M-External (11), S-External (9)
+        };
+
+        serial@10000000 {
+            compatible = "ns16550a";
+            reg = <0x0 0x10000000 0x0 0x00001000>;
+            interrupt-parent = <&plic>;
+            interrupts = <1>;
+            clock-frequency = <10000000>;
+            current-speed = <115200>;
+            reg-shift = <2>;
+            reg-io-width = <4>;
+        };
+    };
+
+    chosen {
+        bootargs = "earlycon=uart8250,mmio32,0x10000000 console=ttyS0,115200 root=/dev/ram0 rw init=/init rdinit=/init";
+        stdout-path = "/soc/serial@10000000:115200n8";
+    };
+};

@@ -1587,6 +1587,7 @@ module fursoy_s1_core
         .mret_target_i           (eff_mret_target),
 
         .recover_valid_i         (int_recover_valid),
+        .recover_rob_idx_i       (int_recover_rob_idx),
         .recover_chkpt_id_i      (int_recover_chkpt_id),
         .recover_actual_taken_i  (int_recover_actual_taken),
         .recover_target_i        (int_recover_target),

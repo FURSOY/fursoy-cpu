@@ -208,7 +208,8 @@ module fursoy_s1_int_iq
     wire alloc1_fire = uop1_valid_i && uop1_for_intiq && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
 
     // Port Mask Generation for Dispatch Uops
-    function automatic logic [1:0] get_port_mask(input uop_class_t uclass);
+    function automatic logic [1:0] get_port_mask(input uop_class_t uclass, input logic exception);
+        if (exception) return 2'b01; // Port 0 only (Port 1 cannot report exceptions)
         case (uclass)
             UOP_BRANCH, UOP_JAL, UOP_JALR, UOP_SYSTEM, UOP_FP: return 2'b01; // Port 0 only (including Int2FP)
             UOP_MUL, UOP_DIV:                                   return 2'b10; // Port 1 only
@@ -548,7 +549,7 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot0].is_jalr     <= uop0_is_jalr_i;
                     entries_q[alloc_slot0].br_type     <= uop0_br_type_i;
                     entries_q[alloc_slot0].pre_ghr     <= uop0_pre_ghr_i;
-                    entries_q[alloc_slot0].port_mask   <= get_port_mask(uop0_class_i);
+                    entries_q[alloc_slot0].port_mask   <= get_port_mask(uop0_class_i, uop0_exception_i);
                     entries_q[alloc_slot0].exception   <= uop0_exception_i;
                     entries_q[alloc_slot0].exc_cause   <= uop0_exc_cause_i;
                     entries_q[alloc_slot0].prd_fp      <= uop0_prd_fp_i;
@@ -588,7 +589,7 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot1_eff].is_jalr     <= uop1_is_jalr_i;
                     entries_q[alloc_slot1_eff].br_type     <= uop1_br_type_i;
                     entries_q[alloc_slot1_eff].pre_ghr     <= uop1_pre_ghr_i;
-                    entries_q[alloc_slot1_eff].port_mask   <= get_port_mask(uop1_class_i);
+                    entries_q[alloc_slot1_eff].port_mask   <= get_port_mask(uop1_class_i, uop1_exception_i);
                     entries_q[alloc_slot1_eff].exception   <= uop1_exception_i;
                     entries_q[alloc_slot1_eff].exc_cause   <= uop1_exc_cause_i;
                     entries_q[alloc_slot1_eff].prd_fp      <= uop1_prd_fp_i;

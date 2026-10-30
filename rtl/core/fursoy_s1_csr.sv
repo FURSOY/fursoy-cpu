@@ -835,7 +835,7 @@ module fursoy_s1_csr
                         sys_flush_valid_o     <= 1'b1;
                     end
                 end
-            end else if (irq_candidate_valid && !recovering_i && !reconstructing_i && !retire_replay_i) begin
+            end else if (irq_candidate_valid && !sys_retire_fire && !sys_redirect_valid_o && !sys_flush_valid_o && !recovering_i && !reconstructing_i && !retire_replay_i) begin
                 // Asynchronous interrupt delivery at instruction boundary
                 if (irq_candidate_priv == 2'b01) begin
                     sepc_q   <= captured_pc;

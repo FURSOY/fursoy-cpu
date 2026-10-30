@@ -401,8 +401,19 @@ module fursoy_s1_l1d
     logic [511:0]refill_data_q;
     /* verilator lint_on UNUSEDSIGNAL */
 
+    // DRAM Refill Response Buffer (absorbs back-to-back DRAM responses)
+    typedef struct packed {
+        mshr_idx_t    tag;
+        logic [511:0] data;
+    } refill_rsp_entry_t;
+
+    refill_rsp_entry_t rsp_fifo_q [MSHR_DEPTH];
+    logic [1:0] rsp_fifo_head_q;
+    logic [1:0] rsp_fifo_tail_q;
+    logic [2:0] rsp_fifo_count_q;
+
     wire refill_arriving = bus_rd_rsp_valid_i && mshr_q[bus_rd_rsp_tag_i].valid;
-    wire cache_busy_refill = refill_arriving || refill_busy_q;
+    wire cache_busy_refill = (rsp_fifo_count_q != 3'd0) || refill_arriving || refill_busy_q;
 
     // Multi-MSHR Concurrent Waiter Drain Engine
     logic [1:0] drain_mshr_idx;
@@ -882,6 +893,7 @@ module fursoy_s1_l1d
 
     // Quiescence Diagnostics
     assign l1d_quiescent_o = (mshr_free_count == 3'd4) && (wbb_free_count == 2'd2) &&
+                             (rsp_fifo_count_q == 3'd0) &&
                              !drain_found && !bus_wr_inflight_q && !refill_busy_q;
 
     // =========================================================================
@@ -923,6 +935,9 @@ module fursoy_s1_l1d
             refill_busy_q          <= 1'b0;
             refill_tag_q           <= 2'd0;
             refill_data_q          <= 512'd0;
+            rsp_fifo_head_q        <= 2'd0;
+            rsp_fifo_tail_q        <= 2'd0;
+            rsp_fifo_count_q       <= 3'd0;
             p3_bank_stall_q        <= 1'b0;
         end else begin
             // -----------------------------------------------------------------
@@ -1028,28 +1043,60 @@ module fursoy_s1_l1d
             // -----------------------------------------------------------------
             // 5. 2-Cycle Multi-Beat Refill Sequence (§6.3, P0-1, PROP_M7_16, PROP_M7_34)
             // -----------------------------------------------------------------
-            if (refill_arriving) begin
-                // Beat 0 (Cycle 1): Write lower 256 bits across Banks 0..3 (PA[5] == 0)
-                mshr_idx_t m_idx;
-                logic [5:0] set_i;
-                logic [1:0] rep_way;
+            if (!refill_busy_q) begin
+                if (rsp_fifo_count_q != 3'd0) begin
+                    // Consume head of response FIFO
+                    mshr_idx_t m_idx;
+                    logic [5:0] set_i;
+                    logic [1:0] rep_way;
+                    logic [511:0] rsp_data;
 
-                m_idx   = bus_rd_rsp_tag_i;
-                set_i   = mshr_q[m_idx].line_addr[5:0];
-                rep_way = mshr_q[m_idx].victim_way;
+                    m_idx    = rsp_fifo_q[rsp_fifo_head_q].tag;
+                    rsp_data = rsp_fifo_q[rsp_fifo_head_q].data;
+                    set_i    = mshr_q[m_idx].line_addr[5:0];
+                    rep_way  = mshr_q[m_idx].victim_way;
 
-                bank_data[0][set_i][rep_way][0] <= bus_rd_rsp_data_i[63:0];   // DW0
-                bank_data[1][set_i][rep_way][0] <= bus_rd_rsp_data_i[127:64]; // DW1
-                bank_data[2][set_i][rep_way][0] <= bus_rd_rsp_data_i[191:128];// DW2
-                bank_data[3][set_i][rep_way][0] <= bus_rd_rsp_data_i[255:192];// DW3
+                    bank_data[0][set_i][rep_way][0] <= rsp_data[63:0];   // DW0
+                    bank_data[1][set_i][rep_way][0] <= rsp_data[127:64]; // DW1
+                    bank_data[2][set_i][rep_way][0] <= rsp_data[191:128];// DW2
+                    bank_data[3][set_i][rep_way][0] <= rsp_data[255:192];// DW3
 
-                refill_busy_q <= 1'b1;
-                refill_tag_q  <= m_idx;
-                refill_data_q <= bus_rd_rsp_data_i;
+                    refill_busy_q <= 1'b1;
+                    refill_tag_q  <= m_idx;
+                    refill_data_q <= rsp_data;
 
-                // Capture line data into MSHR storage for waiter draining
-                mshr_q[m_idx].victim_data <= bus_rd_rsp_data_i;
-            end else if (refill_busy_q) begin
+                    mshr_q[m_idx].victim_data <= rsp_data;
+
+                    rsp_fifo_head_q <= rsp_fifo_head_q + 2'd1;
+
+                    if (refill_arriving) begin
+                        rsp_fifo_q[rsp_fifo_tail_q] <= '{tag: bus_rd_rsp_tag_i, data: bus_rd_rsp_data_i};
+                        rsp_fifo_tail_q <= rsp_fifo_tail_q + 2'd1;
+                    end else begin
+                        rsp_fifo_count_q <= rsp_fifo_count_q - 3'd1;
+                    end
+                end else if (refill_arriving) begin
+                    // Bypass FIFO directly into Beat 0
+                    mshr_idx_t m_idx;
+                    logic [5:0] set_i;
+                    logic [1:0] rep_way;
+
+                    m_idx   = bus_rd_rsp_tag_i;
+                    set_i   = mshr_q[m_idx].line_addr[5:0];
+                    rep_way = mshr_q[m_idx].victim_way;
+
+                    bank_data[0][set_i][rep_way][0] <= bus_rd_rsp_data_i[63:0];   // DW0
+                    bank_data[1][set_i][rep_way][0] <= bus_rd_rsp_data_i[127:64]; // DW1
+                    bank_data[2][set_i][rep_way][0] <= bus_rd_rsp_data_i[191:128];// DW2
+                    bank_data[3][set_i][rep_way][0] <= bus_rd_rsp_data_i[255:192];// DW3
+
+                    refill_busy_q <= 1'b1;
+                    refill_tag_q  <= m_idx;
+                    refill_data_q <= bus_rd_rsp_data_i;
+
+                    mshr_q[m_idx].victim_data <= bus_rd_rsp_data_i;
+                end
+            end else begin
                 // Beat 1 (Cycle 2): Write upper 256 bits across Banks 0..3 (PA[5] == 1), update tags
                 logic [5:0] set_i;
                 logic [43:0] tag_i;
@@ -1079,6 +1126,13 @@ module fursoy_s1_l1d
                 end else begin
                     mshr_q[refill_tag_q].valid <= 1'b0;
                     mshr_q[refill_tag_q].state <= MSHR_IDLE;
+                end
+
+                // If a new response arrives during Beat 1, push into FIFO
+                if (refill_arriving) begin
+                    rsp_fifo_q[rsp_fifo_tail_q] <= '{tag: bus_rd_rsp_tag_i, data: bus_rd_rsp_data_i};
+                    rsp_fifo_tail_q  <= rsp_fifo_tail_q + 2'd1;
+                    rsp_fifo_count_q <= rsp_fifo_count_q + 3'd1;
                 end
             end
 
