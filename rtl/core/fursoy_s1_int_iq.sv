@@ -201,10 +201,12 @@ module fursoy_s1_int_iq
         end
     end
 
-    wire [3:0] alloc_slot1_eff = uop0_for_intiq ? alloc_slot1 : alloc_slot0;
-    wire       slot1_found_eff = uop0_for_intiq ? slot1_found : slot0_found;
+    wire uop0_v_intiq = uop0_valid_i && uop0_for_intiq;
 
-    wire alloc0_fire = uop0_valid_i && uop0_for_intiq && rename_ack_i[0] && !flush_valid_i && slot0_found;
+    wire [3:0] alloc_slot1_eff = uop0_v_intiq ? alloc_slot1 : alloc_slot0;
+    wire       slot1_found_eff = uop0_v_intiq ? slot1_found : slot0_found;
+
+    wire alloc0_fire = uop0_v_intiq && rename_ack_i[0] && !flush_valid_i && slot0_found;
     wire alloc1_fire = uop1_valid_i && uop1_for_intiq && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
 
     // Port Mask Generation for Dispatch Uops

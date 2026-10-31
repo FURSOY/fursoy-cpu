@@ -112,6 +112,7 @@ module fursoy_s1_lsu_queues
     output rob_idx_t          dtlb_miss_rob_idx_o,
     output rob_epoch_t        dtlb_miss_rob_epoch_o,
     input  tr_id_t            trt_assigned_tr_id_i,
+    input  logic              trt_alloc_ready_i,
 
     // -------------------------------------------------------------------------
     // Port 3 AGU Address Generation Delivery Interface (Loads Strictly)
@@ -132,15 +133,20 @@ module fursoy_s1_lsu_queues
     input  logic [55:0]       dtlb1_pa_i,
     input  logic              dtlb1_page_fault_i,
     input  logic              dtlb1_access_fault_i,
+    output logic              port2_busy_o,
     output logic              port3_busy_o,
 
     // Translation Delivery from TRT (Asynchronous PTW Response)
     input  logic              trt_delivery_valid_i,
     input  logic              trt_delivery_is_store_i,
     input  logic [3:0]        trt_delivery_q_idx_i,
+    /* verilator lint_off UNUSEDSIGNAL */
     input  logic [55:0]       trt_delivery_pa_i,
+    /* verilator lint_on UNUSEDSIGNAL */
     input  logic              trt_delivery_page_fault_i,
     input  logic              trt_delivery_access_fault_i,
+    input  rob_idx_t          trt_delivery_rob_idx_i,
+    input  rob_epoch_t        trt_delivery_rob_epoch_i,
 
     // -------------------------------------------------------------------------
     // Asynchronous Store Data Capture (PRF Read Port 5 & WB Snoop)
@@ -213,9 +219,9 @@ module fursoy_s1_lsu_queues
     input  lq_idx_t           mshr_refill_lq_idx_i,
     /* verilator lint_off UNUSEDSIGNAL */
     input  preg_t             mshr_refill_pnew_i,
+    /* verilator lint_on UNUSEDSIGNAL */
     input  rob_idx_t          mshr_refill_rob_idx_i,
     input  rob_epoch_t        mshr_refill_rob_epoch_i,
-    /* verilator lint_on UNUSEDSIGNAL */
     input  logic [63:0]       mshr_refill_data_i,
 
     // Committed Store Drain to L1D
@@ -333,26 +339,64 @@ module fursoy_s1_lsu_queues
     logic [55:0] res_pa_q;
     mem_size_t   res_size_q;
 
-    // Milestone 5 Phase B1: Pipelined Store Resolution CAM & Violation Tracking
+    // Milestone 5 Phase B1: Dual-Channel Store Resolution CAM & Violation Tracking
     /* verilator lint_off UNUSEDSIGNAL */
-    logic        m1_hold_valid_q;
-    sq_idx_t     m1_hold_sq_idx_q;
-    logic [55:0] m1_hold_pa_q;
-    logic [7:0]  m1_hold_mask_q;
-    rob_idx_t    m1_hold_rob_idx_q;
-    rob_epoch_t  m1_hold_rob_epoch_q;
-
     logic        m2_valid_q;
     sq_idx_t     m2_sq_idx_q;
     logic [55:0] m2_pa_q;
     logic [7:0]  m2_mask_q;
     rob_idx_t    m2_rob_idx_q;
     rob_epoch_t  m2_rob_epoch_q;
+
+    logic        m2_trt_valid_q;
+    sq_idx_t     m2_trt_sq_idx_q;
+    logic [55:0] m2_trt_pa_q;
+    logic [7:0]  m2_trt_mask_q;
+    rob_idx_t    m2_trt_rob_idx_q;
+    rob_epoch_t  m2_trt_rob_epoch_q;
     /* verilator lint_on UNUSEDSIGNAL */
 
     logic        m3_viol_valid_q;
     rob_idx_t    m3_viol_rob_idx_q;
     rob_epoch_t  m3_viol_rob_epoch_q;
+
+    // Architectural RV64A Indivisible Read-Modify-Write AMO Engine
+    typedef enum logic [1:0] {
+        AMO_IDLE        = 2'd0,
+        AMO_WAIT_REFILL = 2'd1,
+        AMO_READY_COMP  = 2'd2
+    } amo_state_t;
+
+    amo_state_t  amo_state_q;
+    logic [63:0] amo_old_val_q;
+
+    function automatic logic [63:0] compute_amo_new_val(
+        input uop_subop_t  sub_op,
+        input logic [63:0] old_val,
+        input logic [63:0] rs2_val
+    );
+        case (sub_op)
+            AMO_SWAP_W: return {32'd0, rs2_val[31:0]};
+            AMO_SWAP_D: return rs2_val;
+            AMO_ADD_W:  return {32'd0, old_val[31:0] + rs2_val[31:0]};
+            AMO_ADD_D:  return old_val + rs2_val;
+            AMO_XOR_W:  return {32'd0, old_val[31:0] ^ rs2_val[31:0]};
+            AMO_XOR_D:  return old_val ^ rs2_val;
+            AMO_AND_W:  return {32'd0, old_val[31:0] & rs2_val[31:0]};
+            AMO_AND_D:  return old_val & rs2_val;
+            AMO_OR_W:   return {32'd0, old_val[31:0] | rs2_val[31:0]};
+            AMO_OR_D:   return old_val | rs2_val;
+            AMO_MIN_W:  return ($signed(old_val[31:0]) < $signed(rs2_val[31:0])) ? {32'd0, old_val[31:0]} : {32'd0, rs2_val[31:0]};
+            AMO_MIN_D:  return ($signed(old_val) < $signed(rs2_val)) ? old_val : rs2_val;
+            AMO_MAX_W:  return ($signed(old_val[31:0]) > $signed(rs2_val[31:0])) ? {32'd0, old_val[31:0]} : {32'd0, rs2_val[31:0]};
+            AMO_MAX_D:  return ($signed(old_val) > $signed(rs2_val)) ? old_val : rs2_val;
+            AMO_MINU_W: return (old_val[31:0] < rs2_val[31:0]) ? {32'd0, old_val[31:0]} : {32'd0, rs2_val[31:0]};
+            AMO_MINU_D: return (old_val < rs2_val) ? old_val : rs2_val;
+            AMO_MAXU_W: return (old_val[31:0] > rs2_val[31:0]) ? {32'd0, old_val[31:0]} : {32'd0, rs2_val[31:0]};
+            AMO_MAXU_D: return (old_val > rs2_val) ? old_val : rs2_val;
+            default:    return rs2_val;
+        endcase
+    endfunction
 
     // Milestone 7 Dual-AGU: Port 3 DTLB Miss Retry Tracking
     logic        p3_dtlb_retry_q;
@@ -362,7 +406,8 @@ module fursoy_s1_lsu_queues
     logic [7:0]  p3_retry_byte_mask_q;
     /* verilator lint_on UNUSEDSIGNAL */
 
-    assign port3_busy_o = p3_dtlb_retry_q;
+    assign port2_busy_o = p3_dtlb_retry_q || !trt_alloc_ready_i;
+    assign port3_busy_o = p3_dtlb_retry_q || !trt_alloc_ready_i;
 
     // External Coherence Snoop Hazard Evaluation (§8.3, PROP_M7_36)
     wire snoop_do_inv = (snoop_req_type_i[0] == 1'b1) || (snoop_req_type_i == 2'b00);
@@ -471,15 +516,18 @@ module fursoy_s1_lsu_queues
     wire uop1_is_load  = (uop1_class_i == UOP_LOAD);
     wire uop1_is_store = (uop1_class_i == UOP_STORE) || (uop1_class_i == UOP_AMO) || (uop1_class_i == UOP_FENCE);
 
-    wire lq_alloc0_fire = uop0_valid_i && uop0_is_load && rename_ack_i[0] && !flush_valid_i && !recover_valid_i && lq_s0_found;
-    wire lq_alloc1_fire = uop1_valid_i && uop1_is_load && rename_ack_i[1] && !flush_valid_i && !recover_valid_i &&
-                          (uop0_is_load ? lq_s1_found : lq_s0_found);
-    wire [3:0] lq_target_slot1 = uop0_is_load ? lq_slot1 : lq_slot0;
+    wire uop0_v_load   = uop0_valid_i && uop0_is_load;
+    wire uop0_v_store  = uop0_valid_i && uop0_is_store;
 
-    wire sq_alloc0_fire = uop0_valid_i && uop0_is_store && rename_ack_i[0] && !flush_valid_i && !recover_valid_i && sq_s0_found;
+    wire lq_alloc0_fire = uop0_v_load && rename_ack_i[0] && !flush_valid_i && !recover_valid_i && lq_s0_found;
+    wire lq_alloc1_fire = uop1_valid_i && uop1_is_load && rename_ack_i[1] && !flush_valid_i && !recover_valid_i &&
+                          (uop0_v_load ? lq_s1_found : lq_s0_found);
+    wire [3:0] lq_target_slot1 = uop0_v_load ? lq_slot1 : lq_slot0;
+
+    wire sq_alloc0_fire = uop0_v_store && rename_ack_i[0] && !flush_valid_i && !recover_valid_i && sq_s0_found;
     wire sq_alloc1_fire = uop1_valid_i && uop1_is_store && rename_ack_i[1] && !flush_valid_i && !recover_valid_i &&
-                          (uop0_is_store ? sq_s1_found : sq_s0_found);
-    wire [3:0] sq_target_slot1 = uop0_is_store ? sq_slot1 : sq_slot0;
+                          (uop0_v_store ? sq_s1_found : sq_s0_found);
+    wire [3:0] sq_target_slot1 = uop0_v_store ? sq_slot1 : sq_slot0;
 
     // =========================================================================
     // 2. Structurally Safe SQ Age Tracking Snapshot (Section 5.1)
@@ -588,12 +636,14 @@ module fursoy_s1_lsu_queues
     logic [15:0] overlap_mask_l;
     logic [7:0]  l_mask_l;
     logic        cand_fwd_stall_l;
+    /* verilator lint_off UNUSEDSIGNAL */
     logic        youngest_found_l;
-    logic [5:0]  min_s_dist_l;
+    /* verilator lint_on UNUSEDSIGNAL */
     logic [3:0]  youngest_s_l;
+    logic [3:0]  s_idx;
     logic        same_word_s;
     logic        has_overlap_s;
-    logic [5:0]  s_dist_val;
+    logic        l_squashed_l;
     logic [5:0]  l_dist_head;
     logic [63:0] raw_fwd_val;
 
@@ -605,11 +655,11 @@ module fursoy_s1_lsu_queues
         l_mask_l                = 8'd0;
         cand_fwd_stall_l        = 1'b0;
         youngest_found_l        = 1'b0;
-        min_s_dist_l            = 6'd63;
         youngest_s_l            = 4'd0;
+        s_idx                   = 4'd0;
         same_word_s             = 1'b0;
         has_overlap_s           = 1'b0;
-        s_dist_val              = 6'd0;
+        l_squashed_l            = 1'b0;
         raw_fwd_val             = 64'd0;
 
         for (int l = 0; l < LQ_DEPTH; l++) begin
@@ -627,19 +677,19 @@ module fursoy_s1_lsu_queues
             overlap_mask_l          = 16'd0;
             cand_fwd_stall_l        = 1'b0;
             youngest_found_l        = 1'b0;
-            min_s_dist_l            = 6'd63;
             youngest_s_l            = 4'd0;
             l_mask_l                = get_byte_lane_mask(lq_q[l].pa[2:0], lq_q[l].size);
             same_word_s             = 1'b0;
             has_overlap_s           = 1'b0;
-            s_dist_val              = 6'd0;
+            l_squashed_l            = flush_valid_i ||
+                                      (recover_valid_i && (rob_dist(lq_q[l].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)));
 
-            if (lq_q[l].valid && lq_q[l].pa_valid && !lq_q[l].completed && !lq_q[l].issued_to_l1d && !lq_q[l].align_fault) begin
+            if (lq_q[l].valid && !l_squashed_l && lq_q[l].pa_valid && !lq_q[l].completed && !lq_q[l].issued_to_l1d && !lq_q[l].align_fault) begin
                 for (int s = 0; s < SQ_DEPTH; s++) begin
-                    if (lq_q[l].sq_older_mask[s]) begin
+                    if (lq_q[l].sq_older_mask[s] && sq_q[s].valid && !sq_q[s].drained) begin
                         if (sq_q[s].is_sc && sq_q[s].completed && !sq_q[s].sc_success) begin
                             // Failed SC: ignore
-                        end else if (sq_q[s].is_fence) begin
+                        end else if (sq_q[s].is_fence || (sq_q[s].is_amo && !sq_q[s].completed)) begin
                             has_older_fence_l    = 1'b1;
                             all_older_pa_valid_l = 1'b0;
                         end else if (!sq_q[s].pa_valid) begin
@@ -658,7 +708,7 @@ module fursoy_s1_lsu_queues
                     lq_entry_is_speculative[l] = !all_older_pa_valid_l;
 
                     for (int s = 0; s < SQ_DEPTH; s++) begin
-                        if (lq_q[l].sq_older_mask[s] && sq_q[s].pa_valid) begin
+                        if (lq_q[l].sq_older_mask[s] && sq_q[s].valid && !sq_q[s].drained && sq_q[s].pa_valid) begin
                             same_word_s   = (sq_q[s].pa[55:3] == lq_q[l].pa[55:3]);
                             has_overlap_s = same_word_s && ((sq_q[s].mask & l_mask_l) != 8'b0);
                             if (has_overlap_s) begin
@@ -681,14 +731,13 @@ module fursoy_s1_lsu_queues
                         lq_entry_fwd_success[l] = 1'b0;
                         lq_entry_fwd_data[l]    = 64'd0;
                     end else begin
-                        for (int s = 0; s < SQ_DEPTH; s++) begin
-                            if (overlap_mask_l[s]) begin
-                                s_dist_val = rob_dist(lq_q[l].rob_idx, sq_q[s].rob_idx);
-                                if (!youngest_found_l || (s_dist_val < min_s_dist_l)) begin
-                                    min_s_dist_l     = s_dist_val;
-                                    youngest_s_l     = 4'(s);
-                                    youngest_found_l = 1'b1;
-                                end
+                        // FIFO-order scan from sq_drain_head_q (oldest) to sq_drain_head_q + 15 (youngest):
+                        // 100% immune to ROB wraparound on already-committed undrained SQ entries.
+                        for (int unsigned k = 0; k < SQ_DEPTH; k++) begin
+                            s_idx = 4'(sq_drain_head_q + 4'(k));
+                            if (overlap_mask_l[s_idx]) begin
+                                youngest_s_l     = s_idx;
+                                youngest_found_l = 1'b1;
                             end
                         end
                         lq_entry_youngest_s[l] = youngest_s_l;
@@ -755,12 +804,21 @@ module fursoy_s1_lsu_queues
         end
     end
 
-    // Lane 0 & Lane 1 Issue Fires
-    wire fwd0_issue_fire = has_cand0 && lq_entry_fwd_success[cand_slot0];
-    wire l1d0_issue_fire = has_cand0 && !lq_entry_fwd_success[cand_slot0] && l1d_load0_req_ready_i;
+    // Non-speculative Indivisible AMO Read Trigger at ROB & SQ Head
+    wire amo_cand_ready = (amo_state_q == AMO_IDLE) && !flush_valid_i && !recover_valid_i &&
+                          sq_q[sq_drain_head_q].valid && !sq_q[sq_drain_head_q].committed &&
+                          !sq_q[sq_drain_head_q].completed && !sq_q[sq_drain_head_q].exception_pending &&
+                          sq_q[sq_drain_head_q].is_amo && !sq_q[sq_drain_head_q].is_mmio &&
+                          sq_q[sq_drain_head_q].pa_valid && sq_q[sq_drain_head_q].data_valid &&
+                          (sq_q[sq_drain_head_q].rob_idx == rob_head_i) && l1d_quiescent_i;
+    wire amo_l1d_override = amo_cand_ready || (amo_state_q != AMO_IDLE);
 
-    wire fwd1_issue_fire = has_cand1 && lq_entry_fwd_success[cand_slot1];
-    wire l1d1_issue_fire = has_cand1 && !lq_entry_fwd_success[cand_slot1] && l1d_load1_req_ready_i;
+    // Lane 0 & Lane 1 Issue Fires
+    wire fwd0_issue_fire = !amo_l1d_override && has_cand0 && lq_entry_fwd_success[cand_slot0];
+    wire l1d0_issue_fire = !amo_l1d_override && has_cand0 && !lq_entry_fwd_success[cand_slot0] && l1d_load0_req_ready_i;
+
+    wire fwd1_issue_fire = !amo_l1d_override && has_cand1 && lq_entry_fwd_success[cand_slot1];
+    wire l1d1_issue_fire = !amo_l1d_override && has_cand1 && !lq_entry_fwd_success[cand_slot1] && l1d_load1_req_ready_i;
 
     assign event_load_fwd_exact_o   = fwd0_issue_fire || fwd1_issue_fire;
     assign event_load_fwd_partial_o = (|lq_entry_fwd_stall);
@@ -777,24 +835,24 @@ module fursoy_s1_lsu_queues
             end
         end
         for (int s = 0; s < SQ_DEPTH; s++) begin
-            if (sq_q[s].valid && !sq_q[s].completed && (sq_q[s].rob_idx == rob_head_i)) begin
+            if (sq_q[s].valid && !sq_q[s].committed && !sq_q[s].completed && (sq_q[s].rob_idx == rob_head_i)) begin
                 rob_head_is_mem_stall_o = 1'b1;
             end
         end
     end
 
-    // Speculative Load Issue to L1D (Port 0 / Lane 0)
-    assign l1d_load0_req_valid_o    = has_cand0 && !lq_entry_fwd_success[cand_slot0];
-    assign l1d_load0_req_lq_idx_o   = cand_slot0;
-    assign l1d_load0_req_pa_o       = lq_q[cand_slot0].pa;
-    assign l1d_load0_req_size_o     = lq_q[cand_slot0].size;
-    assign l1d_load0_req_sign_ext_o = lq_q[cand_slot0].sign_ext;
-    assign l1d_load0_req_pnew_o     = lq_q[cand_slot0].pnew;
-    assign l1d_load0_req_rob_idx_o  = lq_q[cand_slot0].rob_idx;
-    assign l1d_load0_req_rob_epoch_o= lq_q[cand_slot0].rob_epoch;
+    // Speculative Load Issue / Non-Speculative AMO Read Issue to L1D (Port 0 / Lane 0)
+    assign l1d_load0_req_valid_o    = amo_cand_ready ? 1'b1 : (!amo_l1d_override && has_cand0 && !lq_entry_fwd_success[cand_slot0]);
+    assign l1d_load0_req_lq_idx_o   = amo_cand_ready ? 4'd0 : cand_slot0;
+    assign l1d_load0_req_pa_o       = amo_cand_ready ? sq_q[sq_drain_head_q].pa : lq_q[cand_slot0].pa;
+    assign l1d_load0_req_size_o     = amo_cand_ready ? sq_q[sq_drain_head_q].size : lq_q[cand_slot0].size;
+    assign l1d_load0_req_sign_ext_o = amo_cand_ready ? 1'b1 : lq_q[cand_slot0].sign_ext;
+    assign l1d_load0_req_pnew_o     = amo_cand_ready ? sq_q[sq_drain_head_q].pnew : lq_q[cand_slot0].pnew;
+    assign l1d_load0_req_rob_idx_o  = amo_cand_ready ? sq_q[sq_drain_head_q].rob_idx : lq_q[cand_slot0].rob_idx;
+    assign l1d_load0_req_rob_epoch_o= amo_cand_ready ? sq_q[sq_drain_head_q].rob_epoch : lq_q[cand_slot0].rob_epoch;
 
     // Speculative Load Issue to L1D (Port 1 / Lane 1)
-    assign l1d_load1_req_valid_o    = has_cand1 && !lq_entry_fwd_success[cand_slot1];
+    assign l1d_load1_req_valid_o    = !amo_l1d_override && has_cand1 && !lq_entry_fwd_success[cand_slot1];
     assign l1d_load1_req_lq_idx_o   = cand_slot1;
     assign l1d_load1_req_pa_o       = lq_q[cand_slot1].pa;
     assign l1d_load1_req_size_o     = lq_q[cand_slot1].size;
@@ -815,9 +873,11 @@ module fursoy_s1_lsu_queues
     assign l1d_store_drain_sq_idx_o = sq_drain_head_q;
     assign l1d_store_drain_pa_o     = sq_q[sq_drain_head_q].pa;
     assign l1d_store_drain_mask_o   = sq_q[sq_drain_head_q].mask;
-    assign l1d_store_drain_data_o   = sq_q[sq_drain_head_q].is_amo ?
-        (sq_q[sq_drain_head_q].data + 64'd100) :
-        format_store_payload(sq_q[sq_drain_head_q].data, sq_q[sq_drain_head_q].va[2:0], sq_q[sq_drain_head_q].size);
+    assign l1d_store_drain_data_o   = format_store_payload(
+        sq_q[sq_drain_head_q].data,
+        sq_q[sq_drain_head_q].va[2:0],
+        sq_q[sq_drain_head_q].size
+    );
 
     // Combinational Matching for In-Order Store Retirement
     logic [3:0] retire0_sq_slot, retire1_sq_slot;
@@ -907,12 +967,12 @@ module fursoy_s1_lsu_queues
             if (lq_q[head0_lq_idx].sq_unresolved_mask != 16'd0) begin
                 lsu_retire0_allow_o = 1'b0;
             end
-            // 3. No store check targeting this load currently in Stage M2 CAM
+            // 3. No store check targeting this load currently in Stage M2 AGU CAM
             if (m2_valid_q && lq_q[head0_lq_idx].sq_unresolved_mask[m2_sq_idx_q]) begin
                 lsu_retire0_allow_o = 1'b0;
             end
-            // 4. No store check targeting this load currently in Stage M1 hold
-            if (m1_hold_valid_q && lq_q[head0_lq_idx].sq_unresolved_mask[m1_hold_sq_idx_q]) begin
+            // 4. No store check targeting this load currently in Stage M2 TRT CAM
+            if (m2_trt_valid_q && lq_q[head0_lq_idx].sq_unresolved_mask[m2_trt_sq_idx_q]) begin
                 lsu_retire0_allow_o = 1'b0;
             end
             // 5. No violation targeting this load currently in flight in Stage M3 or from snoop
@@ -955,12 +1015,12 @@ module fursoy_s1_lsu_queues
             if (lq_q[head1_lq_idx].sq_unresolved_mask != 16'd0) begin
                 lsu_retire1_allow_o = 1'b0;
             end
-            // 3. No store check targeting this load currently in Stage M2 CAM
+            // 3. No store check targeting this load currently in Stage M2 AGU CAM
             if (m2_valid_q && lq_q[head1_lq_idx].sq_unresolved_mask[m2_sq_idx_q]) begin
                 lsu_retire1_allow_o = 1'b0;
             end
-            // 4. No store check targeting this load currently in Stage M1 hold
-            if (m1_hold_valid_q && lq_q[head1_lq_idx].sq_unresolved_mask[m1_hold_sq_idx_q]) begin
+            // 4. No store check targeting this load currently in Stage M2 TRT CAM
+            if (m2_trt_valid_q && lq_q[head1_lq_idx].sq_unresolved_mask[m2_trt_sq_idx_q]) begin
                 lsu_retire1_allow_o = 1'b0;
             end
             // 5. No violation targeting this load currently in flight in Stage M3 or from snoop
@@ -978,7 +1038,6 @@ module fursoy_s1_lsu_queues
 
     wire store0_retiring = retire_valid_i[0] && retire0_sq_found && !sq_q[retire0_sq_slot].is_sc && !sq_q[retire0_sq_slot].is_fence;
     wire store1_retiring = retire_valid_i[1] && retire1_sq_found && !sq_q[retire1_sq_slot].is_sc && !sq_q[retire1_sq_slot].is_fence;
-    wire store_draining  = l1d_store_drain_valid_o && !sq_q[sq_drain_head_q].is_sc && !sq_q[sq_drain_head_q].is_fence;
 
     // =========================================================================
     // 5. Port 2 & Port 3 Completion Arbiters (Dual Completion)
@@ -1036,8 +1095,8 @@ module fursoy_s1_lsu_queues
             if (lq_q[l].valid && (lq_q[l].align_fault || lq_q[l].page_fault || lq_q[l].access_fault) && !lq_q[l].completed) begin
                 lq_ready_comp[l] = 1'b1;
                 lq_comp_exc[l]   = 1'b1;
-                lq_comp_cause[l] = lq_q[l].align_fault ? 5'd4 : (lq_q[l].page_fault ? 5'd15 : 5'd5);
-                lq_comp_data[l]  = 64'd0;
+                lq_comp_cause[l] = lq_q[l].align_fault ? 5'd4 : (lq_q[l].page_fault ? 5'd13 : 5'd5);
+                lq_comp_data[l]  = lq_q[l].va;
             end else if (fwd0_issue_fire && (4'(l) == cand_slot0)) begin
                 lq_ready_comp[l] = 1'b1;
                 lq_comp_data[l]  = lq_entry_fwd_data[cand_slot0];
@@ -1095,7 +1154,6 @@ module fursoy_s1_lsu_queues
     logic [63:0] store_data;
     logic        store_sc_ok;
     logic [5:0]  comp_s_dist;
-    logic        has_conflict;
     logic        sc_ok_val;
 
     always_comb begin
@@ -1108,11 +1166,10 @@ module fursoy_s1_lsu_queues
         store_data      = 64'd0;
         store_sc_ok     = 1'b0;
         comp_s_dist     = '0;
-        has_conflict    = 1'b0;
         sc_ok_val       = 1'b0;
 
         for (int s = 0; s < SQ_DEPTH; s++) begin
-            if (sq_q[s].valid) begin
+            if (sq_q[s].valid && !sq_q[s].committed) begin
                 comp_s_dist = rob_dist(sq_q[s].rob_idx, rob_head_i);
                 if (sq_q[s].exception_pending && !sq_q[s].completed) begin
                     if (!has_store || (comp_s_dist < dist_store)) begin
@@ -1128,21 +1185,13 @@ module fursoy_s1_lsu_queues
                 end else if (sq_q[s].pa_valid && sq_q[s].data_valid && !sq_q[s].exception_pending && !sq_q[s].completed) begin
                     if (sq_q[s].is_fence && ((sq_drain_head_q != 4'(s)) || !l1d_quiescent_i)) continue;
                     if (sq_q[s].is_sc && (sq_q[s].rob_idx != rob_head_i)) continue;
-                    if (sq_q[s].is_amo && ((sq_drain_head_q != 4'(s)) || (sq_q[s].rob_idx != rob_head_i))) continue;
+                    if (sq_q[s].is_amo && ((sq_drain_head_q != 4'(s)) || (sq_q[s].rob_idx != rob_head_i) || (amo_state_q != AMO_READY_COMP))) continue;
                     if (sq_q[s].is_mmio) continue;
 
                     if (!has_store || (comp_s_dist < dist_store)) begin
-                        has_conflict = 1'b0;
-                        sc_ok_val    = 1'b0;
+                        sc_ok_val = 1'b0;
                         if (sq_q[s].is_sc) begin
-                            for (int os = 0; os < SQ_DEPTH; os++) begin
-                                if (sq_q[os].valid && (4'(os) != 4'(s)) && !sq_q[os].is_sc && !sq_q[os].is_fence) begin
-                                    if (rob_dist(sq_q[os].rob_idx, rob_head_i) < rob_dist(sq_q[s].rob_idx, rob_head_i)) begin
-                                        has_conflict = 1'b1;
-                                    end
-                                end
-                            end
-                            sc_ok_val = res_valid_q && !has_conflict &&
+                            sc_ok_val = res_valid_q &&
                                         (res_pa_q == sq_q[s].pa) && (res_size_q == sq_q[s].size);
                         end
 
@@ -1157,7 +1206,7 @@ module fursoy_s1_lsu_queues
                             store_data = sc_ok_val ? 64'd0 : 64'd1;
                         end else if (sq_q[s].is_amo) begin
                             store_preg = sq_q[s].pnew;
-                            store_data = 64'd100;
+                            store_data = amo_old_val_q;
                         end else begin
                             store_preg = 7'd0;
                             store_data = 64'd0;
@@ -1234,7 +1283,7 @@ module fursoy_s1_lsu_queues
                     !lq_q[l].completed && !lq_q[l].align_fault &&
                     !lq_q[l].page_fault && !lq_q[l].access_fault &&
                     (lq_q[l].rob_idx == rob_head_i) &&
-                    (lq_q[l].sq_older_mask == 16'd0) && (sq_drain_head_q == sq_tail_q)) begin
+                    (lq_q[l].sq_older_mask == 16'd0) && sq_empty_o) begin
                     mmio_cand_valid     = 1'b1;
                     mmio_cand_is_store  = 1'b0;
                     mmio_cand_lq_idx    = 4'(l);
@@ -1253,7 +1302,8 @@ module fursoy_s1_lsu_queues
 
             // 2. MMIO Store at ROB head (at drain head, data ready)
             for (int s = 0; s < SQ_DEPTH; s++) begin
-                if (sq_q[s].valid && sq_q[s].is_mmio && sq_q[s].pa_valid && sq_q[s].data_valid &&
+                if (sq_q[s].valid && !sq_q[s].committed && sq_q[s].is_mmio && !sq_q[s].is_amo &&
+                    sq_q[s].pa_valid && sq_q[s].data_valid &&
                     !sq_q[s].completed && !sq_q[s].drained && !sq_q[s].exception_pending &&
                     (sq_q[s].rob_idx == rob_head_i) && (4'(s) == sq_drain_head_q)) begin
                     mmio_cand_valid     = 1'b1;
@@ -1285,8 +1335,8 @@ module fursoy_s1_lsu_queues
             logic [63:0] raw_fmt;
             logic sign_ext;
             case (mmio_subop_q)
-                MEM_LB, MEM_LH, MEM_LW: sign_ext = 1'b1;
-                default:                sign_ext = 1'b0;
+                MEM_LB, MEM_LH, MEM_LW, MEM_LR_W: sign_ext = 1'b1;
+                default:                           sign_ext = 1'b0;
             endcase
             raw_fmt = format_load_result(mmio_rsp_rdata_i, mmio_addr_q[2:0], mem_size_t'(mmio_size_q[1:0]), sign_ext);
             if (mmio_subop_q == MEM_FLW) begin
@@ -1333,7 +1383,7 @@ module fursoy_s1_lsu_queues
             p2_comp_preg      = mmio_pnew_q;
             p2_comp_exception = mmio_rsp_error_i;
             p2_comp_cause     = mmio_is_store_q ? 5'd7 : 5'd5;
-            p2_comp_data      = mmio_formatted_rdata;
+            p2_comp_data      = mmio_rsp_error_i ? mmio_addr_q : mmio_formatted_rdata;
             p2_comp_is_fp     = mmio_is_fp_q;
             p2_comp_prd_fp    = mmio_prd_fp_q;
             p2_clear_lq       = !mmio_is_store_q;
@@ -1349,7 +1399,7 @@ module fursoy_s1_lsu_queues
             p2_comp_preg      = store_preg;
             p2_comp_exception = store_is_exc;
             p2_comp_cause     = store_exc_cause;
-            p2_comp_data      = store_data;
+            p2_comp_data      = store_is_exc ? sq_q[cand_store].va : store_data;
             p2_comp_is_fp     = 1'b0;
             p2_comp_prd_fp    = 6'd0;
             p2_clear_sq       = 1'b1;
@@ -1375,7 +1425,7 @@ module fursoy_s1_lsu_queues
             p2_comp_preg      = store_preg;
             p2_comp_exception = store_is_exc;
             p2_comp_cause     = store_exc_cause;
-            p2_comp_data      = store_data;
+            p2_comp_data      = store_is_exc ? sq_q[cand_store].va : store_data;
             p2_comp_is_fp     = 1'b0;
             p2_comp_prd_fp    = 6'd0;
             p2_clear_sq       = 1'b1;
@@ -1456,6 +1506,100 @@ module fursoy_s1_lsu_queues
 
     // (Retirement matching block moved to section above)
 
+    // TRT Delivery Qualification & Squash Detection
+    wire trt_is_squashed = flush_valid_i || (recover_valid_i && (rob_dist(trt_delivery_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)));
+
+    wire trt_lq_match = trt_delivery_valid_i && !trt_delivery_is_store_i && !trt_is_squashed &&
+                        lq_q[trt_delivery_q_idx_i].valid &&
+                        lq_q[trt_delivery_q_idx_i].wait_translation &&
+                        (lq_q[trt_delivery_q_idx_i].rob_idx == trt_delivery_rob_idx_i) &&
+                        (lq_q[trt_delivery_q_idx_i].rob_epoch == trt_delivery_rob_epoch_i);
+
+    wire trt_sq_match = trt_delivery_valid_i && trt_delivery_is_store_i && !trt_is_squashed &&
+                        sq_q[trt_delivery_q_idx_i].valid && !sq_q[trt_delivery_q_idx_i].committed &&
+                        sq_q[trt_delivery_q_idx_i].wait_translation &&
+                        (sq_q[trt_delivery_q_idx_i].rob_idx == trt_delivery_rob_idx_i) &&
+                        (sq_q[trt_delivery_q_idx_i].rob_epoch == trt_delivery_rob_epoch_i);
+
+    // MSHR Refill Delivery Qualification & Squash Detection
+    wire mshr_refill_squashed = flush_valid_i ||
+        (recover_valid_i && (rob_dist(mshr_refill_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)));
+
+    wire mshr_lq_match = mshr_refill_valid_i && (amo_state_q != AMO_WAIT_REFILL) && !mshr_refill_squashed &&
+                         lq_q[mshr_refill_lq_idx_i].valid &&
+                         lq_q[mshr_refill_lq_idx_i].issued_to_l1d &&
+                         !lq_q[mshr_refill_lq_idx_i].completed &&
+                         (lq_q[mshr_refill_lq_idx_i].rob_idx == mshr_refill_rob_idx_i) &&
+                         (lq_q[mshr_refill_lq_idx_i].rob_epoch == mshr_refill_rob_epoch_i);
+
+    // Combinational M2 Dual-CAM Overlap Detection Logic
+    wire agu_store_squashed = flush_valid_i ||
+        (recover_valid_i && (rob_dist(sq_q[agu_sq_idx_i].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)));
+    wire agu_store_resolve = agu_valid_i && !agu_store_squashed && agu_is_store_i &&
+                             !sq_q[agu_sq_idx_i].is_fence &&
+                             !agu_align_fault_i && dtlb_hit_i && !dtlb_page_fault_i && !dtlb_access_fault_i &&
+                             !(sq_q[agu_sq_idx_i].is_amo && !is_dram_pa(dtlb_pa_i));
+    wire trt_store_resolve = trt_sq_match && !sq_q[trt_delivery_q_idx_i].is_fence &&
+                             !trt_delivery_page_fault_i && !trt_delivery_access_fault_i &&
+                             !(sq_q[trt_delivery_q_idx_i].is_amo && !is_dram_pa({trt_delivery_pa_i[55:12], sq_q[trt_delivery_q_idx_i].va[11:0]}));
+
+    wire m2_agu_active = m2_valid_q && !flush_valid_i &&
+        !(recover_valid_i && (rob_dist(m2_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)));
+    wire m2_trt_active = m2_trt_valid_q && !flush_valid_i &&
+        !(recover_valid_i && (rob_dist(m2_trt_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)));
+
+    logic [LQ_DEPTH-1:0] cam_match;
+    always_comb begin
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            logic l_surviving;
+            logic [7:0] l_cam_mask;
+            cam_match[l] = 1'b0;
+            l_surviving  = !(recover_valid_i && (rob_dist(lq_q[l].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)));
+            l_cam_mask   = get_byte_lane_mask(lq_q[l].pa[2:0], lq_q[l].size);
+
+            if (lq_q[l].valid && l_surviving && lq_q[l].is_speculative &&
+                (lq_q[l].issued_to_l1d || lq_q[l].forwarded || lq_q[l].completed)) begin
+
+                if (m2_agu_active &&
+                    lq_q[l].sq_unresolved_mask[m2_sq_idx_q] &&
+                    lq_q[l].sq_older_mask[m2_sq_idx_q] &&
+                    (lq_q[l].pa[55:3] == m2_pa_q[55:3]) &&
+                    ((l_cam_mask & m2_mask_q) != 8'b0)) begin
+                    cam_match[l] = 1'b1;
+                end
+
+                if (m2_trt_active &&
+                    lq_q[l].sq_unresolved_mask[m2_trt_sq_idx_q] &&
+                    lq_q[l].sq_older_mask[m2_trt_sq_idx_q] &&
+                    (lq_q[l].pa[55:3] == m2_trt_pa_q[55:3]) &&
+                    ((l_cam_mask & m2_trt_mask_q) != 8'b0)) begin
+                    cam_match[l] = 1'b1;
+                end
+            end
+        end
+    end
+
+    logic [3:0] oldest_viol_lq;
+    logic [5:0] min_viol_dist;
+    logic       viol_found;
+    logic [5:0] v_dist;
+    always_comb begin
+        oldest_viol_lq = 4'd0;
+        min_viol_dist  = 6'd63;
+        viol_found     = 1'b0;
+        v_dist         = 6'd0;
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            if (cam_match[l]) begin
+                v_dist = rob_dist(lq_q[l].rob_idx, rob_head_i);
+                if (!viol_found || (v_dist < min_viol_dist)) begin
+                    min_viol_dist  = v_dist;
+                    oldest_viol_lq = 4'(l);
+                    viol_found     = 1'b1;
+                end
+            end
+        end
+    end
+
     // =========================================================================
     // 6. Sequential State Updates
     // =========================================================================
@@ -1469,21 +1613,23 @@ module fursoy_s1_lsu_queues
             res_valid_q       <= 1'b0;
             res_pa_q          <= '0;
             res_size_q        <= MEM_SIZE_BYTE;
-            m1_hold_valid_q   <= 1'b0;
-            m1_hold_sq_idx_q  <= '0;
-            m1_hold_pa_q      <= '0;
-            m1_hold_mask_q    <= '0;
-            m1_hold_rob_idx_q <= '0;
-            m1_hold_rob_epoch_q <= '0;
             m2_valid_q        <= 1'b0;
             m2_sq_idx_q       <= '0;
             m2_pa_q           <= '0;
             m2_mask_q         <= '0;
             m2_rob_idx_q      <= '0;
             m2_rob_epoch_q    <= '0;
+            m2_trt_valid_q    <= 1'b0;
+            m2_trt_sq_idx_q   <= '0;
+            m2_trt_pa_q       <= '0;
+            m2_trt_mask_q     <= '0;
+            m2_trt_rob_idx_q  <= '0;
+            m2_trt_rob_epoch_q<= '0;
             m3_viol_valid_q   <= 1'b0;
             m3_viol_rob_idx_q <= '0;
             m3_viol_rob_epoch_q <= '0;
+            amo_state_q       <= AMO_IDLE;
+            amo_old_val_q     <= 64'd0;
             mmio_state_q        <= MMIO_IDLE;
             mmio_req_valid_o    <= 1'b0;
             mmio_req_addr_o     <= '0;
@@ -1563,8 +1709,9 @@ module fursoy_s1_lsu_queues
                         end else if (dtlb_hit_i) begin
                             sq_q[agu_sq_idx_i].pa        <= dtlb_pa_i;
                             sq_q[agu_sq_idx_i].pa_valid  <= 1'b1;
-                            sq_q[agu_sq_idx_i].is_mmio   <= !is_dram_pa(dtlb_pa_i);
-                            if (dtlb_page_fault_i || dtlb_access_fault_i) begin
+                            sq_q[agu_sq_idx_i].is_mmio   <= !sq_q[agu_sq_idx_i].is_fence && !is_dram_pa(dtlb_pa_i);
+                            if (!sq_q[agu_sq_idx_i].is_fence &&
+                                (dtlb_page_fault_i || dtlb_access_fault_i || (sq_q[agu_sq_idx_i].is_amo && !is_dram_pa(dtlb_pa_i)))) begin
                                 sq_q[agu_sq_idx_i].exception_pending <= 1'b1;
                                 sq_q[agu_sq_idx_i].exc_cause         <= dtlb_page_fault_i ? 5'd15 : 5'd7;
                             end
@@ -1637,46 +1784,88 @@ module fursoy_s1_lsu_queues
                             dtlb_miss_rob_epoch_o<= lq_q[agu1_lq_idx_i].rob_epoch;
                         end
                     end
-                end else if (p3_dtlb_retry_q && !flush_valid_i) begin
-                    // 3. Port 3 DTLB Miss Retry Execution in Cycle 1 (§5.3.1)
-                    lq_q[p3_retry_lq_idx_q].wait_translation <= 1'b1;
-                    lq_q[p3_retry_lq_idx_q].tr_id            <= trt_assigned_tr_id_i;
-                    dtlb_miss_alloc_o    <= 1'b1;
-                    dtlb_miss_is_store_o <= 1'b0;
-                    dtlb_miss_q_idx_o    <= p3_retry_lq_idx_q;
-                    dtlb_miss_vpn_o      <= p3_retry_va_q[38:12];
-                    dtlb_miss_rob_idx_o  <= lq_q[p3_retry_lq_idx_q].rob_idx;
-                    dtlb_miss_rob_epoch_o<= lq_q[p3_retry_lq_idx_q].rob_epoch;
-                    p3_dtlb_retry_q      <= 1'b0;
+                end else if (p3_dtlb_retry_q && !flush_valid_i &&
+                             !(recover_valid_i && (rob_dist(lq_q[p3_retry_lq_idx_q].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i)))) begin
+                    if (!agu0_dtlb_miss) begin
+                        // 3. Port 3 DTLB Miss Retry Execution in Cycle 1 (§5.3.1)
+                        lq_q[p3_retry_lq_idx_q].wait_translation <= 1'b1;
+                        lq_q[p3_retry_lq_idx_q].tr_id            <= trt_assigned_tr_id_i;
+                        dtlb_miss_alloc_o    <= 1'b1;
+                        dtlb_miss_is_store_o <= 1'b0;
+                        dtlb_miss_q_idx_o    <= p3_retry_lq_idx_q;
+                        dtlb_miss_vpn_o      <= p3_retry_va_q[38:12];
+                        dtlb_miss_rob_idx_o  <= lq_q[p3_retry_lq_idx_q].rob_idx;
+                        dtlb_miss_rob_epoch_o<= lq_q[p3_retry_lq_idx_q].rob_epoch;
+                        p3_dtlb_retry_q      <= 1'b0;
+                    end
                 end
             end
 
             // -----------------------------------------------------------------
             // C. TRT Translation Delivery (Asynchronous PTW Response)
             // -----------------------------------------------------------------
-            if (trt_delivery_valid_i) begin
-                if (trt_delivery_is_store_i) begin
-                    sq_q[trt_delivery_q_idx_i].pa               <= trt_delivery_pa_i;
-                    sq_q[trt_delivery_q_idx_i].pa_valid         <= 1'b1;
-                    sq_q[trt_delivery_q_idx_i].wait_translation <= 1'b0;
-                    sq_q[trt_delivery_q_idx_i].is_mmio          <= !is_dram_pa(trt_delivery_pa_i);
-                    if (trt_delivery_page_fault_i || trt_delivery_access_fault_i) begin
-                        sq_q[trt_delivery_q_idx_i].exception_pending <= 1'b1;
-                        sq_q[trt_delivery_q_idx_i].exc_cause         <= trt_delivery_page_fault_i ? 5'd15 : 5'd7;
-                    end
-                end else begin
-                    lq_q[trt_delivery_q_idx_i].pa               <= trt_delivery_pa_i;
-                    lq_q[trt_delivery_q_idx_i].pa_valid         <= 1'b1;
-                    lq_q[trt_delivery_q_idx_i].wait_translation <= 1'b0;
-                    lq_q[trt_delivery_q_idx_i].page_fault       <= trt_delivery_page_fault_i;
-                    lq_q[trt_delivery_q_idx_i].access_fault     <= trt_delivery_access_fault_i;
-                    lq_q[trt_delivery_q_idx_i].is_mmio          <= !is_dram_pa(trt_delivery_pa_i);
+            if (trt_sq_match) begin
+                sq_q[trt_delivery_q_idx_i].pa               <= {trt_delivery_pa_i[55:12], sq_q[trt_delivery_q_idx_i].va[11:0]};
+                sq_q[trt_delivery_q_idx_i].pa_valid         <= 1'b1;
+                sq_q[trt_delivery_q_idx_i].wait_translation <= 1'b0;
+                sq_q[trt_delivery_q_idx_i].is_mmio          <= !sq_q[trt_delivery_q_idx_i].is_fence && !is_dram_pa({trt_delivery_pa_i[55:12], sq_q[trt_delivery_q_idx_i].va[11:0]});
+                if (!sq_q[trt_delivery_q_idx_i].is_fence &&
+                    (trt_delivery_page_fault_i || trt_delivery_access_fault_i ||
+                     (sq_q[trt_delivery_q_idx_i].is_amo && !is_dram_pa({trt_delivery_pa_i[55:12], sq_q[trt_delivery_q_idx_i].va[11:0]})))) begin
+                    sq_q[trt_delivery_q_idx_i].exception_pending <= 1'b1;
+                    sq_q[trt_delivery_q_idx_i].exc_cause         <= trt_delivery_page_fault_i ? 5'd15 : 5'd7;
                 end
+            end else if (trt_lq_match) begin
+                lq_q[trt_delivery_q_idx_i].pa               <= {trt_delivery_pa_i[55:12], lq_q[trt_delivery_q_idx_i].va[11:0]};
+                lq_q[trt_delivery_q_idx_i].pa_valid         <= 1'b1;
+                lq_q[trt_delivery_q_idx_i].wait_translation <= 1'b0;
+                lq_q[trt_delivery_q_idx_i].page_fault       <= trt_delivery_page_fault_i;
+                lq_q[trt_delivery_q_idx_i].access_fault     <= trt_delivery_access_fault_i;
+                lq_q[trt_delivery_q_idx_i].is_mmio          <= !is_dram_pa({trt_delivery_pa_i[55:12], lq_q[trt_delivery_q_idx_i].va[11:0]});
             end
 
             // -----------------------------------------------------------------
-            // D. L1D Speculative Load Issue Response & MSHR Refill Capture
+            // D. L1D Speculative Load Issue Response, AMO RMW & MSHR Refill Capture
             // -----------------------------------------------------------------
+            if (flush_valid_i) begin
+                amo_state_q <= AMO_IDLE;
+            end else begin
+                case (amo_state_q)
+                    AMO_IDLE: begin
+                        if (amo_cand_ready && l1d_load0_rsp_valid_i) begin
+                            if (l1d_load0_rsp_hit_i) begin
+                                amo_old_val_q <= l1d_load0_rsp_data_i;
+                                sq_q[sq_drain_head_q].data <= compute_amo_new_val(
+                                    sq_q[sq_drain_head_q].sub_op,
+                                    l1d_load0_rsp_data_i,
+                                    sq_q[sq_drain_head_q].data
+                                );
+                                amo_state_q <= AMO_READY_COMP;
+                            end else begin
+                                amo_state_q <= AMO_WAIT_REFILL;
+                            end
+                        end
+                    end
+                    AMO_WAIT_REFILL: begin
+                        if (mshr_refill_valid_i) begin
+                            amo_old_val_q <= mshr_refill_data_i;
+                            sq_q[sq_drain_head_q].data <= compute_amo_new_val(
+                                sq_q[sq_drain_head_q].sub_op,
+                                mshr_refill_data_i,
+                                sq_q[sq_drain_head_q].data
+                            );
+                            amo_state_q <= AMO_READY_COMP;
+                        end
+                    end
+                    AMO_READY_COMP: begin
+                        if (p2_comp_valid && comp_ack_i && p2_clear_sq && sq_q[p2_cleared_sq_idx].is_amo) begin
+                            amo_state_q <= AMO_IDLE;
+                        end
+                    end
+                    default: amo_state_q <= AMO_IDLE;
+                endcase
+            end
+
             if (l1d0_issue_fire) begin
                 lq_q[cand_slot0].issued_to_l1d      <= 1'b1;
                 lq_q[cand_slot0].is_speculative     <= lq_entry_is_speculative[cand_slot0];
@@ -1688,7 +1877,7 @@ module fursoy_s1_lsu_queues
                 lq_q[cand_slot1].sq_unresolved_mask <= lq_entry_unres_stores[cand_slot1];
             end
 
-            if (l1d_load0_rsp_valid_i) begin
+            if (l1d_load0_rsp_valid_i && !amo_cand_ready && !flush_valid_i) begin
                 if (l1d_load0_rsp_hit_i) begin
                     lq_q[l1d_load0_rsp_lq_idx_i].completed   <= 1'b1;
                     if (lq_q[l1d_load0_rsp_lq_idx_i].sub_op == MEM_FLW) begin
@@ -1700,7 +1889,7 @@ module fursoy_s1_lsu_queues
                     lq_q[l1d_load0_rsp_lq_idx_i].mshr_id <= l1d_load0_rsp_mshr_id_i;
                 end
             end
-            if (l1d_load1_rsp_valid_i) begin
+            if (l1d_load1_rsp_valid_i && !flush_valid_i) begin
                 if (l1d_load1_rsp_hit_i) begin
                     lq_q[l1d_load1_rsp_lq_idx_i].completed   <= 1'b1;
                     if (lq_q[l1d_load1_rsp_lq_idx_i].sub_op == MEM_FLW) begin
@@ -1713,7 +1902,7 @@ module fursoy_s1_lsu_queues
                 end
             end
 
-            if (mshr_refill_valid_i) begin
+            if (mshr_lq_match) begin
                 lq_q[mshr_refill_lq_idx_i].completed   <= 1'b1;
                 if (lq_q[mshr_refill_lq_idx_i].sub_op == MEM_FLW) begin
                     lq_q[mshr_refill_lq_idx_i].result_data <= {32'hFFFFFFFF, mshr_refill_data_i[31:0]};
@@ -1730,7 +1919,6 @@ module fursoy_s1_lsu_queues
                 lq_q[cand_slot0].forwarded          <= 1'b1;
                 lq_q[cand_slot0].forward_data       <= lq_entry_fwd_data[cand_slot0];
                 lq_q[cand_slot0].result_data        <= lq_entry_fwd_data[cand_slot0];
-                lq_q[cand_slot0].wb_done            <= 1'b1;
                 lq_q[cand_slot0].is_speculative     <= lq_entry_is_speculative[cand_slot0];
                 lq_q[cand_slot0].sq_unresolved_mask <= lq_entry_unres_stores[cand_slot0];
             end
@@ -1739,7 +1927,6 @@ module fursoy_s1_lsu_queues
                 lq_q[cand_slot1].forwarded          <= 1'b1;
                 lq_q[cand_slot1].forward_data       <= lq_entry_fwd_data[cand_slot1];
                 lq_q[cand_slot1].result_data        <= lq_entry_fwd_data[cand_slot1];
-                lq_q[cand_slot1].wb_done            <= 1'b1;
                 lq_q[cand_slot1].is_speculative     <= lq_entry_is_speculative[cand_slot1];
                 lq_q[cand_slot1].sq_unresolved_mask <= lq_entry_unres_stores[cand_slot1];
             end
@@ -1795,15 +1982,22 @@ module fursoy_s1_lsu_queues
             if (flush_valid_i) begin
                 res_valid_q <= 1'b0;
             end else begin
-                // Invalidation on regular store retiring/draining or SC completion
-                if (store0_retiring || store1_retiring || store_draining ||
-                    (p2_comp_valid && comp_ack_i && p2_clear_sq && sq_q[p2_cleared_sq_idx].is_sc)) begin
-                    res_valid_q <= 1'b0;
-                end else if (p2_comp_valid && comp_ack_i && p2_clear_lq &&
-                             ((lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_W) || (lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_D))) begin
+                // Load-Reserved completion on Port 2 or Port 3 establishes reservation
+                if (p2_comp_valid && comp_ack_i && p2_clear_lq &&
+                    ((lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_W) || (lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_D))) begin
                     res_valid_q <= 1'b1;
                     res_pa_q    <= lq_q[p2_cleared_lq_idx].pa;
                     res_size_q  <= lq_q[p2_cleared_lq_idx].size;
+                end else if (p3_comp_valid && p3_comp_ack_i && p3_clear_lq &&
+                             ((lq_q[p3_cleared_lq_idx].sub_op == MEM_LR_W) || (lq_q[p3_cleared_lq_idx].sub_op == MEM_LR_D))) begin
+                    res_valid_q <= 1'b1;
+                    res_pa_q    <= lq_q[p3_cleared_lq_idx].pa;
+                    res_size_q  <= lq_q[p3_cleared_lq_idx].size;
+                end else if ((store0_retiring && (sq_q[retire0_sq_slot].pa[55:6] == res_pa_q[55:6])) ||
+                             (store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == res_pa_q[55:6])) ||
+                             (p2_comp_valid && comp_ack_i && p2_clear_sq && sq_q[p2_cleared_sq_idx].is_sc)) begin
+                    // Invalidation on matching-line store retiring or SC completion
+                    res_valid_q <= 1'b0;
                 end
 
                 if (p2_comp_valid && comp_ack_i) begin
@@ -1875,7 +2069,7 @@ module fursoy_s1_lsu_queues
             for (int l = 0; l < LQ_DEPTH; l++) begin
                 if (lq_q[l].valid) begin
                     for (int s = 0; s < SQ_DEPTH; s++) begin
-                        if (sq_dealloc_comb[s]) begin
+                        if (sq_dealloc_comb[s] || !sq_q[s].valid || sq_q[s].drained) begin
                             lq_q[l].sq_older_mask[s]      <= 1'b0;
                             lq_q[l].sq_unresolved_mask[s] <= 1'b0;
                         end
@@ -2109,28 +2303,42 @@ module fursoy_s1_lsu_queues
             end
 
             // -----------------------------------------------------------------
-            // M. Milestone 5 Phase B1: Pipelined Store Resolution CAM (Stages M1->M2->M3)
+            // M. Milestone 5 Phase B1: Dual-Channel Store Resolution CAM (Stages M1->M2->M3)
             // -----------------------------------------------------------------
             if (flush_valid_i) begin
-                m1_hold_valid_q <= 1'b0;
                 m2_valid_q      <= 1'b0;
+                m2_trt_valid_q  <= 1'b0;
                 m3_viol_valid_q <= 1'b0;
             end else begin
-                // Stage M3 Generation from Stage M2 CAM match
-                if (m2_valid_q && viol_found) begin
+                // Stage M3 Generation from Stage M2 Dual-CAM match (cam_match already squash-filtered)
+                if ((m2_agu_active || m2_trt_active) && viol_found) begin
                     m3_viol_valid_q     <= 1'b1;
                     m3_viol_rob_idx_q   <= lq_q[oldest_viol_lq].rob_idx;
                     m3_viol_rob_epoch_q <= lq_q[oldest_viol_lq].rob_epoch;
+                end else if (recover_valid_i && m3_viol_valid_q &&
+                             (rob_dist(m3_viol_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i))) begin
+                    m3_viol_valid_q     <= 1'b0;
                 end else begin
                     m3_viol_valid_q     <= 1'b0;
                 end
 
-                // Stage M2 CAM execution & clearing of evaluated store in LQ
-                if (m2_valid_q) begin
+                // Stage M2 Dual-CAM execution & clearing of evaluated stores in LQ
+                if (m2_agu_active) begin
                     for (int l = 0; l < LQ_DEPTH; l++) begin
                         if (lq_q[l].valid && lq_q[l].sq_unresolved_mask[m2_sq_idx_q]) begin
                             lq_q[l].sq_unresolved_mask[m2_sq_idx_q] <= 1'b0;
                         end
+                    end
+                end
+                if (m2_trt_active) begin
+                    for (int l = 0; l < LQ_DEPTH; l++) begin
+                        if (lq_q[l].valid && lq_q[l].sq_unresolved_mask[m2_trt_sq_idx_q]) begin
+                            lq_q[l].sq_unresolved_mask[m2_trt_sq_idx_q] <= 1'b0;
+                        end
+                    end
+                end
+                if (m2_agu_active || m2_trt_active) begin
+                    for (int l = 0; l < LQ_DEPTH; l++) begin
                         if (cam_match[l]) begin
                             lq_q[l].violated <= 1'b1;
                         end
@@ -2146,80 +2354,27 @@ module fursoy_s1_lsu_queues
                     end
                 end
 
-                // Stage M1 -> M2 Pipeline & Holding Register Transfer
-                if (m1_hold_valid_q) begin
+                // Stage M1 -> M2 Dual-Channel Latch (Zero Drops, Recovery-Filtered)
+                if (agu_store_resolve) begin
                     m2_valid_q          <= 1'b1;
-                    m2_sq_idx_q         <= m1_hold_sq_idx_q;
-                    m2_pa_q             <= m1_hold_pa_q;
-                    m2_mask_q           <= m1_hold_mask_q;
-                    m2_rob_idx_q        <= m1_hold_rob_idx_q;
-                    m2_rob_epoch_q      <= m1_hold_rob_epoch_q;
-
-                    if (agu_store_resolve) begin
-                        m1_hold_valid_q     <= 1'b1;
-                        m1_hold_sq_idx_q    <= agu_sq_idx_i;
-                        m1_hold_pa_q        <= dtlb_pa_i;
-                        m1_hold_mask_q      <= agu_byte_mask_i;
-                        m1_hold_rob_idx_q   <= sq_q[agu_sq_idx_i].rob_idx;
-                        m1_hold_rob_epoch_q <= sq_q[agu_sq_idx_i].rob_epoch;
-                    end else if (trt_store_resolve) begin
-                        m1_hold_valid_q     <= 1'b1;
-                        m1_hold_sq_idx_q    <= trt_delivery_q_idx_i;
-                        m1_hold_pa_q        <= trt_delivery_pa_i;
-                        m1_hold_mask_q      <= sq_q[trt_delivery_q_idx_i].mask;
-                        m1_hold_rob_idx_q   <= sq_q[trt_delivery_q_idx_i].rob_idx;
-                        m1_hold_rob_epoch_q <= sq_q[trt_delivery_q_idx_i].rob_epoch;
-                    end else begin
-                        m1_hold_valid_q     <= 1'b0;
-                    end
+                    m2_sq_idx_q         <= agu_sq_idx_i;
+                    m2_pa_q             <= dtlb_pa_i;
+                    m2_mask_q           <= agu_byte_mask_i;
+                    m2_rob_idx_q        <= sq_q[agu_sq_idx_i].rob_idx;
+                    m2_rob_epoch_q      <= sq_q[agu_sq_idx_i].rob_epoch;
                 end else begin
-                    if (agu_store_resolve && trt_store_resolve) begin
-                        m2_valid_q          <= 1'b1;
-                        m2_sq_idx_q         <= agu_sq_idx_i;
-                        m2_pa_q             <= dtlb_pa_i;
-                        m2_mask_q           <= agu_byte_mask_i;
-                        m2_rob_idx_q        <= sq_q[agu_sq_idx_i].rob_idx;
-                        m2_rob_epoch_q      <= sq_q[agu_sq_idx_i].rob_epoch;
-
-                        m1_hold_valid_q     <= 1'b1;
-                        m1_hold_sq_idx_q    <= trt_delivery_q_idx_i;
-                        m1_hold_pa_q        <= trt_delivery_pa_i;
-                        m1_hold_mask_q      <= sq_q[trt_delivery_q_idx_i].mask;
-                        m1_hold_rob_idx_q   <= sq_q[trt_delivery_q_idx_i].rob_idx;
-                        m1_hold_rob_epoch_q <= sq_q[trt_delivery_q_idx_i].rob_epoch;
-                    end else if (agu_store_resolve) begin
-                        m2_valid_q          <= 1'b1;
-                        m2_sq_idx_q         <= agu_sq_idx_i;
-                        m2_pa_q             <= dtlb_pa_i;
-                        m2_mask_q           <= agu_byte_mask_i;
-                        m2_rob_idx_q        <= sq_q[agu_sq_idx_i].rob_idx;
-                        m2_rob_epoch_q      <= sq_q[agu_sq_idx_i].rob_epoch;
-                        m1_hold_valid_q     <= 1'b0;
-                    end else if (trt_store_resolve) begin
-                        m2_valid_q          <= 1'b1;
-                        m2_sq_idx_q         <= trt_delivery_q_idx_i;
-                        m2_pa_q             <= trt_delivery_pa_i;
-                        m2_mask_q           <= sq_q[trt_delivery_q_idx_i].mask;
-                        m2_rob_idx_q        <= sq_q[trt_delivery_q_idx_i].rob_idx;
-                        m2_rob_epoch_q      <= sq_q[trt_delivery_q_idx_i].rob_epoch;
-                        m1_hold_valid_q     <= 1'b0;
-                    end else begin
-                        m2_valid_q          <= 1'b0;
-                        m1_hold_valid_q     <= 1'b0;
-                    end
+                    m2_valid_q          <= 1'b0;
                 end
 
-                // Branch recovery squash qualification for in-flight store resolution pipeline
-                if (recover_valid_i) begin
-                    if (m1_hold_valid_q && (rob_dist(m1_hold_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i))) begin
-                        m1_hold_valid_q <= 1'b0;
-                    end
-                    if (m2_valid_q && (rob_dist(m2_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i))) begin
-                        m2_valid_q <= 1'b0;
-                    end
-                    if (m3_viol_valid_q && (rob_dist(m3_viol_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i))) begin
-                        m3_viol_valid_q <= 1'b0;
-                    end
+                if (trt_store_resolve) begin
+                    m2_trt_valid_q      <= 1'b1;
+                    m2_trt_sq_idx_q     <= trt_delivery_q_idx_i;
+                    m2_trt_pa_q         <= {trt_delivery_pa_i[55:12], sq_q[trt_delivery_q_idx_i].va[11:0]};
+                    m2_trt_mask_q       <= sq_q[trt_delivery_q_idx_i].mask;
+                    m2_trt_rob_idx_q    <= sq_q[trt_delivery_q_idx_i].rob_idx;
+                    m2_trt_rob_epoch_q  <= sq_q[trt_delivery_q_idx_i].rob_epoch;
+                end else begin
+                    m2_trt_valid_q      <= 1'b0;
                 end
             end
 
@@ -2294,53 +2449,13 @@ module fursoy_s1_lsu_queues
         end
     end
 
-    // Combinational M2 CAM Overlap Detection Logic
-    wire agu_store_resolve = agu_valid_i && !flush_valid_i && agu_is_store_i && !agu_align_fault_i && dtlb_hit_i && !dtlb_page_fault_i && !dtlb_access_fault_i;
-    wire trt_store_resolve = trt_delivery_valid_i && !flush_valid_i && trt_delivery_is_store_i && !trt_delivery_page_fault_i && !trt_delivery_access_fault_i;
-
-    logic [LQ_DEPTH-1:0] cam_match;
-    always_comb begin
-        for (int l = 0; l < LQ_DEPTH; l++) begin
-            cam_match[l] = 1'b0;
-            if (m2_valid_q && lq_q[l].valid && lq_q[l].is_speculative &&
-                lq_q[l].sq_unresolved_mask[m2_sq_idx_q] &&
-                (lq_q[l].issued_to_l1d || lq_q[l].forwarded || lq_q[l].completed) &&
-                (rob_dist(m2_rob_idx_q, rob_head_i) < rob_dist(lq_q[l].rob_idx, rob_head_i))) begin
-
-                // Physical byte overlap check:
-                // Same 8B-aligned doubleword PA[55:3] AND non-zero byte mask bitwise AND
-                if ((lq_q[l].pa[55:3] == m2_pa_q[55:3]) &&
-                    ((get_byte_lane_mask(lq_q[l].pa[2:0], lq_q[l].size) & m2_mask_q) != 8'b0)) begin
-                    cam_match[l] = 1'b1;
-                end
-            end
-        end
-    end
-
-    logic [3:0] oldest_viol_lq;
-    logic [5:0] min_viol_dist;
-    logic       viol_found;
-    logic [5:0] v_dist;
-    always_comb begin
-        oldest_viol_lq = 4'd0;
-        min_viol_dist  = 6'd63;
-        viol_found     = 1'b0;
-        v_dist         = 6'd0;
-        for (int l = 0; l < LQ_DEPTH; l++) begin
-            if (cam_match[l]) begin
-                v_dist = rob_dist(lq_q[l].rob_idx, rob_head_i);
-                if (!viol_found || (v_dist < min_viol_dist)) begin
-                    min_viol_dist  = v_dist;
-                    oldest_viol_lq = 4'(l);
-                    viol_found     = 1'b1;
-                end
-            end
-        end
-    end
-
-
-
 `ifndef SYNTHESIS
+    logic [63:0] dbg_lsu_cycle;
+    always_ff @(posedge clk_i) begin
+        if (rst_i) dbg_lsu_cycle <= '0;
+        else dbg_lsu_cycle <= dbg_lsu_cycle + 1'b1;
+    end
+
     // Simulation Assertions (Section 17.3)
     always_ff @(posedge clk_i) begin
         if (!rst_i) begin
@@ -2351,14 +2466,14 @@ module fursoy_s1_lsu_queues
             // Assertion 4: Loads must NEVER access memory while older store PA unresolved unless speculative
             if (l1d0_issue_fire && (lq_q[cand_slot0].replay_safe || lq_q[cand_slot0].is_mmio || lq_q[cand_slot0].is_lr)) begin
                 for (int s = 0; s < SQ_DEPTH; s++) begin
-                    if (lq_q[cand_slot0].sq_older_mask[s] && !sq_q[s].pa_valid) begin
+                    if (lq_q[cand_slot0].sq_older_mask[s] && sq_q[s].valid && !sq_q[s].drained && !sq_q[s].pa_valid) begin
                         $fatal(1, "[LSU QUEUES ASSERTION FAILED] Lane 0 ineligible/replay-safe load issued to L1D with older store PA unresolved!");
                     end
                 end
             end
             if (l1d1_issue_fire && (lq_q[cand_slot1].replay_safe || lq_q[cand_slot1].is_mmio || lq_q[cand_slot1].is_lr)) begin
                 for (int s = 0; s < SQ_DEPTH; s++) begin
-                    if (lq_q[cand_slot1].sq_older_mask[s] && !sq_q[s].pa_valid) begin
+                    if (lq_q[cand_slot1].sq_older_mask[s] && sq_q[s].valid && !sq_q[s].drained && !sq_q[s].pa_valid) begin
                         $fatal(1, "[LSU QUEUES ASSERTION FAILED] Lane 1 ineligible/replay-safe load issued to L1D with older store PA unresolved!");
                     end
                 end
@@ -2442,16 +2557,16 @@ module fursoy_s1_lsu_queues
                 $fatal(1, "[B1_ASSERTION FAILED] Load retired at slot 1 with unresolved store checks!");
             end
 
-            // Retained speculative load cannot retire while relevant store check is still pending in M1 hold or M2 CAM
+            // Retained speculative load cannot retire while relevant store check is still pending in M2 Dual-CAM
             if (retire_valid_i[0] && retire0_lq_found &&
                 ((m2_valid_q && lq_q[retire0_lq_slot].sq_unresolved_mask[m2_sq_idx_q]) ||
-                 (m1_hold_valid_q && lq_q[retire0_lq_slot].sq_unresolved_mask[m1_hold_sq_idx_q]))) begin
-                $fatal(1, "[B1_ASSERTION FAILED] Slot 0 speculative load retired while store check in M1/M2!");
+                 (m2_trt_valid_q && lq_q[retire0_lq_slot].sq_unresolved_mask[m2_trt_sq_idx_q]))) begin
+                $fatal(1, "[B1_ASSERTION FAILED] Slot 0 speculative load retired while store check in M2!");
             end
             if (retire_valid_i[1] && retire1_lq_found &&
                 ((m2_valid_q && lq_q[retire1_lq_slot].sq_unresolved_mask[m2_sq_idx_q]) ||
-                 (m1_hold_valid_q && lq_q[retire1_lq_slot].sq_unresolved_mask[m1_hold_sq_idx_q]))) begin
-                $fatal(1, "[B1_ASSERTION FAILED] Slot 1 speculative load retired while store check in M1/M2!");
+                 (m2_trt_valid_q && lq_q[retire1_lq_slot].sq_unresolved_mask[m2_trt_sq_idx_q]))) begin
+                $fatal(1, "[B1_ASSERTION FAILED] Slot 1 speculative load retired while store check in M2!");
             end
 
             // Replay-safe load cannot use unresolved-store speculative bypass

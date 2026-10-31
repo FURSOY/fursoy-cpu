@@ -232,6 +232,7 @@ package fursoy_s1_pkg;
         logic       completed;
         logic       exception;
         logic [4:0] exc_cause;
+        logic [63:0] exc_val;
         logic       is_branch;
         chkpt_idx_t chkpt_id;
         logic       branch_mispred;
@@ -271,8 +272,8 @@ package fursoy_s1_pkg;
     localparam int unsigned MSHR_IDX_W       = 2;  // $clog2(4) = 2 (0..3)
     localparam int unsigned WBB_DEPTH        = 2;  // Writeback buffer depth (provisional parameter)
     localparam int unsigned WBB_IDX_W        = 1;  // $clog2(2) = 1 (0..1)
-    localparam int unsigned TRT_DEPTH        = 4;  // Translation request table depth (provisional parameter)
-    localparam int unsigned TRT_IDX_W        = 2;  // $clog2(4) = 2 (0..3)
+    localparam int unsigned TRT_DEPTH        = 32; // Translation request table depth (sized to LQ_DEPTH+SQ_DEPTH)
+    localparam int unsigned TRT_IDX_W        = 5;  // $clog2(32) = 5 (0..31)
 
     localparam int unsigned L1D_WAYS         = 4;  // 16 KiB 4-Way baseline
     localparam int unsigned L1D_SETS         = 64; // 64 sets

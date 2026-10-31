@@ -119,6 +119,8 @@ module fursoy_s1_soc
     // Performance telemetry
     output logic [63:0]            mcycle_o,
     output logic [63:0]            minstret_o,
+    output logic [63:0]            cpi_category_o        [8],   // Single-owner CPI category counters
+    output logic [64:1]            raw_event_pulse_o,           // 64 raw HPM event pulses (cycle-level)
 
     // -------------------------------------------------------------------------
     // Direct Testbench Diagnostic & Probe Ports
@@ -481,9 +483,12 @@ module fursoy_s1_soc
     // =========================================================================
     // 4. DRAM Decoders, Unmapped Aperture Generators & Crossbar Arbiter
     // =========================================================================
-    // Address range qualifications
+    // Address range qualifications & SBI M-mode aperture protection [0x8000_0000..0x801F_FFFF]
     wire [63:0] l1i_byte_addr = {8'b0, l1i_bus_rd_req_addr, 6'b0};
-    wire        l1i_in_dram   = (l1i_byte_addr >= DRAM_BASE_ADDR) && (l1i_byte_addr < DRAM_END_ADDR);
+    wire        l1i_pmp_deny  = (csr_priv_mode_o != 2'b11) &&
+                                (l1i_byte_addr >= DRAM_BASE_ADDR) &&
+                                (l1i_byte_addr < (DRAM_BASE_ADDR + 64'h20_0000));
+    wire        l1i_in_dram   = (l1i_byte_addr >= DRAM_BASE_ADDR) && (l1i_byte_addr < DRAM_END_ADDR) && !l1i_pmp_deny;
     wire        l1i_unmapped  = l1i_bus_rd_req_valid && !l1i_in_dram;
 
     wire [63:0] ptw_byte_addr = {8'h0, ptw_mem_req_addr};
@@ -974,6 +979,7 @@ module fursoy_s1_soc
         .irq_pending_valid_o      (),
         .irq_pending_cause_o      (),
         .csr_mip_o                (csr_mip_o),
+        .csr_mie_o                (csr_mie_o),
         .csr_mideleg_o            (),
         .csr_sie_o                (),
         .csr_sip_o                (),
@@ -1015,9 +1021,9 @@ module fursoy_s1_soc
         .mcycle_o                 (mcycle_o),
         .minstret_o               (minstret_o),
         .mhpmcounter_o            (),
-        .cpi_category_o           (),
+        .cpi_category_o           (cpi_category_o),
         .cpi_active_owner_o       (),
-        .raw_event_pulse_o        (),
+        .raw_event_pulse_o        (raw_event_pulse_o),
 
         // Uncached MMIO channel
         .mmio_req_valid_o         (mmio_req_valid),
@@ -1035,8 +1041,6 @@ module fursoy_s1_soc
         .mmio_rsp_ready_o         (mmio_rsp_ready)
     );
     /* verilator lint_on PINCONNECTEMPTY */
-
-    assign csr_mie_o = 64'h0;
 
 endmodule
 

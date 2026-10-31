@@ -129,6 +129,7 @@ module fursoy_s1_substrate
     input  logic [4:0]             comp_branch_mispred_i,
     input  logic [4:0]             comp_exception_i,
     input  logic [4:0]             comp_cause_i          [4:0],
+    input  logic [63:0]            comp_val_i            [4:0],
     input  logic [4:0]             comp_fflags_i         [4:0],
     output logic [4:0]             comp_ack_o,
 
@@ -191,6 +192,7 @@ module fursoy_s1_substrate
     output logic                   retire_exception_o,
     output logic [4:0]             retire_exc_cause_o,
     output logic [63:0]            retire_exc_pc_o,
+    output logic [63:0]            retire_exc_val_o,
 
     // -------------------------------------------------------------------------
     // Diagnostics & Observability Exports
@@ -780,6 +782,7 @@ module fursoy_s1_substrate
         .comp_branch_mispred_i(comp_branch_mispred_i),
         .comp_exception_i     (comp_exception_i),
         .comp_cause_i         (comp_cause_i),
+        .comp_val_i           (comp_val_i),
         .comp_fflags_i        (comp_fflags_i),
         .comp_ack_o           (rob_comp_ack),
         .retire_ready_i       (retire_ready_i),
@@ -811,6 +814,7 @@ module fursoy_s1_substrate
         .retire_exception_o   (retire_exception_o),
         .retire_exc_cause_o   (retire_exc_cause_o),
         .retire_exc_pc_o      (retire_exc_pc_o),
+        .retire_exc_val_o     (retire_exc_val_o),
         .recover_start_i      (recover_valid_i),
         .recover_rob_idx_i    (recover_rob_idx_i),
         .recover_pnew_valid_o (rob_rec_pnew_valid),

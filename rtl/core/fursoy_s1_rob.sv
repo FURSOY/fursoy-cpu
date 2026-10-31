@@ -61,6 +61,7 @@ module fursoy_s1_rob
     input  logic [4:0]             comp_branch_mispred_i,
     input  logic [4:0]             comp_exception_i,
     input  logic [4:0]             comp_cause_i       [4:0],
+    input  logic [63:0]            comp_val_i         [4:0],
     input  logic [4:0]             comp_fflags_i      [4:0],
     output logic [4:0]             comp_ack_o,
 
@@ -107,6 +108,7 @@ module fursoy_s1_rob
     output logic                   retire_exception_o,
     output logic [4:0]             retire_exc_cause_o,
     output logic [63:0]            retire_exc_pc_o,
+    output logic [63:0]            retire_exc_val_o,
 
     // -------------------------------------------------------------------------
     // Branch Misprediction Recovery Interface
@@ -225,7 +227,8 @@ module fursoy_s1_rob
     logic entry0_completed_eff;
     logic entry0_exception_eff;
     logic [4:0] entry0_exc_cause_eff;
-    logic [4:0] entry0_fflags_eff;
+    logic [4:0]  entry0_fflags_eff;
+    logic [63:0] entry0_exc_val_eff;
 
     logic entry1_completed_eff;
     logic entry1_exception_eff;
@@ -238,6 +241,7 @@ module fursoy_s1_rob
         entry0_completed_eff = entry0.completed;
         entry0_exception_eff = entry0.exception;
         entry0_exc_cause_eff = entry0.exc_cause;
+        entry0_exc_val_eff   = entry0.exc_val;
         entry0_fflags_eff    = entry0.fflags;
         for (int unsigned w = 0; w < 5; w++) begin
             if (comp_match[w] && (comp_rob_idx_i[w] == head_q)) begin
@@ -247,6 +251,7 @@ module fursoy_s1_rob
                     entry0_exception_comb_check: begin
                         entry0_exception_eff = 1'b1;
                         entry0_exc_cause_eff = comp_cause_i[w];
+                        entry0_exc_val_eff   = comp_val_i[w];
                     end
                 end
             end
@@ -293,6 +298,7 @@ module fursoy_s1_rob
     assign retire_exception_o = head_has_exception;
     assign retire_exc_cause_o = entry0_exc_cause_eff;
     assign retire_exc_pc_o    = entry0.pc;
+    assign retire_exc_val_o   = entry0_exc_val_eff;
 
     wire rec_allows_uop0 = (!recover_start_i || (head_q != recover_rob_idx_i)) &&
                            (!recovering_q || (head_q != target_tail_q));
@@ -310,7 +316,7 @@ module fursoy_s1_rob
     logic [1:0] retire_grant;
     always_comb begin
         retire_grant = 2'b00;
-        if (retire_ready_i && !head_has_exception && !head_has_replay && !irq_pending_i) begin
+        if (!flush_valid_i && retire_ready_i && !head_has_exception && !head_has_replay && !irq_pending_i) begin
             if (uop1_can_retire) begin
                 retire_grant = 2'b11;
             end else if (uop0_can_retire) begin
@@ -470,8 +476,9 @@ module fursoy_s1_rob
             recovering_q  <= 1'b0;
             target_tail_q <= '0;
             for (int unsigned i = 0; i < CAPACITY; i++) begin
-                entries_q[i].valid <= 1'b0;
-                slot_epoch_q[i]    <= slot_epoch_q[i] + 4'd1;
+                entries_q[i].valid   <= 1'b0;
+                entries_q[i].exc_val <= '0;
+                slot_epoch_q[i]      <= slot_epoch_q[i] + 4'd1;
             end
         end else begin
             // -----------------------------------------------------------------
@@ -485,6 +492,7 @@ module fursoy_s1_rob
                     if (comp_exception_i[w]) begin
                         entries_q[comp_rob_idx_i[w]].exception <= 1'b1;
                         entries_q[comp_rob_idx_i[w]].exc_cause <= comp_cause_i[w];
+                        entries_q[comp_rob_idx_i[w]].exc_val   <= comp_val_i[w];
                     end
                 end
             end
@@ -572,6 +580,7 @@ module fursoy_s1_rob
                     entries_q[tail_q].completed      <= 1'b0;
                     entries_q[tail_q].exception      <= 1'b0;
                     entries_q[tail_q].exc_cause      <= '0;
+                    entries_q[tail_q].exc_val        <= '0;
                     entries_q[tail_q].is_branch      <= alloc_is_branch_i[0];
                     entries_q[tail_q].chkpt_id       <= alloc_chkpt_id_i[0];
                     entries_q[tail_q].branch_mispred <= 1'b0;
@@ -599,6 +608,7 @@ module fursoy_s1_rob
                     entries_q[tail1_comb].completed      <= 1'b0;
                     entries_q[tail1_comb].exception      <= 1'b0;
                     entries_q[tail1_comb].exc_cause      <= '0;
+                    entries_q[tail1_comb].exc_val        <= '0;
                     entries_q[tail1_comb].is_branch      <= alloc_is_branch_i[1];
                     entries_q[tail1_comb].chkpt_id       <= alloc_chkpt_id_i[1];
                     entries_q[tail1_comb].branch_mispred <= 1'b0;

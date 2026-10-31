@@ -35,6 +35,7 @@ module fursoy_s1_frontend
     input  logic              rst_i,
     input  logic              frontend_en_i,        // High = active, Low = held in reset
     input  logic              wfi_sleep_i,
+    input  logic              sfence_active_i,
 
     // Architectural System State (from CSRs / Privilege Mode)
     input  logic [1:0]        priv_mode_i,          // 00=U, 01=S, 11=M
@@ -172,6 +173,8 @@ module fursoy_s1_frontend
     output logic [55:0]       dtlb_rsp_pa_o,
     output logic              dtlb_rsp_page_fault_o,
     output logic              dtlb_rsp_access_fault_o,
+    output logic [1:0]        dtlb_rsp_level_o,
+    output logic [63:0]       dtlb_rsp_pte_o,
 
     // -------------------------------------------------------------------------
     // Diagnostics & Performance Counters
@@ -217,10 +220,13 @@ module fursoy_s1_frontend
     output logic              event_ras_ret_pop_o,
 
     // Milestone 9 Phase A: Architectural Fetch PC Export
-    output logic [63:0]       fe_pc_o
+    output logic [63:0]       fe_pc_o,
+    output logic              fence_i_at_head_o,
+    output logic              fence_i_flush_o
 );
 
-    assign fe_pc_o = f0_pc_q;
+    assign fe_pc_o         = f0_pc_q;
+    assign fence_i_flush_o = fence_i_redirect_valid;
 
     // =========================================================================
     // Subsystem Interconnect Signals
@@ -325,10 +331,10 @@ module fursoy_s1_frontend
 
     // Global redirect notification to kill in-flight waiters and flush stages
     wire any_redirect = trap_valid_i || mem_replay_valid_i || mret_valid_i || recover_valid_i ||
-                        fence_i_redirect_valid || early_jal_redirect;
+                        fence_i_redirect_valid || early_jal_redirect || flush_valid_i || sfence_vma_valid_i;
 
     wire backend_flush = trap_valid_i || mem_replay_valid_i || mret_valid_i || recover_valid_i ||
-                         fence_i_redirect_valid || fence_i_frontend_purge;
+                         fence_i_redirect_valid || fence_i_frontend_purge || flush_valid_i || sfence_vma_valid_i;
 
     // =========================================================================
     // 1. Stage F0: Next-PC Generation (`GenPC`) — Section 3.1 & 11
@@ -375,7 +381,7 @@ module fursoy_s1_frontend
         end else if (bpu_pred_redirect && !f2_stall_f0 && (bpu_pred_target != 64'd0)) begin
             next_fetch_pc    = bpu_pred_target;
             next_fetch_valid = 1'b1;
-        end else if (!f2_stall_f0 && itlb_rsp_valid && l1i_ready && !f3_exception_valid) begin
+        end else if (!f2_stall_f0 && !sfence_active_i && itlb_rsp_valid && l1i_ready && !f3_exception_valid) begin
             next_fetch_pc    = seq_next_pc;
             next_fetch_valid = 1'b1;
         end else begin
@@ -400,7 +406,7 @@ module fursoy_s1_frontend
     // =========================================================================
     // 2. Stage F1: Memory Request & ITLB Lookup
     // =========================================================================
-    wire f1_fire = f0_valid_q && !wfi_sleep_i && !f2_stall_f1 && !itlb_busy && l1i_ready && !f3_exception_valid;
+    wire f1_fire = f0_valid_q && !wfi_sleep_i && !sfence_active_i && !f2_stall_f1 && !itlb_busy && l1i_ready && !f3_exception_valid && !any_redirect;
 
     /* verilator lint_off PINCONNECTEMPTY */
     // ITLB & Persistent ITRT
@@ -449,6 +455,8 @@ module fursoy_s1_frontend
         .priv_mode_i              (priv_mode_i),
         .mstatus_i                (mstatus_i),
         .satp_i                   (satp_i),
+        .sfence_vma_valid_i       (sfence_vma_valid_i),
+        .sfence_active_i          (sfence_active_i),
 
         // M3 DTLB Channel
         .dtlb_req_valid_i         (dtlb_req_valid_i),
@@ -463,6 +471,8 @@ module fursoy_s1_frontend
         .dtlb_rsp_pa_o            (dtlb_rsp_pa_o),
         .dtlb_rsp_page_fault_o    (dtlb_rsp_page_fault_o),
         .dtlb_rsp_access_fault_o  (dtlb_rsp_access_fault_o),
+        .dtlb_rsp_level_o         (dtlb_rsp_level_o),
+        .dtlb_rsp_pte_o           (dtlb_rsp_pte_o),
 
         // M4 ITLB Channel
         .itlb_req_valid_i         (ptw_to_itlb_req_valid),
@@ -490,7 +500,7 @@ module fursoy_s1_frontend
         .diag_grants_since_itlb_o (diag_grants_since_itlb_o)
     );
 
-    wire f1_to_l1i_valid = f0_valid_q && itlb_rsp_valid && !f2_stall_f1 && l1i_ready && !f3_exception_valid;
+    wire f1_to_l1i_valid = f0_valid_q && !wfi_sleep_i && !sfence_active_i && itlb_rsp_valid && !f2_stall_f1 && l1i_ready && !f3_exception_valid && !any_redirect;
     wire bpu_lookup_valid = f1_to_l1i_valid && !itlb_rsp_page_fault && !itlb_rsp_access_fault;
 
     // Dynamic Branch Prediction Subsystem (BPU)
@@ -647,6 +657,17 @@ module fursoy_s1_frontend
     bpu_meta_entry_t f3_bpu_meta;
     assign f3_bpu_meta = (bpu_fifo_count_q != 4'd0) ? bpu_fifo_q[bpu_fifo_head_q] : '0;
 
+`ifndef SYNTHESIS
+    always_ff @(posedge clk_i) begin
+        if (!rst_i && frontend_en_i && f3_valid && !stall_downstream && !backend_flush) begin
+            if ((bpu_fifo_count_q == 4'd0) || (f3_bpu_meta.pc != f3_pc)) begin
+                $fatal(1, "[FRONTEND ASSERTION FAILED] BPU FIFO PC mismatch: count=%0d meta_pc=0x%h f3_pc=0x%h",
+                       bpu_fifo_count_q, f3_bpu_meta.pc, f3_pc);
+            end
+        end
+    end
+`endif
+
     // =========================================================================
     // 3. Stage F2: Level-1 Instruction Cache (L1I) & Response Skid Buffer
     // =========================================================================
@@ -768,13 +789,13 @@ module fursoy_s1_frontend
         early_jal_restore_ras = f3_bpu_meta.slot0_ras_chkpt;
         early_jal_restore_csr = f3_bpu_meta.slot0_csr_chkpt;
 
-        if (jal0_needs_redirect) begin
+        if (jal0_needs_redirect && !stall_downstream) begin
             early_jal_redirect    = 1'b1;
             early_jal_target      = computed_jal_target0;
             early_jal_restore_ghr = f3_bpu_meta.slot0_pre_ghr;
             early_jal_restore_ras = f3_bpu_meta.slot0_ras_chkpt;
             early_jal_restore_csr = f3_bpu_meta.slot0_csr_chkpt;
-        end else if (jal1_needs_redirect && !slot0_taken_transfer) begin
+        end else if (jal1_needs_redirect && !slot0_taken_transfer && !stall_downstream) begin
             early_jal_redirect    = 1'b1;
             early_jal_target      = computed_jal_target1;
             early_jal_restore_ghr = f3_bpu_meta.slot1_pre_ghr;
@@ -839,9 +860,9 @@ module fursoy_s1_frontend
         .rst_i                    (rst_i || !frontend_en_i),
         .flush_i                  (backend_flush),
 
-        .push0_valid_i            (fq_entry0.valid && !stall_downstream),
+        .push0_valid_i            (fq_entry0.valid && !stall_downstream && !backend_flush),
         .push0_entry_i            (fq_entry0),
-        .push1_valid_i            (fq_entry1.valid && !stall_downstream),
+        .push1_valid_i            (fq_entry1.valid && !stall_downstream && !backend_flush),
         .push1_entry_i            (fq_entry1),
         .push_ack_o               (push_ack),
 
@@ -958,6 +979,7 @@ module fursoy_s1_frontend
         .redirect_valid_o         (fence_i_redirect_valid),
         .redirect_target_o        (fence_i_redirect_target),
 
+        .fence_i_at_head_o        (fence_i_at_head_o),
         .fence_i_active_o         (),
         .event_fence_i_completed_o(fence_i_event_done)
     );

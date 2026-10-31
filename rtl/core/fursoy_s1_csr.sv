@@ -114,11 +114,21 @@ module fursoy_s1_csr
     output logic              sys_redirect_valid_o,
     output logic [63:0]       sys_redirect_target_o,
     output logic              sys_flush_valid_o,
+    output logic              sys_pending_valid_o,
 
     // SFENCE.VMA Pulse Output
     output logic              sfence_vma_valid_o,
     output logic [63:0]       sfence_vma_va_o,
     output logic [15:0]       sfence_vma_asid_o,
+
+    // L1D Clean Maintenance Handshake for SFENCE.VMA (P0-3)
+    input  logic              dcache_clean_all_done_i,
+    input  logic              sq_empty_i,
+    output logic              dcache_clean_all_req_o,
+    output logic              csr_sfence_active_o,
+
+    // Architectural MIE output (P1-3)
+    output logic [63:0]       csr_mie_o,
 
     // CSR Observability Outputs (Diagnostics)
     output logic [63:0]       csr_mepc_o,
@@ -148,6 +158,7 @@ module fursoy_s1_csr
     input  logic              rob_empty_i,
     input  logic [63:0]       rob_head_pc_i,
     input  logic [63:0]       fe_pc_i,
+    input  logic              frontend_en_i,
     input  logic              recovering_i,
     input  logic              reconstructing_i,
     input  logic              retire_replay_i,
@@ -562,6 +573,19 @@ module fursoy_s1_csr
         (retire_valid_i[1] && (retire_rob_idx_i[1] == pending_sys_q.rob_idx))
     );
 
+    assign csr_mie_o            = mie_q;
+    assign csr_sfence_active_o  = (sfence_state_q != SFENCE_IDLE);
+    assign sys_pending_valid_o  = pending_sys_q.valid;
+
+    // SFENCE.VMA L1D Clean Maintenance State Machine (P0-3)
+    typedef enum logic [1:0] {
+        SFENCE_IDLE    = 2'd0,
+        SFENCE_WAIT_SQ = 2'd1,
+        SFENCE_CLEAN   = 2'd2
+    } sfence_clean_state_t;
+
+    sfence_clean_state_t sfence_state_q;
+
     // =========================================================================
     // 4. Milestone 8 Phase D Vector Configuration Evaluation Logic (vsetvl*)
     // =========================================================================
@@ -678,6 +702,8 @@ module fursoy_s1_csr
             sfence_vma_valid_o    <= 1'b0;
             sfence_vma_va_o       <= '0;
             sfence_vma_asid_o     <= '0;
+            sfence_state_q        <= SFENCE_IDLE;
+            dcache_clean_all_req_o<= 1'b0;
             wfi_sleep_q           <= 1'b0;
             wfi_resume_pc_q       <= 64'd0;
         end else begin
@@ -690,8 +716,30 @@ module fursoy_s1_csr
             sfence_vma_valid_o   <= 1'b0;
             hpm_we_o             <= 1'b0;
 
+            // SFENCE.VMA Clean Progression
+            case (sfence_state_q)
+                SFENCE_IDLE: begin
+                    dcache_clean_all_req_o <= 1'b0;
+                end
+                SFENCE_WAIT_SQ: begin
+                    if (sq_empty_i) begin
+                        dcache_clean_all_req_o <= 1'b1;
+                        sfence_state_q         <= SFENCE_CLEAN;
+                    end
+                end
+                SFENCE_CLEAN: begin
+                    if (dcache_clean_all_done_i) begin
+                        dcache_clean_all_req_o <= 1'b0;
+                        sfence_state_q         <= SFENCE_IDLE;
+                    end
+                end
+                default: sfence_state_q <= SFENCE_IDLE;
+            endcase
+
             // Capture valid non-illegal system uop issued on Port 0
-            if (p0_sys_valid_i && !sys_illegal) begin
+            if (sys_flush_valid_o || retire_replay_i) begin
+                pending_sys_q.valid <= 1'b0;
+            end else if (p0_sys_valid_i && !sys_illegal) begin
                 pending_sys_q.valid        <= 1'b1;
                 pending_sys_q.sub_op       <= p0_sys_subop_i;
                 pending_sys_q.csr_addr     <= p0_sys_csr_addr_i;
@@ -749,7 +797,7 @@ module fursoy_s1_csr
                 end
             end
 
-            if (retire_exception_i) begin
+            if (retire_exception_i && !sys_flush_valid_o) begin
                 // Precise synchronous trap at ROB head
                 logic trap_to_s;
                 trap_to_s = (priv_mode_q <= 2'b01) && medeleg_q[{1'b0, retire_exc_cause_i}];
@@ -757,9 +805,12 @@ module fursoy_s1_csr
                 if (trap_to_s) begin
                     sepc_q   <= retire_exc_pc_i;
                     scause_q <= {1'b0, 58'd0, retire_exc_cause_i};
-                    if (retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7) begin
+                    if (retire_exc_cause_i == 5'd0 ||
+                        retire_exc_cause_i == 5'd4 || retire_exc_cause_i == 5'd6 ||
+                        retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7 ||
+                        retire_exc_cause_i == 5'd13 || retire_exc_cause_i == 5'd15) begin
                         stval_q <= retire_exc_val_i;
-                    end else if (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12) begin
+                    end else if (retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12) begin
                         stval_q <= retire_exc_pc_i;
                     end else begin
                         stval_q <= 64'd0;
@@ -777,9 +828,12 @@ module fursoy_s1_csr
                 end else begin
                     mepc_q   <= retire_exc_pc_i;
                     mcause_q <= {1'b0, 58'd0, retire_exc_cause_i};
-                    if (retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7) begin
+                    if (retire_exc_cause_i == 5'd0 ||
+                        retire_exc_cause_i == 5'd4 || retire_exc_cause_i == 5'd6 ||
+                        retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7 ||
+                        retire_exc_cause_i == 5'd13 || retire_exc_cause_i == 5'd15) begin
                         mtval_q <= retire_exc_val_i;
-                    end else if (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12) begin
+                    end else if (retire_exc_cause_i == 5'd1 || retire_exc_cause_i == 5'd12) begin
                         mtval_q <= retire_exc_pc_i;
                     end else begin
                         mtval_q <= 64'd0;
@@ -835,7 +889,7 @@ module fursoy_s1_csr
                         sys_flush_valid_o     <= 1'b1;
                     end
                 end
-            end else if (irq_candidate_valid && !sys_retire_fire && !sys_redirect_valid_o && !sys_flush_valid_o && !recovering_i && !reconstructing_i && !retire_replay_i) begin
+            end else if (irq_candidate_valid && !sys_retire_fire && !sys_redirect_valid_o && !sys_flush_valid_o && !recovering_i && !reconstructing_i && !retire_replay_i && (!rob_empty_i || !frontend_en_i)) begin
                 // Asynchronous interrupt delivery at instruction boundary
                 if (irq_candidate_priv == 2'b01) begin
                     sepc_q   <= captured_pc;
@@ -896,13 +950,18 @@ module fursoy_s1_csr
                     end
 
                     SYS_SFENCE_VMA: begin
-                        sfence_vma_valid_o    <= 1'b1;
-                        sfence_vma_va_o       <= pending_sys_q.rs1_val;
-                        sfence_vma_asid_o     <= pending_sys_q.rs2_val[15:0];
-
-                        sys_redirect_valid_o  <= 1'b1;
-                        sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
-                        sys_flush_valid_o     <= 1'b1;
+                        sys_redirect_valid_o   <= 1'b1;
+                        sys_redirect_target_o  <= pending_sys_q.pc + 64'd4;
+                        sys_flush_valid_o      <= 1'b1;
+                        sfence_vma_valid_o     <= 1'b1;
+                        sfence_vma_va_o        <= pending_sys_q.rs1_val;
+                        sfence_vma_asid_o      <= pending_sys_q.rs2_val[15:0];
+                        if (sq_empty_i) begin
+                            dcache_clean_all_req_o <= 1'b1;
+                            sfence_state_q         <= SFENCE_CLEAN;
+                        end else begin
+                            sfence_state_q         <= SFENCE_WAIT_SQ;
+                        end
                     end
 
                     SYS_WFI: begin

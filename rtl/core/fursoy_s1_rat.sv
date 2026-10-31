@@ -336,6 +336,7 @@ module fursoy_s1_rat
     // Simulation Assertions
     // -------------------------------------------------------------------------
 `ifndef SYNTHESIS
+
     always_ff @(posedge clk_i) begin
         if (!rst_i) begin
             // x0 permanently mapped to p0

@@ -30,6 +30,13 @@ module fursoy_s1_ptw
     input  logic [63:0]       mstatus_i,
     input  logic [63:0]       satp_i,
 
+    // Translation ordering controls (SFENCE.VMA, §4.2.1 of the privileged spec).
+    // sfence_vma_valid_i : 1-cycle pulse when SFENCE.VMA retires.
+    // sfence_active_i    : high while the post-SFENCE store-queue drain and
+    //                      L1D clean-all sweep are in progress.
+    input  logic              sfence_vma_valid_i,
+    input  logic              sfence_active_i,
+
     // -------------------------------------------------------------------------
     // Request Interface from M3 DTLB / TRT
     // -------------------------------------------------------------------------
@@ -46,6 +53,8 @@ module fursoy_s1_ptw
     output logic [55:0]       dtlb_rsp_pa_o,
     output logic              dtlb_rsp_page_fault_o,
     output logic              dtlb_rsp_access_fault_o,
+    output logic [1:0]        dtlb_rsp_level_o,
+    output logic [63:0]       dtlb_rsp_pte_o,
 
     // -------------------------------------------------------------------------
     // Request Interface from M4 ITLB / ITRT
@@ -143,6 +152,21 @@ module fursoy_s1_ptw
     logic        rsp_access_fault_q;
     logic [1:0]  rsp_level_q;
     logic [63:0] rsp_pte_q;
+
+    // -------------------------------------------------------------------------
+    // Walk ordering against SFENCE.VMA / satp updates
+    // -------------------------------------------------------------------------
+    // PTE reads bypass L1D and read DRAM directly. Page-table stores become
+    // visible to this walker once SFENCE.VMA has drained the store queue and the
+    // L1D clean-all sweep has written dirty lines back (sfence_active_i low).
+    // A walk that is in flight when SFENCE.VMA retires (or satp changes) may have
+    // read stale PTEs, so its result is discarded and the walk restarts from the
+    // root once the clean sweep has completed. No new PTE read is issued while
+    // the sweep is still running.
+    logic [63:0] satp_prev_q;
+    logic        walk_restart_q;
+    wire         walk_order_event = sfence_vma_valid_i || (satp_i != satp_prev_q);
+    wire         walk_restart     = walk_restart_q || walk_order_event;
 
     // Split VPN into 9-bit chunks
     wire [8:0] vpn2 = active_vpn[26:18];
@@ -244,8 +268,17 @@ module fursoy_s1_ptw
             rsp_pte_q               <= 64'd0;
             mem_req_valid_o         <= 1'b0;
             mem_req_addr_o          <= '0;
+            satp_prev_q             <= satp_i;
+            walk_restart_q          <= 1'b0;
         end else begin
             rsp_valid_q <= 1'b0;
+            satp_prev_q <= satp_i;
+
+            // Remember ordering events that hit a walk whose PTE read is in flight;
+            // the walk is re-rooted once that read returns (see PTW_WAIT_RSP).
+            if (walk_order_event && (ptw_state_q == PTW_REQ_MEM || ptw_state_q == PTW_WAIT_RSP)) begin
+                walk_restart_q <= 1'b1;
+            end
 
             case (ptw_state_q)
                 PTW_IDLE: begin
@@ -275,7 +308,17 @@ module fursoy_s1_ptw
                 end
 
                 PTW_REQ_MEM: begin
-                    if (!is_dram_pa(active_pte_addr)) begin
+                    if (!mem_req_valid_o && (walk_restart || sfence_active_i)) begin
+                        // No PTE read is launched while an SFENCE.VMA clean sweep is
+                        // pending; a walk hit by an ordering event restarts from the root.
+                        mem_req_valid_o <= 1'b0;
+                        if (walk_restart) begin
+                            active_level    <= 2'd2;
+                            next_base_ppn   <= satp_ppn;
+                            active_pte_addr <= {satp_ppn[43:0], vpn2, 3'b000};
+                            walk_restart_q  <= 1'b0;
+                        end
+                    end else if (!is_dram_pa(active_pte_addr)) begin
                         // reject_ptw_mmio (§2.4, PROP_M9_10 / PROP_M9_12):
                         // Translation request resolving to address outside DRAM aperture raises page fault without issuing bus request
                         mem_req_valid_o    <= 1'b0;
@@ -287,17 +330,31 @@ module fursoy_s1_ptw
                         rsp_pte_q          <= 64'd0;
                         ptw_state_q        <= PTW_SEND_RSP;
                     end else begin
-                        mem_req_valid_o <= 1'b1;
-                        mem_req_addr_o  <= active_pte_addr;
-                        if (mem_req_ready_i) begin
-                            ptw_state_q <= PTW_WAIT_RSP;
+                        // Registered request: the handshake completes when the
+                        // registered valid is observed together with ready. Valid is
+                        // dropped on that edge so exactly one PTE read is issued.
+                        if (mem_req_valid_o && mem_req_ready_i) begin
+                            mem_req_valid_o <= 1'b0;
+                            ptw_state_q     <= PTW_WAIT_RSP;
+                        end else begin
+                            mem_req_valid_o <= 1'b1;
+                            mem_req_addr_o  <= active_pte_addr;
                         end
                     end
                 end
 
                 PTW_WAIT_RSP: begin
                     mem_req_valid_o <= 1'b0;
-                    if (mem_rsp_valid_i) begin
+                    if (mem_rsp_valid_i && walk_restart) begin
+                        // The returned PTE may predate SFENCE.VMA / satp update: discard it
+                        // and re-walk from the root (gated in PTW_REQ_MEM until the
+                        // clean sweep completes).
+                        active_level    <= 2'd2;
+                        next_base_ppn   <= satp_ppn;
+                        active_pte_addr <= {satp_ppn[43:0], vpn2, 3'b000};
+                        walk_restart_q  <= 1'b0;
+                        ptw_state_q     <= PTW_REQ_MEM;
+                    end else if (mem_rsp_valid_i) begin
                         if (mem_rsp_error_i) begin
                             // External memory access error
                             rsp_valid_q        <= 1'b1;
@@ -379,8 +436,18 @@ module fursoy_s1_ptw
                 end
 
                 PTW_SEND_RSP: begin
-                    // 1-cycle response pulse delivered to DTLB or ITLB
-                    ptw_state_q <= PTW_IDLE;
+                    // 1-cycle response pulse delivered to DTLB or ITLB. If an ordering
+                    // event coincides with the pulse, the pulse is suppressed (see
+                    // response routing) and the walk restarts from the root.
+                    if (walk_order_event) begin
+                        active_level    <= 2'd2;
+                        next_base_ppn   <= satp_ppn;
+                        active_pte_addr <= {satp_ppn[43:0], vpn2, 3'b000};
+                        walk_restart_q  <= 1'b0;
+                        ptw_state_q     <= PTW_REQ_MEM;
+                    end else begin
+                        ptw_state_q <= PTW_IDLE;
+                    end
                 end
 
                 default: begin
@@ -390,20 +457,25 @@ module fursoy_s1_ptw
         end
     end
 
-    // Response Routing
-    assign dtlb_rsp_valid_o        = rsp_valid_q && !active_is_itlb;
+    // Response Routing (suppressed in a cycle carrying an ordering event)
+    wire rsp_fire = rsp_valid_q && !walk_order_event;
+    assign dtlb_rsp_valid_o        = rsp_fire && !active_is_itlb;
     assign dtlb_rsp_tr_id_o        = active_dtlb_tr_id;
     assign dtlb_rsp_pa_o           = rsp_pa_q;
     assign dtlb_rsp_page_fault_o   = rsp_page_fault_q;
     assign dtlb_rsp_access_fault_o = rsp_access_fault_q;
+    assign dtlb_rsp_level_o        = rsp_level_q;
+    assign dtlb_rsp_pte_o          = rsp_pte_q;
 
-    assign itlb_rsp_valid_o        = rsp_valid_q && active_is_itlb;
+    assign itlb_rsp_valid_o        = rsp_fire && active_is_itlb;
     assign itlb_rsp_itrt_id_o      = active_itlb_itrt_id;
     assign itlb_rsp_pa_o           = rsp_pa_q;
     assign itlb_rsp_page_fault_o   = rsp_page_fault_q;
     assign itlb_rsp_access_fault_o = rsp_access_fault_q;
     assign itlb_rsp_level_o        = rsp_level_q;
     assign itlb_rsp_pte_o          = rsp_pte_q;
+
+
 
 endmodule
 

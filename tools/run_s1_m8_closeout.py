@@ -28,6 +28,7 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "e7ff340ce1cd422951fd24c45a537f280948eb7c1e9bb942120b4462a075546a",  # M9 Phase A
     "128c675f924dc208bc73026b8263aab90583173855c87d47a316907c83460912",  # M9 Phase B
     "e39bd500b2587dbc64351a9d5cfe115a602aed91cb5d2dac401739dd29f86100",  # M9 Phase D
+    "7c7b86ccfce14735c8bdf985cf7c07682b36b41cbdd5eabd15c1b9a795883167",  # M9 Closeout
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m8-fp-vector-v1.md"
 SPEC_VERSION = "1.1"

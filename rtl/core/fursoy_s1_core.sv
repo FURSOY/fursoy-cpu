@@ -412,6 +412,7 @@ module fursoy_s1_core
     output logic [63:0]            csr_mideleg_o,
     output logic [63:0]            csr_sie_o,
     output logic [63:0]            csr_sip_o,
+    output logic [63:0]            csr_mie_o,
 
     // Milestone 9 Phase A Testbench Direct CSR State Injection Ports
     input  logic                   test_csr_we_i,
@@ -531,11 +532,13 @@ module fursoy_s1_core
     logic [4:0]     int_comp_branch_mispred;
     logic [4:0]     int_comp_exception;
     logic [4:0]     int_comp_cause         [4:0];
+    logic [63:0]    int_comp_val           [4:0];
     logic [4:0]     int_comp_fflags        [4:0];
     logic [4:0]     int_comp_ack;
     logic [4:0]     be_comp_fflags         [4:0];
     logic [2:0]     be_comp_fp_wb_valid;
     fpreg_t         be_comp_fp_wb_preg     [2:0];
+    logic [63:0]    sub_retire_exc_val;
 
     // Branch Recovery Handshake
     logic           int_recover_valid;
@@ -590,6 +593,8 @@ module fursoy_s1_core
     logic [55:0]backend_ptw_rsp_pa;
     logic       backend_ptw_rsp_page_fault;
     logic       backend_ptw_rsp_access_fault;
+    logic [1:0] backend_ptw_rsp_level;
+    logic [63:0]backend_ptw_rsp_pte;
 
     logic       frontend_dtlb_req_ready;
     logic       frontend_dtlb_rsp_valid;
@@ -597,6 +602,10 @@ module fursoy_s1_core
     logic [55:0]frontend_dtlb_rsp_pa;
     logic       frontend_dtlb_rsp_page_fault;
     logic       frontend_dtlb_rsp_access_fault;
+    logic [1:0] frontend_dtlb_rsp_level;
+    logic [63:0]frontend_dtlb_rsp_pte;
+    logic       csr_dcache_clean_all_req;
+    logic [63:0]core_csr_mie;
 
     // CSR & Privileged Architecture Interconnect Wires
     logic [1:0]        csr_priv_mode;
@@ -605,9 +614,11 @@ module fursoy_s1_core
     logic              csr_redirect_valid;
     logic [63:0]       csr_redirect_target;
     logic              csr_flush_valid;
+    logic              csr_sys_pending_valid;
     logic              csr_sfence_vma_valid;
     logic [63:0]       csr_sfence_vma_va;
     logic [15:0]       csr_sfence_vma_asid;
+    logic              csr_sfence_active;
 
     // Milestone 9 Phase A CSR & Interrupt Interconnect Wires
     logic              csr_irq_pending_valid;
@@ -659,7 +670,7 @@ module fursoy_s1_core
     logic        lsu_retire1_allow;
     logic        be_event_load_speculative;
 
-    wire        core_flush_valid = flush_valid_i || csr_flush_valid || retire_replay;
+    wire        core_flush_valid = flush_valid_i || csr_flush_valid || retire_replay || (frontend_en_i && fe_fence_i_flush);
 
     // DTLB Test Injection Muxing
     logic [2:0] core_diag_grants_since_itlb;
@@ -693,6 +704,42 @@ module fursoy_s1_core
 
     logic         fe_retire_ready;
     logic         fe_dcache_clean_all_req;
+    logic         fe_fence_i_at_head;
+    logic         fe_fence_i_flush;
+
+    // Hardware Coherent PTW <-> SQ/L1D Lookup Signals
+    logic         fe_ptw_mem_req_valid;
+    logic [55:0]  fe_ptw_mem_req_addr;
+    logic         fe_ptw_mem_req_ready;
+    logic         fe_ptw_mem_rsp_valid;
+    logic [63:0]  fe_ptw_mem_rsp_data;
+    logic         fe_ptw_mem_rsp_error;
+    logic         ptw_snoop_dirty_hit;
+    logic [63:0]  ptw_snoop_data;
+    logic         ptw_l1d_rsp_valid_q;
+    logic [63:0]  ptw_l1d_rsp_data_q;
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i || !frontend_en_i) begin
+            ptw_l1d_rsp_valid_q <= 1'b0;
+            ptw_l1d_rsp_data_q  <= 64'd0;
+        end else begin
+            if (fe_ptw_mem_req_valid && backend_sq_empty && !ptw_l1d_rsp_valid_q && ptw_snoop_dirty_hit) begin
+                ptw_l1d_rsp_valid_q <= 1'b1;
+                ptw_l1d_rsp_data_q  <= ptw_snoop_data;
+            end else begin
+                ptw_l1d_rsp_valid_q <= 1'b0;
+            end
+        end
+    end
+
+    assign ptw_mem_req_valid_o  = fe_ptw_mem_req_valid && backend_sq_empty && !ptw_l1d_rsp_valid_q && !ptw_snoop_dirty_hit;
+    assign ptw_mem_req_addr_o   = fe_ptw_mem_req_addr;
+    assign fe_ptw_mem_req_ready = backend_sq_empty && !ptw_l1d_rsp_valid_q &&
+                                  (ptw_snoop_dirty_hit ? 1'b1 : ptw_mem_req_ready_i);
+    assign fe_ptw_mem_rsp_valid = ptw_l1d_rsp_valid_q || ptw_mem_rsp_valid_i;
+    assign fe_ptw_mem_rsp_data  = ptw_l1d_rsp_valid_q ? ptw_l1d_rsp_data_q : ptw_mem_rsp_data_i;
+    assign fe_ptw_mem_rsp_error = ptw_l1d_rsp_valid_q ? 1'b0 : ptw_mem_rsp_error_i;
 
     // Substrate Rename MUX
     wire        sub_uop0_valid     = frontend_en_i ? fe_uop0_valid     : uop0_valid_i;
@@ -767,7 +814,7 @@ module fursoy_s1_core
     wire [63:0]      be_uop0_pc          = frontend_en_i ? fe_uop0.pc          : uop0_pc_i;
     wire             be_uop0_pred_taken  = frontend_en_i ? fe_uop0.pred_taken  : uop0_pred_taken_i;
     wire [63:0]      be_uop0_pred_target = frontend_en_i ? fe_uop0.pred_target : uop0_pred_target_i;
-    wire             be_uop0_is_branch   = frontend_en_i ? fe_uop0.is_branch   : uop0_is_branch_i;
+    wire             be_uop0_is_branch   = frontend_en_i ? (fe_uop0.is_branch || fe_uop0.is_jalr) : uop0_is_branch_i;
     wire             be_uop0_is_jal      = frontend_en_i ? fe_uop0.is_jal      : uop0_is_jal_i;
     wire             be_uop0_is_jalr     = frontend_en_i ? fe_uop0.is_jalr     : uop0_is_jalr_i;
     wire branch_type_t be_uop0_br_type   = frontend_en_i ? fe_uop0.br_type     : BR_TYPE_COND;
@@ -784,7 +831,7 @@ module fursoy_s1_core
     wire [63:0]      be_uop1_pc          = frontend_en_i ? fe_uop1.pc          : uop1_pc_i;
     wire             be_uop1_pred_taken  = frontend_en_i ? fe_uop1.pred_taken  : uop1_pred_taken_i;
     wire [63:0]      be_uop1_pred_target = frontend_en_i ? fe_uop1.pred_target : uop1_pred_target_i;
-    wire             be_uop1_is_branch   = frontend_en_i ? fe_uop1.is_branch   : uop1_is_branch_i;
+    wire             be_uop1_is_branch   = frontend_en_i ? (fe_uop1.is_branch || fe_uop1.is_jalr) : uop1_is_branch_i;
     wire             be_uop1_is_jal      = frontend_en_i ? fe_uop1.is_jal      : uop1_is_jal_i;
     wire             be_uop1_is_jalr     = frontend_en_i ? fe_uop1.is_jalr     : uop1_is_jalr_i;
     wire branch_type_t be_uop1_br_type   = frontend_en_i ? fe_uop1.br_type     : BR_TYPE_COND;
@@ -797,6 +844,8 @@ module fursoy_s1_core
     wire alloc0_is_fence_i = sub_uop0_ack && frontend_en_i && (fe_uop0.sub_op == MEM_FENCE_I);
     wire alloc1_is_fence_i = sub_uop1_ack && frontend_en_i && (fe_uop1.sub_op == MEM_FENCE_I);
 
+    assign csr_mie_o = core_csr_mie;
+
     // DTLB / PTW Multiplexing
     always_comb begin
         if (frontend_en_i) begin
@@ -806,9 +855,11 @@ module fursoy_s1_core
             backend_ptw_rsp_pa           = frontend_dtlb_rsp_pa;
             backend_ptw_rsp_page_fault   = frontend_dtlb_rsp_page_fault;
             backend_ptw_rsp_access_fault = frontend_dtlb_rsp_access_fault;
+            backend_ptw_rsp_level        = frontend_dtlb_rsp_level;
+            backend_ptw_rsp_pte          = frontend_dtlb_rsp_pte;
 
             ptw_req_valid_o              = 1'b0;
-            ptw_req_tr_id_o              = 2'd0;
+            ptw_req_tr_id_o              = '0;
             ptw_req_vpn_o                = 27'd0;
             ptw_req_access_type_o        = 2'd0;
         end else begin
@@ -823,10 +874,12 @@ module fursoy_s1_core
             backend_ptw_rsp_pa           = ptw_rsp_pa_i;
             backend_ptw_rsp_page_fault   = ptw_rsp_page_fault_i;
             backend_ptw_rsp_access_fault = ptw_rsp_access_fault_i;
+            backend_ptw_rsp_level        = 2'd0;
+            backend_ptw_rsp_pte          = 64'd0;
         end
     end
 
-    assign backend_dcache_clean_all_req = frontend_en_i ? fe_dcache_clean_all_req : 1'b0;
+    assign backend_dcache_clean_all_req = frontend_en_i ? (fe_dcache_clean_all_req || csr_dcache_clean_all_req) : 1'b0;
 
     // =========================================================================
     // 1. Milestone 1 Architectural Substrate
@@ -923,6 +976,7 @@ module fursoy_s1_core
         .comp_branch_mispred_i   (int_comp_branch_mispred),
         .comp_exception_i        (int_comp_exception),
         .comp_cause_i            (int_comp_cause),
+        .comp_val_i              (int_comp_val),
         .comp_fflags_i           (int_comp_fflags),
         .comp_ack_o              (int_comp_ack),
 
@@ -939,9 +993,9 @@ module fursoy_s1_core
         .irq_pending_i           (csr_irq_pending_valid),
 
         // Retirement (Serialization controller gates retire_ready_i when FENCE.I is at head, LSU gates when store check pending)
-        .retire_ready_i          (frontend_en_i ? (retire_ready_i && fe_retire_ready) : retire_ready_i),
+        .retire_ready_i          (frontend_en_i ? (retire_ready_i && fe_retire_ready && !csr_sfence_active) : retire_ready_i),
         .lsu_retire0_allow_i     (lsu_retire0_allow),
-        .lsu_retire1_allow_i     (lsu_retire1_allow),
+        .lsu_retire1_allow_i     (lsu_retire1_allow && !csr_sys_pending_valid && !(frontend_en_i && fe_fence_i_at_head)),
 
         // Milestone 5 Phase B1 Memory Disambiguation Violation & Replay
         .lsu_violation_valid_i   (lsu_violation_valid),
@@ -974,6 +1028,7 @@ module fursoy_s1_core
         .retire_exception_o      (retire_exception_o),
         .retire_exc_cause_o      (retire_exc_cause_o),
         .retire_exc_pc_o         (retire_exc_pc_o),
+        .retire_exc_val_o        (sub_retire_exc_val),
 
         // Diagnostics
         .recovering_o            (int_recovering),
@@ -1110,6 +1165,7 @@ module fursoy_s1_core
         .comp_branch_mispred_o   (int_comp_branch_mispred),
         .comp_exception_o        (int_comp_exception),
         .comp_cause_o            (int_comp_cause),
+        .comp_val_o              (int_comp_val),
         .comp_fflags_o           (be_comp_fflags),
         .comp_ack_i              (int_comp_ack),
 
@@ -1168,6 +1224,16 @@ module fursoy_s1_core
         .ptw_rsp_pa_i            (backend_ptw_rsp_pa),
         .ptw_rsp_page_fault_i    (backend_ptw_rsp_page_fault),
         .ptw_rsp_access_fault_i  (backend_ptw_rsp_access_fault),
+        .ptw_rsp_level_i         (backend_ptw_rsp_level),
+        .ptw_rsp_pte_i           (backend_ptw_rsp_pte),
+
+        .sfence_vma_valid_i      (eff_sfence_valid),
+        .sfence_vma_va_i         (eff_sfence_va),
+        .sfence_vma_asid_i       (eff_sfence_asid),
+
+        .priv_mode_i             (eff_priv_mode),
+        .satp_i                  (eff_satp),
+        .mstatus_i               (eff_mstatus),
 
         // L1D Maintenance & Serialization
         .dcache_clean_all_req_i  (backend_dcache_clean_all_req),
@@ -1232,6 +1298,10 @@ module fursoy_s1_core
         .snoop_rsp_has_data_o    (snoop_rsp_has_data_o),
         .snoop_rsp_was_dirty_o   (snoop_rsp_was_dirty_o),
         .snoop_rsp_data_o        (snoop_rsp_data_o),
+
+        .ptw_snoop_pa_i          (fe_ptw_mem_req_addr),
+        .ptw_snoop_dirty_hit_o   (ptw_snoop_dirty_hit),
+        .ptw_snoop_data_o        (ptw_snoop_data),
 
         .event_mem_dual_issue_o  (be_event_mem_dual_issue),
         .event_bank_access_count_o(be_event_bank_access_count),
@@ -1364,7 +1434,7 @@ module fursoy_s1_core
         .retire_exception_i      (retire_exception_o),
         .retire_exc_cause_i      (retire_exc_cause_o),
         .retire_exc_pc_i         (retire_exc_pc_o),
-        .retire_exc_val_i        (mmio_req_addr_o),
+        .retire_exc_val_i        (sub_retire_exc_val),
 
         // Milestone 8 Phase A Floating-Point Retirement Interface
         .retire_fp_dest_valid_i  (sub_retire_fp_dest_valid),
@@ -1409,11 +1479,18 @@ module fursoy_s1_core
         .sys_redirect_valid_o    (csr_redirect_valid),
         .sys_redirect_target_o   (csr_redirect_target),
         .sys_flush_valid_o       (csr_flush_valid),
+        .sys_pending_valid_o     (csr_sys_pending_valid),
 
         // SFENCE.VMA
         .sfence_vma_valid_o      (csr_sfence_vma_valid),
         .sfence_vma_va_o         (csr_sfence_vma_va),
         .sfence_vma_asid_o       (csr_sfence_vma_asid),
+
+        .dcache_clean_all_done_i (backend_dcache_clean_all_done),
+        .sq_empty_i              (backend_sq_empty),
+        .dcache_clean_all_req_o  (csr_dcache_clean_all_req),
+        .csr_sfence_active_o     (csr_sfence_active),
+        .csr_mie_o               (core_csr_mie),
 
         // Observability
         .csr_mepc_o              (csr_mepc_o),
@@ -1443,6 +1520,7 @@ module fursoy_s1_core
         .rob_empty_i             (rob_count_o == '0),
         .rob_head_pc_i           (retire_pc_o[0]),
         .fe_pc_i                 (fe_pc),
+        .frontend_en_i           (frontend_en_i),
         .recovering_i            (int_recovering),
         .reconstructing_i        (int_reconstructing),
         .retire_replay_i         (retire_replay),
@@ -1573,6 +1651,7 @@ module fursoy_s1_core
         .rst_i                   (rst_i),
         .frontend_en_i           (frontend_en_i),
         .wfi_sleep_i             (csr_wfi_sleep),
+        .sfence_active_i         (csr_sfence_active),
 
         // Architectural System State & Privilege Mode
         .priv_mode_i             (eff_priv_mode),
@@ -1667,14 +1746,14 @@ module fursoy_s1_core
         .l1i_bus_rd_rsp_data_i   (l1i_bus_rd_rsp_data_i),
         .l1i_bus_rd_rsp_error_i  (l1i_bus_rd_rsp_error_i),
 
-        // Shared PTW Memory Read Bus
-        .ptw_mem_req_valid_o     (ptw_mem_req_valid_o),
-        .ptw_mem_req_addr_o      (ptw_mem_req_addr_o),
-        .ptw_mem_req_ready_i     (ptw_mem_req_ready_i),
+        // Shared PTW Memory Read Bus (Coherent with SQ + L1D Dirty State)
+        .ptw_mem_req_valid_o     (fe_ptw_mem_req_valid),
+        .ptw_mem_req_addr_o      (fe_ptw_mem_req_addr),
+        .ptw_mem_req_ready_i     (fe_ptw_mem_req_ready),
 
-        .ptw_mem_rsp_valid_i     (ptw_mem_rsp_valid_i),
-        .ptw_mem_rsp_data_i      (ptw_mem_rsp_data_i),
-        .ptw_mem_rsp_error_i     (ptw_mem_rsp_error_i),
+        .ptw_mem_rsp_valid_i     (fe_ptw_mem_rsp_valid),
+        .ptw_mem_rsp_data_i      (fe_ptw_mem_rsp_data),
+        .ptw_mem_rsp_error_i     (fe_ptw_mem_rsp_error),
 
         // M3 DTLB Request / Response to Shared PTW
         .dtlb_req_valid_i        (ptw_dtlb_req_valid_w),
@@ -1689,6 +1768,8 @@ module fursoy_s1_core
         .dtlb_rsp_pa_o           (frontend_dtlb_rsp_pa),
         .dtlb_rsp_page_fault_o   (frontend_dtlb_rsp_page_fault),
         .dtlb_rsp_access_fault_o (frontend_dtlb_rsp_access_fault),
+        .dtlb_rsp_level_o        (frontend_dtlb_rsp_level),
+        .dtlb_rsp_pte_o          (frontend_dtlb_rsp_pte),
 
         // Diagnostics & Instrumentation
         .fetch_queue_count_o     (fe_fetch_queue_count_o),
@@ -1728,7 +1809,9 @@ module fursoy_s1_core
         .event_bpu_cond_pred_o   (fe_event_bpu_cond_pred),
         .event_ras_call_push_o   (fe_event_ras_call_push),
         .event_ras_ret_pop_o     (fe_event_ras_ret_pop),
-        .fe_pc_o                 (fe_pc)
+        .fe_pc_o                 (fe_pc),
+        .fence_i_at_head_o       (fe_fence_i_at_head),
+        .fence_i_flush_o         (fe_fence_i_flush)
     );
 
     logic              fe_event_fetch_cycles;
@@ -1768,10 +1851,10 @@ module fursoy_s1_core
     wire ev_retire_cycles_0  = (rob_count_o > 7'd0) && (retire_valid_o == 2'b00);
     wire ev_retire_cycles_1  = (retire_valid_o[0] ^ retire_valid_o[1]);
     wire ev_retire_cycles_2  = (retire_valid_o[0] && retire_valid_o[1]);
-    wire ev_serialize_cycles = !fe_retire_ready || csr_flush_valid;
+    wire ev_serialize_cycles = !fe_retire_ready || csr_flush_valid || csr_sfence_active || (frontend_en_i && fe_fence_i_flush);
 
     // CPI Single-Owner Deterministic Accounting Predicates (Section 9.1)
-    wire cpi_serialize   = !fe_retire_ready || csr_flush_valid;
+    wire cpi_serialize   = !fe_retire_ready || csr_flush_valid || csr_sfence_active || (frontend_en_i && fe_fence_i_flush);
     wire cpi_br_recover  = int_recovering || retire_replay;
     wire cpi_productive  = (retire_valid_o != 2'b00);
     wire cpi_mem_stall   = be_rob_head_is_mem_stall;

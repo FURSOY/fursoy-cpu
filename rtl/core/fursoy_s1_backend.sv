@@ -134,6 +134,7 @@ module fursoy_s1_backend
     output logic [4:0]        comp_branch_mispred_o,
     output logic [4:0]        comp_exception_o,
     output logic [4:0]        comp_cause_o         [4:0],
+    output logic [63:0]       comp_val_o           [4:0],
     output logic [4:0]        comp_fflags_o        [4:0],
     /* verilator lint_off UNUSEDSIGNAL */
     input  logic [4:0]        comp_ack_i,
@@ -202,6 +203,18 @@ module fursoy_s1_backend
     input  logic [55:0]       ptw_rsp_pa_i,
     input  logic              ptw_rsp_page_fault_i,
     input  logic              ptw_rsp_access_fault_i,
+    input  logic [1:0]        ptw_rsp_level_i,
+    input  logic [63:0]       ptw_rsp_pte_i,
+
+    // SFENCE.VMA Invalidation Interface
+    input  logic              sfence_vma_valid_i,
+    input  logic [63:0]       sfence_vma_va_i,
+    input  logic [15:0]       sfence_vma_asid_i,
+
+    // Architectural Privileged State for LSU DTLB Translation
+    input  logic [1:0]        priv_mode_i,
+    input  logic [63:0]       satp_i,
+    input  logic [63:0]       mstatus_i,
 
     // L1D Maintenance & Serialization (M4)
     input  logic              dcache_clean_all_req_i,
@@ -269,6 +282,11 @@ module fursoy_s1_backend
     output logic              snoop_rsp_has_data_o,
     output logic              snoop_rsp_was_dirty_o,
     output logic [511:0]      snoop_rsp_data_o,
+
+    // Hardware PTW Coherent Dirty-Line Snoop (Read-Only, Non-Destructive)
+    input  logic [55:0]       ptw_snoop_pa_i,
+    output logic              ptw_snoop_dirty_hit_o,
+    output logic [63:0]       ptw_snoop_data_o,
 
     // Milestone 7 Telemetry Events (Section 10.2)
     output logic              event_mem_dual_issue_o,
@@ -483,11 +501,11 @@ module fursoy_s1_backend
         end
 
         if (uop1_is_mem) begin
-            dispatch_ready_o[1] = uop0_is_mem ? mem_dispatch_ready[1] : mem_dispatch_ready[0];
+            dispatch_ready_o[1] = mem_dispatch_ready[1];
         end else if (uop1_is_fpiq) begin
-            dispatch_ready_o[1] = uop0_is_fpiq ? fp_dispatch_ready[1] : fp_dispatch_ready[0];
+            dispatch_ready_o[1] = (uop0_valid_i && uop0_is_fpiq) ? fp_dispatch_ready[1] : fp_dispatch_ready[0];
         end else begin
-            dispatch_ready_o[1] = uop0_is_int ? int_dispatch_ready[1] : int_dispatch_ready[0];
+            dispatch_ready_o[1] = (uop0_valid_i && uop0_is_int) ? int_dispatch_ready[1] : int_dispatch_ready[0];
         end
     end
 
@@ -946,7 +964,10 @@ module fursoy_s1_backend
                       (rf0_uop_q.uop_class == UOP_JALR);
     wire p0_is_sys  = (rf0_uop_q.uop_class == UOP_SYSTEM) && !rf0_uop_q.exception;
 
-    assign p0_sys_valid_o     = rf0_valid_q && p0_is_sys;
+    // Port 0 WB Pipeline Register (EX -> WB)
+    wire ex0_squashed = internal_recover_valid && (rob_dist(rf0_uop_q.rob_idx, rob_head_i) > rob_dist(internal_recover_rob_idx, rob_head_i));
+
+    assign p0_sys_valid_o     = rf0_valid_q && !ex0_squashed && !flush_valid_i && p0_is_sys;
     assign p0_sys_subop_o     = rf0_uop_q.sub_op;
     assign p0_sys_csr_addr_o  = rf0_uop_q.imm[11:0];
     assign p0_sys_rs1_field_o = rf0_uop_q.imm[16:12];
@@ -972,9 +993,6 @@ module fursoy_s1_backend
     branch_type_t p0_wb_br_type;
     ghr_t        p0_wb_ghr;
     logic        p0_wb_is_ctrl;
-
-    // Port 0 WB Pipeline Register (EX -> WB)
-    wire ex0_squashed = internal_recover_valid && (rob_dist(rf0_uop_q.rob_idx, rob_head_i) > rob_dist(internal_recover_rob_idx, rob_head_i));
 
     always_ff @(posedge clk_i) begin
         if (rst_i || flush_valid_i) begin
@@ -1023,7 +1041,7 @@ module fursoy_s1_backend
                 end else begin
                     p0_wb_exception  <= 1'b0;
                     p0_wb_cause      <= 5'd0;
-                    p0_wb_mispredict <= (rf0_uop_q.uop_class == UOP_BRANCH || (frontend_en_i && rf0_uop_q.uop_class == UOP_JALR && rf0_uop_q.is_branch)) ? br_mispredict : 1'b0;
+                    p0_wb_mispredict <= (rf0_uop_q.uop_class == UOP_BRANCH || (frontend_en_i && rf0_uop_q.uop_class == UOP_JALR)) ? br_mispredict : 1'b0;
                 end
             end else if (test_inject_valid_i) begin
                 p0_wb_valid        <= 1'b1;
@@ -1356,6 +1374,16 @@ module fursoy_s1_backend
         .ptw_rsp_pa_i            (ptw_rsp_pa_i),
         .ptw_rsp_page_fault_i    (ptw_rsp_page_fault_i),
         .ptw_rsp_access_fault_i  (ptw_rsp_access_fault_i),
+        .ptw_rsp_level_i         (ptw_rsp_level_i),
+        .ptw_rsp_pte_i           (ptw_rsp_pte_i),
+
+        .sfence_vma_valid_i      (sfence_vma_valid_i),
+        .sfence_vma_va_i         (sfence_vma_va_i),
+        .sfence_vma_asid_i       (sfence_vma_asid_i),
+
+        .priv_mode_i             (priv_mode_i),
+        .satp_i                  (satp_i),
+        .mstatus_i               (mstatus_i),
 
         .dcache_clean_all_req_i  (dcache_clean_all_req_i),
         .dcache_clean_all_done_o (dcache_clean_all_done_o),
@@ -1393,6 +1421,10 @@ module fursoy_s1_backend
         .snoop_rsp_has_data_o    (snoop_rsp_has_data_o),
         .snoop_rsp_was_dirty_o   (snoop_rsp_was_dirty_o),
         .snoop_rsp_data_o        (snoop_rsp_data_o),
+
+        .ptw_snoop_pa_i          (ptw_snoop_pa_i),
+        .ptw_snoop_dirty_hit_o   (ptw_snoop_dirty_hit_o),
+        .ptw_snoop_data_o        (ptw_snoop_data_o),
 
         .event_mem_dual_issue_o  (event_mem_dual_issue_o),
         .event_bank_access_count_o(event_bank_access_count_o),
@@ -1711,6 +1743,7 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[0] = p0_eff_wb_mispredict && !p0_eff_wb_exception;
     assign comp_exception_o[0]      = p0_eff_wb_exception;
     assign comp_cause_o[0]          = p0_eff_wb_cause;
+    assign comp_val_o[0]            = (p0_eff_wb_cause == 5'd0) ? p0_eff_wb_target : 64'd0;
     assign comp_fflags_o[0]         = p0_eff_wb_fflags;
 
     assign comp_valid_o[1]          = p1_wb_valid && !flush_valid_i;
@@ -1720,6 +1753,7 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[1] = 1'b0;
     assign comp_exception_o[1]      = 1'b0;
     assign comp_cause_o[1]          = 5'd0;
+    assign comp_val_o[1]            = 64'd0;
     assign comp_fflags_o[1]         = 5'd0;
 
     // Port 2 (LSU AGU0) Completion
@@ -1730,6 +1764,7 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[2] = 1'b0;
     assign comp_exception_o[2]      = p2_comp_exception;
     assign comp_cause_o[2]          = p2_comp_cause;
+    assign comp_val_o[2]            = p2_wb_data;
     assign comp_fflags_o[2]         = 5'd0;
 
     // Port 3 (LSU AGU1) Completion (§5.1, PROP_M7_10)
@@ -1740,6 +1775,7 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[3] = 1'b0;
     assign comp_exception_o[3]      = p3_comp_exception;
     assign comp_cause_o[3]          = p3_comp_cause;
+    assign comp_val_o[3]            = p3_wb_data;
     assign comp_fflags_o[3]         = 5'd0;
 
     // Port 4 (FP Execution Pipeline) Completion (§6.1, PROP_M8_11)
@@ -1750,6 +1786,7 @@ module fursoy_s1_backend
     assign comp_branch_mispred_o[4] = 1'b0;
     assign comp_exception_o[4]      = 1'b0;
     assign comp_cause_o[4]          = 5'd0;
+    assign comp_val_o[4]            = 64'd0;
     assign comp_fflags_o[4]         = p4_fprf_wb_fflags;
 
     assign comp_fp_wb_valid_o[0]    = p4_fprf_wb_valid && comp_ack_i[4] && !w0_fp_valid_i;
@@ -1813,12 +1850,15 @@ module fursoy_s1_backend
     wire prf_w1_we = p1_wb_valid && comp_ack_i[1] && (p1_wb_pnew != 7'd0);
     wire prf_w2_we = p2_comp_valid && comp_ack_i[2] && !p2_comp_exception && (p2_comp_preg != 7'd0) && !p2_comp_is_fp;
     logic flush_check_q;
+    logic [63:0] dbg_be_cycle;
 
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
             flush_check_q <= 1'b0;
+            dbg_be_cycle  <= '0;
         end else begin
             flush_check_q <= flush_valid_i;
+            dbg_be_cycle  <= dbg_be_cycle + 1'b1;
 
             if (!flush_valid_i) begin
                 // 1. Stale completion must NEVER write PRF data or trigger recovery
@@ -1879,10 +1919,10 @@ module fursoy_s1_backend
                     end
                 end
                 if (uop1_valid_i && dispatch_ready_o[1]) begin
-                    if (uop1_is_mem && (uop0_is_mem ? !mem_dispatch_ready[1] : !mem_dispatch_ready[0])) begin
+                    if (uop1_is_mem && !mem_dispatch_ready[1]) begin
                         $fatal(1, "[BACKEND ASSERTION FAILED] Memory uop1 accepted without mem queue ready!");
                     end
-                    if (!uop1_is_mem && (uop0_is_mem ? !int_dispatch_ready[0] : !int_dispatch_ready[1])) begin
+                    if (uop1_is_int && (uop0_is_int ? !int_dispatch_ready[1] : !int_dispatch_ready[0])) begin
                         $fatal(1, "[BACKEND ASSERTION FAILED] Integer uop1 accepted without int queue ready!");
                     end
                 end

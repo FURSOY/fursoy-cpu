@@ -71,6 +71,7 @@ module fursoy_s1_serialization
     output logic [63:0]       redirect_target_o,
 
     // Observability
+    output logic              fence_i_at_head_o,
     output logic              fence_i_active_o,
     output logic              event_fence_i_completed_o
 );
@@ -102,7 +103,10 @@ module fursoy_s1_serialization
     } serial_state_t;
 
     serial_state_t serial_state_q;
-    assign fence_i_active_o = (serial_state_q != SERIAL_IDLE);
+    // Block superscalar Slot 1 retirement whenever a FENCE.I is pending so FENCE.I
+    // always reaches ROB Slot 0 (head_q) and retires alone before redirecting to PC+4.
+    assign fence_i_at_head_o = fence_i_pending_q;
+    assign fence_i_active_o  = (serial_state_q != SERIAL_IDLE);
 
     // Hold retirement while serialization is in progress
     wire fence_i_hold = (fence_i_at_head && (serial_state_q != SERIAL_RETIRE_HOLD)) ||
@@ -121,7 +125,7 @@ module fursoy_s1_serialization
         (rob_dist(alloc1_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
 
     always_ff @(posedge clk_i) begin
-        if (rst_i || flush_valid_i || fence_i_squashed) begin
+        if (rst_i || (flush_valid_i && !redirect_valid_o) || fence_i_squashed) begin
             fence_i_pending_q         <= 1'b0;
             fence_i_rob_idx_q         <= '0;
             fence_i_rob_epoch_q       <= '0;

@@ -319,10 +319,12 @@ module fursoy_s1_mem_iq
     wire uop1_is_mem = (uop1_class_i == UOP_LOAD) || (uop1_class_i == UOP_STORE) ||
                        (uop1_class_i == UOP_AMO)  || (uop1_class_i == UOP_FENCE);
 
-    wire [3:0] alloc_slot1_eff = uop0_is_mem ? alloc_slot1 : alloc_slot0;
-    wire       slot1_found_eff = uop0_is_mem ? slot1_found : slot0_found;
+    wire uop0_v_mem  = uop0_valid_i && uop0_is_mem;
 
-    wire alloc0_fire = uop0_valid_i && uop0_is_mem && rename_ack_i[0] && !flush_valid_i && slot0_found;
+    wire [3:0] alloc_slot1_eff = uop0_v_mem ? alloc_slot1 : alloc_slot0;
+    wire       slot1_found_eff = uop0_v_mem ? slot1_found : slot0_found;
+
+    wire alloc0_fire = uop0_v_mem && rename_ack_i[0] && !flush_valid_i && slot0_found;
     wire alloc1_fire = uop1_valid_i && uop1_is_mem && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
 
     // Diagnostics

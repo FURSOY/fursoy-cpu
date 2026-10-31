@@ -622,7 +622,7 @@ module fursoy_s1_bpu
                     slot0_target = slot0_entry.target;
                 end
                 BR_TYPE_RET, BR_TYPE_CORO: begin
-                    slot0_taken  = 1'b1;
+                    slot0_taken  = (ras_top_val != 64'd0);
                     slot0_target = ras_top_val;
                 end
                 BR_TYPE_JALR, BR_TYPE_IND: begin
@@ -649,10 +649,10 @@ module fursoy_s1_bpu
                     slot1_target = slot1_entry.target;
                 end
                 BR_TYPE_RET, BR_TYPE_CORO: begin
-                    slot1_taken  = 1'b1;
                     slot1_target = (slot0_hit && (slot0_entry.br_type == BR_TYPE_CALL))
                                  ? (pc_slot0 + 64'd4)
                                  : ras_top_val;
+                    slot1_taken  = (slot1_target != 64'd0);
                 end
                 BR_TYPE_JALR, BR_TYPE_IND: begin
                     slot1_taken  = 1'b1;

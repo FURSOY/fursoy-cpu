@@ -40,7 +40,7 @@ module fursoy_s1_agu
 
     // Natural Alignment Check
     wire align_ok = check_nat_alignment(ea[2:0], size_i);
-    wire align_fault = valid_i && (sub_op_i != MEM_FENCE) && !align_ok;
+    wire align_fault = valid_i && (sub_op_i != MEM_FENCE) && (sub_op_i != MEM_FENCE_I) && !align_ok;
 
     // Byte Lane Mask
     wire [7:0] byte_mask = get_byte_lane_mask(ea[2:0], size_i);

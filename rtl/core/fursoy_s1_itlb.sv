@@ -233,7 +233,7 @@ module fursoy_s1_itlb
     assign trans_busy_o = itrt_busy || pending_miss_q;
 
     // PTW Request Launch
-    wire need_ptw_walk = trans_req_valid_i && satp_mode_sv39 && va_canonical && !tlb_hit && !itrt_busy && !pending_miss_q;
+    wire need_ptw_walk = trans_req_valid_i && !redirect_flush_i && satp_mode_sv39 && va_canonical && !tlb_hit && !itrt_busy && !pending_miss_q;
     assign ptw_req_valid_o   = need_ptw_walk || pending_miss_q;
     assign ptw_req_itrt_id_o = 1'b0;
     assign ptw_req_vpn_o     = pending_miss_q ? pending_vpn_q : vpn;
@@ -333,23 +333,23 @@ module fursoy_s1_itlb
                 // On pipeline redirect, clear waiter flag but keep transaction identity allocated!
                 itrt_q.waiter_valid <= 1'b0;
                 pending_miss_q      <= 1'b0;
-            end
-
-            if (need_ptw_walk && ptw_req_ready_i) begin
-                itrt_q.valid        <= 1'b1;
-                itrt_q.waiter_valid <= 1'b1;
-                itrt_q.vpn          <= vpn;
-                itrt_q.orig_va      <= trans_req_va_i;
-            end else if (need_ptw_walk && !ptw_req_ready_i) begin
-                pending_miss_q      <= 1'b1;
-                pending_vpn_q       <= vpn;
-                pending_orig_va_q   <= trans_req_va_i;
-            end else if (pending_miss_q && ptw_req_ready_i) begin
-                pending_miss_q      <= 1'b0;
-                itrt_q.valid        <= 1'b1;
-                itrt_q.waiter_valid <= 1'b1;
-                itrt_q.vpn          <= pending_vpn_q;
-                itrt_q.orig_va      <= pending_orig_va_q;
+            end else begin
+                if (need_ptw_walk && ptw_req_ready_i) begin
+                    itrt_q.valid        <= 1'b1;
+                    itrt_q.waiter_valid <= 1'b1;
+                    itrt_q.vpn          <= vpn;
+                    itrt_q.orig_va      <= trans_req_va_i;
+                end else if (need_ptw_walk && !ptw_req_ready_i) begin
+                    pending_miss_q      <= 1'b1;
+                    pending_vpn_q       <= vpn;
+                    pending_orig_va_q   <= trans_req_va_i;
+                end else if (pending_miss_q && ptw_req_ready_i) begin
+                    pending_miss_q      <= 1'b0;
+                    itrt_q.valid        <= 1'b1;
+                    itrt_q.waiter_valid <= 1'b1;
+                    itrt_q.vpn          <= pending_vpn_q;
+                    itrt_q.orig_va      <= pending_orig_va_q;
+                end
             end
 
             // -----------------------------------------------------------------

@@ -39,6 +39,17 @@
         reg = <0x0 0x80000000 0x0 0x10000000>; // 256 MB DRAM (0x8000_0000 - 0x8FFF_FFFF)
     };
 
+    reserved-memory {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+
+        firmware_sbi@80000000 {
+            reg = <0x0 0x80000000 0x0 0x00200000>; /* 2 MiB M-mode reservation */
+            no-map;
+        };
+    };
+
     soc {
         #address-cells = <2>;
         #size-cells = <2>;
@@ -73,7 +84,7 @@
     };
 
     chosen {
-        bootargs = "earlycon=uart8250,mmio32,0x10000000 console=ttyS0,115200 root=/dev/ram0 rw init=/init rdinit=/init";
+        bootargs = "earlycon=uart8250,mmio32,0x10000000 console=ttyS0,115200 lpj=50000 root=/dev/ram0 rw init=/init rdinit=/init";
         stdout-path = "/soc/serial@10000000:115200n8";
     };
 };

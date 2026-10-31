@@ -9,10 +9,18 @@
     .globl fursoy_s1_sbi_trap_entry
     .balign 4
 fursoy_s1_sbi_trap_entry:
-    # Inspect mcause first:
+    # 1. Immediately preserve S-mode t0 into mscratch before touching ANY registers
+    csrw mscratch, t0
+
+    # 2. Inspect mcause in t0
     csrr t0, mcause
+
+    # 3. Check if this is an asynchronous interrupt (MSB == 1)
+    bltz t0, .Lhandle_interrupt
+
+    # 4. Synchronous Exception: check for Supervisor ECALL (mcause == 9)
     li t1, 9
-    bne t0, t1, .Lnot_s_ecall
+    bne t0, t1, .Lunexpected_m_trap
 
     # =========================================================================
     # Supervisor ECALL Dispatch (mcause 9)
@@ -240,15 +248,16 @@ fursoy_s1_sbi_trap_entry:
     .endr
 
     # =========================================================================
-    # Non-ECALL Traps
+    # Interrupt and Non-ECALL Trap Handlers
     # =========================================================================
-.Lnot_s_ecall:
-    # Check for Machine Timer Interrupt (mcause 0x8000_0000_0000_0007)
-    li t1, 0x8000000000000007
-    bne t0, t1, .Lunexpected_m_trap
+.Lhandle_interrupt:
+    # t0 holds mcause. Check if it is Machine Timer Interrupt (mcause 0x8000_0000_0000_0007).
+    # Since bit 63 is set, shifting left by 1 clears bit 63 and leaves cause * 2:
+    slli t0, t0, 1
+    addi t0, t0, -14        # 7 << 1 = 14
+    bnez t0, .Lunexpected_m_trap
 
 handle_timer_irq:
-    csrw mscratch, t0       # Save S-mode t0 into mscratch
     # 1. Mask MTIE in mie (bit 7) to clear pending machine timer interrupt
     li t0, (1 << 7)
     csrc mie, t0
@@ -264,7 +273,7 @@ handle_timer_irq:
 
 .Lunexpected_m_trap:
     la sp, __stack_top
-    mv a0, t0
+    csrr a0, mcause
     csrr a1, mepc
     csrr a2, mtval
     call sbi_panic

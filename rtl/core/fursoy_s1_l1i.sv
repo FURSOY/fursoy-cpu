@@ -196,6 +196,26 @@ module fursoy_s1_l1i
     wire f2_miss = f2_valid_q && !cache_hit && !f2_page_fault_q && !f2_access_fault_q;
     wire mshr1_collision = f2_miss && mshr1_match;
 
+    // Stage F2 Synchronous Skid Buffer (Section 3.2 & 17)
+    typedef struct packed {
+        logic        valid;
+        logic [63:0] pc;
+        logic [63:0] data;
+        logic        exception_valid;
+        logic [4:0]  exception_cause;
+        logic [63:0] fault_addr;
+    } skid_entry_t;
+
+    skid_entry_t f2_skid_q;
+    assign diag_f2_skid_valid_o = f2_skid_q.valid;
+
+    // Active demand waiters in MSHRs (enforce strict in-order F3 delivery)
+    wire mshr0_has_waiter   = imshr_q[0].valid && imshr_q[0].waiter_valid;
+    wire mshr1_has_waiter   = imshr_q[1].valid && imshr_q[1].waiter_valid && !imshr_q[1].suppress_push;
+    wire any_waiter_pending = mshr0_has_waiter || mshr1_has_waiter;
+
+    wire mshr1_rsp_arriving = bus_rd_rsp_valid_i && (bus_rd_rsp_tag_i[0] == 1'b1);
+
     // -------------------------------------------------------------------------
     // Next-Line Prefetch Candidate Evaluation (§7.1, §7.2, §7.3)
     // -------------------------------------------------------------------------
@@ -228,9 +248,15 @@ module fursoy_s1_l1i
     // Gating conditions for MSHR1 prefetch allocation (§7.2)
     wire mshr0_idle_or_sent = !imshr_q[0].valid || imshr_q[0].req_sent;
 
-    // Bus request triggers
-    wire mshr0_fresh_req = !redirect_flush_i && f2_miss && !mshr0_match && !mshr1_match && !imshr_q[0].valid;
-    wire mshr0_retry_req = !redirect_flush_i && imshr_q[0].valid && !imshr_q[0].req_sent;
+    // Bus request triggers & MSHR ownership transfer
+    wire mshr0_fresh_req   = !redirect_flush_i && !f2_skid_q.valid && !mshr1_has_waiter &&
+                             f2_miss && !mshr0_match && !mshr1_match && !imshr_q[0].valid;
+    wire mshr0_retry_req   = !redirect_flush_i && imshr_q[0].valid && !imshr_q[0].req_sent;
+
+    wire mshr1_can_promote = !redirect_flush_i && !f2_skid_q.valid &&
+                             mshr1_collision && imshr_q[1].is_prefetch && !imshr_q[1].waiter_valid &&
+                             !mshr1_rsp_arriving &&
+                             (!mshr0_has_waiter || (imshr_q[0].req_sent && imshr_q[1].req_sent && !stall_f3_i && (fq_free_count_i >= 5'd4)));
 
     wire nlp_alloc_eligible = nlp_trigger_valid &&
                               !nlp_page_boundary_abort && !cand_already_resident &&
@@ -279,36 +305,21 @@ module fursoy_s1_l1i
     assign bus_rd_req_tag_o   = bus_req_tag;
 
     // -------------------------------------------------------------------------
-    // Pipeline Stall & Hold Generation
+    // Pipeline Stall, Hold & In-Order Delivery Gating
     // -------------------------------------------------------------------------
-    wire secondary_miss_stall = f2_miss && (mshr0_match || mshr1_match);
-    wire mshr_exhausted_stall = f2_miss && !mshr0_match && !mshr1_match && imshr_q[0].valid;
-    wire bus_not_ready_stall  = mshr0_fresh_req && !bus_rd_req_ready_i;
-    wire f2_stall_condition   = secondary_miss_stall || mshr_exhausted_stall || bus_not_ready_stall;
-
-    // =========================================================================
-    // 3. Stage F2 Synchronous Skid Buffer (Section 3.2 & 17)
-    // =========================================================================
-    typedef struct packed {
-        logic        valid;
-        logic [63:0] pc;
-        logic [63:0] data;
-        logic        exception_valid;
-        logic [4:0]  exception_cause;
-        logic [63:0] fault_addr;
-    } skid_entry_t;
-
-    skid_entry_t f2_skid_q;
-    assign diag_f2_skid_valid_o = f2_skid_q.valid;
+    wire f2_direct_deliver  = f2_valid_q && !f2_skid_q.valid && !any_waiter_pending &&
+                              (f2_page_fault_q || f2_access_fault_q || cache_hit);
+    wire f2_consumed        = f2_direct_deliver || mshr0_fresh_req || mshr1_can_promote;
+    wire f2_stall_condition = f2_valid_q && !f2_consumed;
 
     wire f2_hold           = f2_skid_q.valid || f2_stall_condition;
-    wire f2_stall_upstream = f2_skid_q.valid || stall_f3_i || f2_stall_condition;
+    wire f2_stall_upstream = f2_skid_q.valid || stall_f3_i || f2_stall_condition || any_waiter_pending;
     assign f2_stall_f0_o   = f2_stall_upstream;
     assign f2_stall_f1_o   = f2_stall_upstream;
 
     assign l1i_ready_o     = !f2_stall_upstream;
 
-    // Delivery Candidate: either from F2 Skid Buffer, from F2 cache hit, or from arriving refill
+    // Delivery Candidate: mutually exclusive between F2 direct delivery and MSHR demand waiter return
     logic        emerging_valid;
     logic [63:0] emerging_pc;
     logic [63:0] emerging_data;
@@ -324,7 +335,7 @@ module fursoy_s1_l1i
         emerging_exc_cause  = 5'd0;
         emerging_fault_addr = '0;
 
-        if (f2_valid_q) begin
+        if (f2_direct_deliver) begin
             if (f2_page_fault_q) begin
                 // Instruction Page Fault (Cause 12)
                 emerging_valid      = 1'b1;
@@ -350,30 +361,20 @@ module fursoy_s1_l1i
                 emerging_exc_cause  = 5'd0;
                 emerging_fault_addr = 64'd0;
             end
-        end
-
-        // Check if arriving refill has live waiter or matches demand collision
-        if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid) begin
-            if (bus_rd_rsp_tag_i[0] == 1'b0) begin
-                if (imshr_q[0].waiter_valid) begin
-                    emerging_valid      = 1'b1;
-                    emerging_pc         = imshr_q[0].orig_pc;
-                    emerging_data       = extract_fetch_block(bus_rd_rsp_data_i, imshr_q[0].word_idx);
-                    emerging_exc_valid  = bus_rd_rsp_error_i;
-                    emerging_exc_cause  = bus_rd_rsp_error_i ? 5'd1 : 5'd0;
-                    emerging_fault_addr = imshr_q[0].orig_pc;
-                end
-            end else begin
-                // MSHR1: delivers if waiter_valid is set (promoted) OR collision occurs on same cycle
-                if ((imshr_q[1].waiter_valid && !imshr_q[1].suppress_push) || mshr1_collision) begin
-                    emerging_valid      = 1'b1;
-                    emerging_pc         = imshr_q[1].waiter_valid ? imshr_q[1].orig_pc : f2_pc_q;
-                    emerging_data       = extract_fetch_block(bus_rd_rsp_data_i, imshr_q[1].waiter_valid ? imshr_q[1].word_idx : f2_word_idx);
-                    emerging_exc_valid  = (!imshr_q[1].is_prefetch || mshr1_collision) ? bus_rd_rsp_error_i : 1'b0;
-                    emerging_exc_cause  = emerging_exc_valid ? 5'd1 : 5'd0;
-                    emerging_fault_addr = emerging_pc;
-                end
-            end
+        end else if (bus_rd_rsp_valid_i && (bus_rd_rsp_tag_i[0] == 1'b0) && mshr0_has_waiter) begin
+            emerging_valid      = 1'b1;
+            emerging_pc         = imshr_q[0].orig_pc;
+            emerging_data       = extract_fetch_block(bus_rd_rsp_data_i, imshr_q[0].word_idx);
+            emerging_exc_valid  = bus_rd_rsp_error_i;
+            emerging_exc_cause  = bus_rd_rsp_error_i ? 5'd1 : 5'd0;
+            emerging_fault_addr = imshr_q[0].orig_pc;
+        end else if (bus_rd_rsp_valid_i && (bus_rd_rsp_tag_i[0] == 1'b1) && mshr1_has_waiter) begin
+            emerging_valid      = 1'b1;
+            emerging_pc         = imshr_q[1].orig_pc;
+            emerging_data       = extract_fetch_block(bus_rd_rsp_data_i, imshr_q[1].word_idx);
+            emerging_exc_valid  = bus_rd_rsp_error_i;
+            emerging_exc_cause  = bus_rd_rsp_error_i ? 5'd1 : 5'd0;
+            emerging_fault_addr = imshr_q[1].orig_pc;
         end
     end
 
@@ -397,11 +398,11 @@ module fursoy_s1_l1i
     end
 
     // Observability & Diagnostics
-    assign event_l1i_hit_o          = f2_valid_q && !f2_page_fault_q && !f2_access_fault_q && cache_hit;
-    assign event_l1i_miss_o         = f2_valid_q && !f2_page_fault_q && !f2_access_fault_q && !cache_hit;
+    assign event_l1i_hit_o          = f2_direct_deliver && cache_hit && !f2_page_fault_q && !f2_access_fault_q;
+    assign event_l1i_miss_o         = f2_valid_q && !f2_page_fault_q && !f2_access_fault_q && !cache_hit && (mshr0_fresh_req || mshr1_can_promote);
     assign diag_nlp_alloc_o         = mshr1_fresh_req;
     assign diag_nlp_hit_o           = event_l1i_hit_o;
-    assign diag_nlp_promote_o       = mshr1_collision && imshr_q[1].is_prefetch;
+    assign diag_nlp_promote_o       = mshr1_can_promote;
     assign diag_nlp_abort_page_o    = nlp_trigger_valid && nlp_page_boundary_abort && !imshr_q[1].valid;
     assign diag_nlp_drop_resident_o = nlp_trigger_valid && !nlp_page_boundary_abort && cand_already_resident && !imshr_q[1].valid;
 
@@ -460,39 +461,28 @@ module fursoy_s1_l1i
             // -----------------------------------------------------------------
             if (redirect_flush_i) begin
                 f2_skid_q  <= '0;
-                f2_valid_q <= 1'b0;
-            end else begin
-                // If refill arrives on the same cycle as an F2 hit, capture hit in skid buffer
-                if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid &&
-                    (imshr_q[bus_rd_rsp_tag_i[0]].waiter_valid || (bus_rd_rsp_tag_i[0] == 1'b1 && mshr1_collision)) &&
-                    f2_valid_q && cache_hit && !f2_skid_q.valid) begin
+            end else if (stall_f3_i) begin
+                if (emerging_valid && !f2_skid_q.valid) begin
                     f2_skid_q.valid           <= 1'b1;
-                    f2_skid_q.pc              <= f2_pc_q;
-                    f2_skid_q.data            <= hit_data;
-                    f2_skid_q.exception_valid <= 1'b0;
-                    f2_skid_q.exception_cause <= 5'd0;
-                    f2_skid_q.fault_addr      <= 64'd0;
-                end else if (stall_f3_i) begin
-                    if (emerging_valid && !f2_skid_q.valid) begin
-                        f2_skid_q.valid           <= 1'b1;
-                        f2_skid_q.pc              <= emerging_pc;
-                        f2_skid_q.data            <= emerging_data;
-                        f2_skid_q.exception_valid <= emerging_exc_valid;
-                        f2_skid_q.exception_cause <= emerging_exc_cause;
-                        f2_skid_q.fault_addr      <= emerging_fault_addr;
-                    end
-                end else begin
-                    if (f2_skid_q.valid) begin
-                        f2_skid_q <= '0;
-                    end
+                    f2_skid_q.pc              <= emerging_pc;
+                    f2_skid_q.data            <= emerging_data;
+                    f2_skid_q.exception_valid <= emerging_exc_valid;
+                    f2_skid_q.exception_cause <= emerging_exc_cause;
+                    f2_skid_q.fault_addr      <= emerging_fault_addr;
                 end
+            end else if (f2_skid_q.valid) begin
+                f2_skid_q <= '0;
             end
 
             // -----------------------------------------------------------------
             // C. F1 -> F2 Pipeline Register Advance
             // -----------------------------------------------------------------
             if (redirect_flush_i) begin
-                f2_valid_q <= 1'b0;
+                f2_valid_q        <= 1'b0;
+                f2_pc_q           <= '0;
+                f2_pa_q           <= '0;
+                f2_page_fault_q   <= 1'b0;
+                f2_access_fault_q <= 1'b0;
             end else if (!f2_hold) begin
                 f2_valid_q        <= f1_req_valid_i;
                 f2_pc_q           <= f1_req_pc_i;
@@ -522,7 +512,7 @@ module fursoy_s1_l1i
             // -----------------------------------------------------------------
             // E. MSHR1 Allocation, Handshake, & Demand Promotion (NLP Prefetch)
             // -----------------------------------------------------------------
-            if (mshr1_collision && imshr_q[1].is_prefetch) begin
+            if (mshr1_can_promote) begin
                 // Demand Miss Collision: promote speculative prefetch to demand status (§7.2, Rule P2-5)
                 imshr_q[1].is_prefetch   <= 1'b0;
                 imshr_q[1].suppress_push <= 1'b0;
