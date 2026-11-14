@@ -78,9 +78,13 @@ module fursoy_s1_prf
     input  preg_t             w3_paddr_i,
     input  logic [63:0]       w3_data_i,
 
-    // Testbench / Diagnostics Read Probe Port
+    // Testbench / Diagnostics Read Probe Port & Vector Scalar Read Ports
     input  preg_t             probe_paddr_i,
-    output logic [63:0]       probe_pdata_o
+    output logic [63:0]       probe_pdata_o,
+    input  preg_t             r7_paddr_i,
+    output logic [63:0]       r7_data_o,
+    input  preg_t             r8_paddr_i,
+    output logic [63:0]       r8_data_o
 );
 
     // -------------------------------------------------------------------------
@@ -167,6 +171,8 @@ module fursoy_s1_prf
     assign r4_data_o    = read_prf(r4_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i, w3_we, w3_paddr_i, w3_data_i);
     assign r5_data_o    = read_prf(r5_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i, w3_we, w3_paddr_i, w3_data_i);
     assign r6_data_o    = read_prf(r6_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i, w3_we, w3_paddr_i, w3_data_i);
+    assign r7_data_o    = read_prf(r7_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i, w3_we, w3_paddr_i, w3_data_i);
+    assign r8_data_o    = read_prf(r8_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i, w3_we, w3_paddr_i, w3_data_i);
     assign probe_pdata_o = read_prf(probe_paddr_i, w0_we, w0_paddr_i, w0_data_i, w1_we, w1_paddr_i, w1_data_i, w2_we, w2_paddr_i, w2_data_i, w3_we, w3_paddr_i, w3_data_i);
 
     // -------------------------------------------------------------------------

@@ -1,0 +1,52 @@
+{
+  "status": "pass",
+  "timestamp_utc": "2026-11-14T21:46:52.258666+00:00",
+  "elapsed_seconds": 61.14,
+  "sail_version": "0.16",
+  "workloads": [
+    {
+      "name": "01_rv64im_zba_zbb",
+      "matched": true,
+      "sail_steps": 155,
+      "fursoy_events": 156,
+      "gprs_checked": 130,
+      "fprs_checked": 0,
+      "vrfs_checked": 0,
+      "traps_checked": 0,
+      "mismatches": []
+    },
+    {
+      "name": "02_rv64fd_fp",
+      "matched": true,
+      "sail_steps": 85,
+      "fursoy_events": 86,
+      "gprs_checked": 36,
+      "fprs_checked": 30,
+      "vrfs_checked": 0,
+      "traps_checked": 2,
+      "mismatches": []
+    },
+    {
+      "name": "03_rvv_vector",
+      "matched": true,
+      "sail_steps": 83,
+      "fursoy_events": 84,
+      "gprs_checked": 46,
+      "fprs_checked": 0,
+      "vrfs_checked": 21,
+      "traps_checked": 1,
+      "mismatches": []
+    },
+    {
+      "name": "04_sv39_mmu_traps",
+      "matched": true,
+      "sail_steps": 304,
+      "fursoy_events": 304,
+      "gprs_checked": 234,
+      "fprs_checked": 0,
+      "vrfs_checked": 0,
+      "traps_checked": 4,
+      "mismatches": []
+    }
+  ]
+}

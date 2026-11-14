@@ -183,8 +183,12 @@ module fursoy_s1_fdiv
     // -------------------------------------------------------------------------
     // Execution Output Driving
     // -------------------------------------------------------------------------
+    wire active_squash = recover_valid_i && (rob_dist(rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire buf_squash    = recover_valid_i && (rob_dist(fdiv_buf_q.rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire req_squash    = recover_valid_i && (rob_dist(req_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+
     always_comb begin
-        if (fdiv_buf_q.valid && !fma_wb_valid_i) begin
+        if (fdiv_buf_q.valid && !buf_squash && !fma_wb_valid_i) begin
             wb_valid_o     = 1'b1;
             wb_data_o      = fdiv_buf_q.data;
             wb_fflags_o    = fdiv_buf_q.fflags;
@@ -204,8 +208,7 @@ module fursoy_s1_fdiv
     // -------------------------------------------------------------------------
     // Branch Recovery & Flush Qualifications
     // -------------------------------------------------------------------------
-    wire active_squash = recover_valid_i && (rob_dist(rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
-    wire buf_squash    = recover_valid_i && (rob_dist(fdiv_buf_q.rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    // (active_squash, buf_squash, req_squash declared above output mux)
 
     // -------------------------------------------------------------------------
     // Combinational Math Evaluation
@@ -734,7 +737,7 @@ module fursoy_s1_fdiv
             // 2. Main FSM
             case (state_q)
                 FDIV_IDLE: begin
-                    if (req_valid_i && !busy_o) begin
+                    if (req_valid_i && !busy_o && !req_squash) begin
                         logic [2:0] eff_rm;
                         logic [5:0] target_lat;
                         logic [63:0] calc_res;

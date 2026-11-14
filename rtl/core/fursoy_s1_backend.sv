@@ -348,7 +348,26 @@ module fursoy_s1_backend
     input  logic              mmio_rsp_valid_i,
     input  logic [63:0]       mmio_rsp_rdata_i,
     input  logic              mmio_rsp_error_i,
-    output logic              mmio_rsp_ready_o
+    output logic              mmio_rsp_ready_o,
+
+    // Vector Dispatch, Scalar PRF Read, and Non-Speculative LSU Element Ports
+    input  logic [1:0]        vec_dispatch_ready_i,
+    input  logic              vec_active_i,
+    input  preg_t             vec_rs1_paddr_i,
+    output logic [63:0]       vec_rs1_data_o,
+    input  preg_t             vec_rs2_paddr_i,
+    output logic [63:0]       vec_rs2_data_o,
+    input  logic              vec_mem_req_valid_i,
+    input  logic              vec_mem_req_is_store_i,
+    input  mem_size_t         vec_mem_req_size_i,
+    input  logic [63:0]       vec_mem_req_va_i,
+    input  logic [63:0]       vec_mem_req_wdata_i,
+    input  rob_idx_t          vec_mem_req_rob_idx_i,
+    input  rob_epoch_t        vec_mem_req_rob_epoch_i,
+    output logic              vec_mem_rsp_valid_o,
+    output logic [63:0]       vec_mem_rsp_rdata_o,
+    output logic              vec_mem_rsp_exception_o,
+    output logic [4:0]        vec_mem_rsp_cause_o
 );
 
     // -------------------------------------------------------------------------
@@ -481,19 +500,24 @@ module fursoy_s1_backend
         endcase
     endfunction
 
-    wire uop0_is_fpiq = (uop0_class_i == UOP_FP) && uop0_is_fp_i && !uop0_is_mem && !is_int2fp_op_b(uop0_subop_i);
-    wire uop1_is_fpiq = (uop1_class_i == UOP_FP) && uop1_is_fp_i && !uop1_is_mem && !is_int2fp_op_b(uop1_subop_i);
+    wire uop0_is_fpiq = !uop0_exception_i && (uop0_class_i == UOP_FP) && uop0_is_fp_i && !uop0_is_mem && !is_int2fp_op_b(uop0_subop_i);
+    wire uop1_is_fpiq = !uop1_exception_i && (uop1_class_i == UOP_FP) && uop1_is_fp_i && !uop1_is_mem && !is_int2fp_op_b(uop1_subop_i);
+
+    wire uop0_is_vec = (uop0_class_i == UOP_VEC);
+    wire uop1_is_vec = (uop1_class_i == UOP_VEC);
 
     /* verilator lint_off UNUSEDSIGNAL */
-    wire uop0_is_int = !uop0_is_mem && !uop0_is_fpiq;
-    wire uop1_is_int = !uop1_is_mem && !uop1_is_fpiq;
+    wire uop0_is_int = !uop0_is_mem && !uop0_is_fpiq && !uop0_is_vec;
+    wire uop1_is_int = !uop1_is_mem && !uop1_is_fpiq && !uop1_is_vec;
     /* verilator lint_on UNUSEDSIGNAL */
 
     logic [1:0] fp_dispatch_ready;
 
     always_comb begin
         if (uop0_is_mem) begin
-            dispatch_ready_o[0] = mem_dispatch_ready[0];
+            dispatch_ready_o[0] = mem_dispatch_ready[0] && !vec_active_i;
+        end else if (uop0_is_vec) begin
+            dispatch_ready_o[0] = vec_dispatch_ready_i[0];
         end else if (uop0_is_fpiq) begin
             dispatch_ready_o[0] = fp_dispatch_ready[0];
         end else begin
@@ -501,7 +525,9 @@ module fursoy_s1_backend
         end
 
         if (uop1_is_mem) begin
-            dispatch_ready_o[1] = mem_dispatch_ready[1];
+            dispatch_ready_o[1] = mem_dispatch_ready[1] && !vec_active_i && !(uop0_valid_i && uop0_is_vec);
+        end else if (uop1_is_vec) begin
+            dispatch_ready_o[1] = (uop0_valid_i && uop0_is_vec) ? vec_dispatch_ready_i[1] : vec_dispatch_ready_i[0];
         end else if (uop1_is_fpiq) begin
             dispatch_ready_o[1] = (uop0_valid_i && uop0_is_fpiq) ? fp_dispatch_ready[1] : fp_dispatch_ready[0];
         end else begin
@@ -676,7 +702,7 @@ module fursoy_s1_backend
         .wb2_fp_valid_i     (p3_fp_wb_valid || w2_fp_valid_i),
         .wb2_fp_paddr_i     (p3_fp_wb_valid ? p3_fp_wb_paddr : w2_fp_paddr_i),
 
-        .fdiv_busy_i        (fdiv_busy),
+        .fdiv_busy_i        (fdiv_busy || (fp_rf_valid_q && !fp_rf_squashed && is_fdiv_op(fp_rf_uop_q.sub_op))),
         .fconv_fprf_busy_i  (fconv_fprf_busy),
         .fconv_prf_busy_i   (fconv_prf_busy),
 
@@ -812,7 +838,11 @@ module fursoy_s1_backend
         .w3_data_i      (p3_wb_data),
 
         .probe_paddr_i  (probe_paddr_i),
-        .probe_pdata_o  (probe_pdata_o)
+        .probe_pdata_o  (probe_pdata_o),
+        .r7_paddr_i     (vec_rs1_paddr_i),
+        .r7_data_o      (vec_rs1_data_o),
+        .r8_paddr_i     (vec_rs2_paddr_i),
+        .r8_data_o      (vec_rs2_data_o)
     );
 
     // -------------------------------------------------------------------------
@@ -1445,7 +1475,19 @@ module fursoy_s1_backend
         .mmio_rsp_valid_i        (mmio_rsp_valid_i),
         .mmio_rsp_rdata_i        (mmio_rsp_rdata_i),
         .mmio_rsp_error_i        (mmio_rsp_error_i),
-        .mmio_rsp_ready_o        (mmio_rsp_ready_o)
+        .mmio_rsp_ready_o        (mmio_rsp_ready_o),
+
+        .vec_mem_req_valid_i     (vec_mem_req_valid_i),
+        .vec_mem_req_is_store_i  (vec_mem_req_is_store_i),
+        .vec_mem_req_size_i      (vec_mem_req_size_i),
+        .vec_mem_req_va_i        (vec_mem_req_va_i),
+        .vec_mem_req_wdata_i     (vec_mem_req_wdata_i),
+        .vec_mem_req_rob_idx_i   (vec_mem_req_rob_idx_i),
+        .vec_mem_req_rob_epoch_i (vec_mem_req_rob_epoch_i),
+        .vec_mem_rsp_valid_o     (vec_mem_rsp_valid_o),
+        .vec_mem_rsp_rdata_o     (vec_mem_rsp_rdata_o),
+        .vec_mem_rsp_exception_o (vec_mem_rsp_exception_o),
+        .vec_mem_rsp_cause_o     (vec_mem_rsp_cause_o)
     );
 
     wire is1_is_mul = (is1_uop.uop_class == UOP_MUL);
@@ -1914,7 +1956,7 @@ module fursoy_s1_backend
                     if (uop0_is_mem && !mem_dispatch_ready[0]) begin
                         $fatal(1, "[BACKEND ASSERTION FAILED] Memory uop0 accepted without mem queue ready!");
                     end
-                    if (!uop0_is_mem && !int_dispatch_ready[0]) begin
+                    if (uop0_is_int && !int_dispatch_ready[0]) begin
                         $fatal(1, "[BACKEND ASSERTION FAILED] Integer uop0 accepted without int queue ready!");
                     end
                 end

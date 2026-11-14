@@ -899,7 +899,20 @@ module fursoy_s1_lsu
     input  logic              mmio_rsp_valid_i,
     input  logic [63:0]       mmio_rsp_rdata_i,
     input  logic              mmio_rsp_error_i,
-    output logic              mmio_rsp_ready_o
+    output logic              mmio_rsp_ready_o,
+
+    // Vector Non-Speculative Single-Element Memory Access Interface (M8 Full Vector)
+    input  logic              vec_mem_req_valid_i,
+    input  logic              vec_mem_req_is_store_i,
+    input  mem_size_t         vec_mem_req_size_i,
+    input  logic [63:0]       vec_mem_req_va_i,
+    input  logic [63:0]       vec_mem_req_wdata_i,
+    input  rob_idx_t          vec_mem_req_rob_idx_i,
+    input  rob_epoch_t        vec_mem_req_rob_epoch_i,
+    output logic              vec_mem_rsp_valid_o,
+    output logic [63:0]       vec_mem_rsp_rdata_o,
+    output logic              vec_mem_rsp_exception_o,
+    output logic [4:0]        vec_mem_rsp_cause_o
 );
 
     // =========================================================================
@@ -973,6 +986,25 @@ module fursoy_s1_lsu
     wire lsu_queues_port2_busy;
     wire lsu_queues_port3_busy;
 
+    // Non-Speculative Vector Memory Element FSM Declarations
+    typedef enum logic [2:0] {
+        VMEM_IDLE        = 3'd0,
+        VMEM_DTLB_CHK    = 3'd1,
+        VMEM_WAIT_TRT    = 3'd2,
+        VMEM_L1D_LD_REQ  = 3'd3,
+        VMEM_L1D_LD_WAIT = 3'd4,
+        VMEM_L1D_ST_WAIT = 3'd5
+    } vmem_state_t;
+
+    vmem_state_t vmem_state_q;
+    logic        vmem_trt_alloc_q;
+    logic [55:0] vmem_pa_q;
+    wire       vmem_active = (vmem_state_q != VMEM_IDLE);
+    wire [7:0] vmem_base_mask = (vec_mem_req_size_i == MEM_SIZE_BYTE) ? 8'h01 :
+                                (vec_mem_req_size_i == MEM_SIZE_HALF) ? 8'h03 :
+                                (vec_mem_req_size_i == MEM_SIZE_WORD) ? 8'h0F : 8'hFF;
+    wire [7:0] vmem_store_mask = vmem_base_mask << vmem_pa_q[2:0];
+
     fursoy_s1_mem_iq u_mem_iq (
         .clk_i              (clk_i),
         .rst_i              (rst_i),
@@ -1038,8 +1070,8 @@ module fursoy_s1_lsu
         .wb3_comp_exception_i(wb3_comp_exception_i),
         .wb3_pnew_i         (wb3_pnew_i),
 
-        .port2_busy_i       (lsu_queues_port2_busy),
-        .port3_busy_i       (lsu_queues_port3_busy),
+        .port2_busy_i       (lsu_queues_port2_busy || vmem_active),
+        .port3_busy_i       (lsu_queues_port3_busy || vmem_active),
         .issue0_valid_o     (memiq_issue0_valid),
         .issue0_uop_o       (memiq_issue0_uop),
         .issue1_valid_o     (memiq_issue1_valid),
@@ -1194,13 +1226,13 @@ module fursoy_s1_lsu
         .recover_rob_idx_i          (recover_rob_idx_i),
         .rob_head_i                 (rob_head_i),
 
-        .alloc_req_i                (trt_alloc_req),
-        .alloc_is_store_i           (trt_alloc_is_store),
-        .alloc_q_idx_i              (trt_alloc_q_idx),
-        .alloc_vpn_i                (trt_alloc_vpn),
-        .alloc_access_type_i        (trt_alloc_is_store ? 2'b01 : 2'b00),
-        .alloc_rob_idx_i            (trt_alloc_rob_idx),
-        .alloc_rob_epoch_i          (trt_alloc_rob_epoch),
+        .alloc_req_i                (vmem_active ? (vmem_state_q == VMEM_WAIT_TRT && vmem_trt_alloc_q) : trt_alloc_req),
+        .alloc_is_store_i           (vmem_active ? vec_mem_req_is_store_i : trt_alloc_is_store),
+        .alloc_q_idx_i              (vmem_active ? 4'd0                   : trt_alloc_q_idx),
+        .alloc_vpn_i                (vmem_active ? vec_mem_req_va_i[38:12] : trt_alloc_vpn),
+        .alloc_access_type_i        ((vmem_active ? vec_mem_req_is_store_i : trt_alloc_is_store) ? 2'b01 : 2'b00),
+        .alloc_rob_idx_i            (vmem_active ? vec_mem_req_rob_idx_i  : trt_alloc_rob_idx),
+        .alloc_rob_epoch_i          (vmem_active ? vec_mem_req_rob_epoch_i: trt_alloc_rob_epoch),
         .alloc_ready_o              (trt_alloc_ready),
         .alloc_tr_id_o              (trt_assigned_tr_id),
 
@@ -1255,10 +1287,10 @@ module fursoy_s1_lsu
         .satp_i                     (satp_i),
         .mstatus_i                  (mstatus_i),
 
-        .p0_req_valid_i             (memiq_issue0_valid),
-        .p0_req_va_i                (agu0_ea),
-        .p0_req_is_store_i          ((memiq_issue0_uop.uop_class == UOP_STORE) || (memiq_issue0_uop.uop_class == UOP_AMO) || (memiq_issue0_uop.uop_class == UOP_FENCE)),
-        .p0_req_is_amo_i            (memiq_issue0_uop.uop_class == UOP_AMO),
+        .p0_req_valid_i             ((vmem_state_q == VMEM_DTLB_CHK) ? 1'b1 : memiq_issue0_valid),
+        .p0_req_va_i                ((vmem_state_q == VMEM_DTLB_CHK) ? vec_mem_req_va_i : agu0_ea),
+        .p0_req_is_store_i          ((vmem_state_q == VMEM_DTLB_CHK) ? vec_mem_req_is_store_i : ((memiq_issue0_uop.uop_class == UOP_STORE) || (memiq_issue0_uop.uop_class == UOP_AMO) || (memiq_issue0_uop.uop_class == UOP_FENCE))),
+        .p0_req_is_amo_i            ((vmem_state_q == VMEM_DTLB_CHK) ? 1'b0 : (memiq_issue0_uop.uop_class == UOP_AMO)),
         .p0_rsp_hit_o               (dtlb0_hit),
         .p0_rsp_pa_o                (dtlb0_pa),
         .p0_rsp_page_fault_o        (dtlb0_page_fault),
@@ -1341,14 +1373,14 @@ module fursoy_s1_lsu
         .recover_rob_idx_i          (recover_rob_idx_i),
         .rob_head_i                 (rob_head_i),
 
-        .load0_req_valid_i          (l1d_load0_req_valid),
-        .load0_req_lq_idx_i         (l1d_load0_req_lq_idx),
-        .load0_req_pa_i             (l1d_load0_req_pa),
-        .load0_req_size_i           (l1d_load0_req_size),
-        .load0_req_sign_ext_i       (l1d_load0_req_sign_ext),
-        .load0_req_pnew_i           (l1d_load0_req_pnew),
-        .load0_req_rob_idx_i        (l1d_load0_req_rob_idx),
-        .load0_req_rob_epoch_i      (l1d_load0_req_rob_epoch),
+        .load0_req_valid_i          (vmem_active ? (vmem_state_q == VMEM_L1D_LD_REQ) : l1d_load0_req_valid),
+        .load0_req_lq_idx_i         (vmem_active ? 4'd0                    : l1d_load0_req_lq_idx),
+        .load0_req_pa_i             (vmem_active ? vmem_pa_q               : l1d_load0_req_pa),
+        .load0_req_size_i           (vmem_active ? vec_mem_req_size_i      : l1d_load0_req_size),
+        .load0_req_sign_ext_i       (vmem_active ? 1'b0                    : l1d_load0_req_sign_ext),
+        .load0_req_pnew_i           (vmem_active ? preg_t'(0)              : l1d_load0_req_pnew),
+        .load0_req_rob_idx_i        (vmem_active ? vec_mem_req_rob_idx_i   : l1d_load0_req_rob_idx),
+        .load0_req_rob_epoch_i      (vmem_active ? vec_mem_req_rob_epoch_i : l1d_load0_req_rob_epoch),
         .load0_req_ready_o          (l1d_load0_req_ready),
 
         .load0_rsp_valid_o          (l1d_load0_rsp_valid),
@@ -1373,11 +1405,11 @@ module fursoy_s1_lsu
         .load1_rsp_data_o           (l1d_load1_rsp_data),
         .load1_rsp_mshr_id_o        (l1d_load1_rsp_mshr_id),
 
-        .store_drain_valid_i        (l1d_store_drain_valid),
-        .store_drain_sq_idx_i       (l1d_store_drain_sq_idx),
-        .store_drain_pa_i           (l1d_store_drain_pa),
-        .store_drain_mask_i         (l1d_store_drain_mask),
-        .store_drain_data_i         (l1d_store_drain_data),
+        .store_drain_valid_i        (vmem_active ? (vmem_state_q == VMEM_L1D_ST_WAIT) : l1d_store_drain_valid),
+        .store_drain_sq_idx_i       (vmem_active ? 4'd0       : l1d_store_drain_sq_idx),
+        .store_drain_pa_i           (vmem_active ? vmem_pa_q  : l1d_store_drain_pa),
+        .store_drain_mask_i         (vmem_active ? vmem_store_mask : l1d_store_drain_mask),
+        .store_drain_data_i         (vmem_active ? (vec_mem_req_wdata_i << {vmem_pa_q[2:0], 3'b000}) : l1d_store_drain_data),
         .store_drain_ready_o        (l1d_store_drain_ready),
         .store_drain_done_o         (l1d_store_drain_done),
 
@@ -1532,7 +1564,7 @@ module fursoy_s1_lsu
         .port2_busy_o               (lsu_queues_port2_busy),
         .port3_busy_o               (lsu_queues_port3_busy),
 
-        .trt_delivery_valid_i       (trt_delivery_valid),
+        .trt_delivery_valid_i       (vmem_active ? 1'b0 : trt_delivery_valid),
         .trt_delivery_is_store_i    (trt_delivery_is_store),
         .trt_delivery_q_idx_i       (trt_delivery_q_idx),
         .trt_delivery_pa_i          (trt_delivery_pa),
@@ -1575,7 +1607,7 @@ module fursoy_s1_lsu
         .l1d_load0_req_rob_epoch_o  (l1d_load0_req_rob_epoch),
         .l1d_load0_req_ready_i      (l1d_load0_req_ready),
 
-        .l1d_load0_rsp_valid_i      (l1d_load0_rsp_valid),
+        .l1d_load0_rsp_valid_i      (vmem_active ? 1'b0 : l1d_load0_rsp_valid),
         .l1d_load0_rsp_lq_idx_i     (l1d_load0_rsp_lq_idx),
         .l1d_load0_rsp_hit_i        (l1d_load0_rsp_hit),
         .l1d_load0_rsp_data_i       (l1d_load0_rsp_data),
@@ -1597,7 +1629,7 @@ module fursoy_s1_lsu
         .l1d_load1_rsp_data_i       (l1d_load1_rsp_data),
         .l1d_load1_rsp_mshr_id_i    (l1d_load1_rsp_mshr_id),
 
-        .mshr_refill_valid_i        (refill_comp_valid),
+        .mshr_refill_valid_i        (vmem_active ? 1'b0 : refill_comp_valid),
         .mshr_refill_lq_idx_i       (refill_comp_lq_idx),
         .mshr_refill_pnew_i         (refill_comp_pnew),
         .mshr_refill_rob_idx_i      (refill_comp_rob_idx),
@@ -1610,7 +1642,7 @@ module fursoy_s1_lsu
         .l1d_store_drain_mask_o     (l1d_store_drain_mask),
         .l1d_store_drain_data_o     (l1d_store_drain_data),
         .l1d_store_drain_ready_i    (l1d_store_drain_ready),
-        .l1d_store_drain_done_i     (l1d_store_drain_done),
+        .l1d_store_drain_done_i     (vmem_active ? 1'b0 : l1d_store_drain_done),
         .l1d_quiescent_i            (l1d_quiescent),
         .sq_empty_o                 (sq_empty_o),
 
@@ -1676,6 +1708,114 @@ module fursoy_s1_lsu
         .mmio_rsp_error_i           (mmio_rsp_error_i),
         .mmio_rsp_ready_o           (mmio_rsp_ready_o)
     );
+
+    // =========================================================================
+    // 6. Non-Speculative Single-Element Vector Memory Adapter (ROB Head)
+    // =========================================================================
+    wire vmem_misaligned = (vec_mem_req_size_i == MEM_SIZE_HALF   && vec_mem_req_va_i[0]) ||
+                           (vec_mem_req_size_i == MEM_SIZE_WORD   && (vec_mem_req_va_i[1:0] != 2'b00)) ||
+                           (vec_mem_req_size_i == MEM_SIZE_DOUBLE && (vec_mem_req_va_i[2:0] != 3'b000));
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i || flush_valid_i || recover_valid_i) begin
+            vmem_state_q            <= VMEM_IDLE;
+            vmem_trt_alloc_q        <= 1'b0;
+            vmem_pa_q               <= 56'd0;
+            vec_mem_rsp_valid_o     <= 1'b0;
+            vec_mem_rsp_rdata_o     <= 64'd0;
+            vec_mem_rsp_exception_o <= 1'b0;
+            vec_mem_rsp_cause_o     <= 5'd0;
+        end else begin
+            vec_mem_rsp_valid_o     <= 1'b0;
+            vec_mem_rsp_exception_o <= 1'b0;
+
+            case (vmem_state_q)
+                VMEM_IDLE: begin
+                    if (vec_mem_req_valid_i && !vec_mem_rsp_valid_o &&
+                        sq_empty_o && l1d_quiescent && (lq_count_o == 5'd0) &&
+                        !lsu_queues_port2_busy && !lsu_queues_port3_busy) begin
+                        vmem_state_q <= VMEM_DTLB_CHK;
+                    end
+                end
+
+                VMEM_DTLB_CHK: begin
+                    if (vmem_misaligned) begin
+                        vec_mem_rsp_valid_o     <= 1'b1;
+                        vec_mem_rsp_exception_o <= 1'b1;
+                        vec_mem_rsp_cause_o     <= vec_mem_req_is_store_i ? 5'd6 : 5'd4;
+                        vmem_state_q            <= VMEM_IDLE;
+                    end else if (dtlb0_hit) begin
+                        if (dtlb0_page_fault || dtlb0_access_fault || !is_dram_pa(dtlb0_pa)) begin
+                            vec_mem_rsp_valid_o     <= 1'b1;
+                            vec_mem_rsp_exception_o <= 1'b1;
+                            vec_mem_rsp_cause_o     <= dtlb0_page_fault ? (vec_mem_req_is_store_i ? 5'd15 : 5'd13)
+                                                                        : (vec_mem_req_is_store_i ? 5'd7  : 5'd5);
+                            vmem_state_q            <= VMEM_IDLE;
+                        end else begin
+                            vmem_pa_q    <= dtlb0_pa;
+                            vmem_state_q <= vec_mem_req_is_store_i ? VMEM_L1D_ST_WAIT : VMEM_L1D_LD_REQ;
+                        end
+                    end else begin
+                        vmem_trt_alloc_q <= 1'b1;
+                        vmem_state_q     <= VMEM_WAIT_TRT;
+                    end
+                end
+
+                VMEM_WAIT_TRT: begin
+                    if (vmem_trt_alloc_q) begin
+                        if (trt_alloc_ready) begin
+                            vmem_trt_alloc_q <= 1'b0;
+                        end
+                    end else if (trt_delivery_valid) begin
+                        logic [55:0] resolved_pa;
+                        resolved_pa = {trt_delivery_pa[55:12], vec_mem_req_va_i[11:0]};
+                        if (trt_delivery_page_fault || trt_delivery_access_fault || !is_dram_pa(resolved_pa)) begin
+                            vec_mem_rsp_valid_o     <= 1'b1;
+                            vec_mem_rsp_exception_o <= 1'b1;
+                            vec_mem_rsp_cause_o     <= trt_delivery_page_fault ? (vec_mem_req_is_store_i ? 5'd15 : 5'd13)
+                                                                               : (vec_mem_req_is_store_i ? 5'd7  : 5'd5);
+                            vmem_state_q            <= VMEM_IDLE;
+                        end else begin
+                            vmem_pa_q    <= resolved_pa;
+                            vmem_state_q <= vec_mem_req_is_store_i ? VMEM_L1D_ST_WAIT : VMEM_L1D_LD_REQ;
+                        end
+                    end
+                end
+
+                VMEM_L1D_LD_REQ: begin
+                    if (l1d_load0_req_ready) begin
+                        if (l1d_load0_rsp_valid && l1d_load0_rsp_hit) begin
+                            vec_mem_rsp_valid_o <= 1'b1;
+                            vec_mem_rsp_rdata_o <= l1d_load0_rsp_data;
+                            vmem_state_q        <= VMEM_IDLE;
+                        end else begin
+                            vmem_state_q <= VMEM_L1D_LD_WAIT;
+                        end
+                    end
+                end
+
+                VMEM_L1D_LD_WAIT: begin
+                    if (refill_comp_valid &&
+                        (refill_comp_rob_idx == vec_mem_req_rob_idx_i) &&
+                        (refill_comp_rob_epoch == vec_mem_req_rob_epoch_i)) begin
+                        vec_mem_rsp_valid_o <= 1'b1;
+                        vec_mem_rsp_rdata_o <= refill_comp_data;
+                        vmem_state_q        <= VMEM_IDLE;
+                    end
+                end
+
+                VMEM_L1D_ST_WAIT: begin
+                    if (l1d_store_drain_done) begin
+                        vec_mem_rsp_valid_o <= 1'b1;
+                        vec_mem_rsp_rdata_o <= 64'd0;
+                        vmem_state_q        <= VMEM_IDLE;
+                    end
+                end
+
+                default: vmem_state_q <= VMEM_IDLE;
+            endcase
+        end
+    end
 
 endmodule
 

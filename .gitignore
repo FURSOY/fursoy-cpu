@@ -6,6 +6,8 @@ build/
 obj_dir/
 tools/synth/bin/
 tools/synth/lib/*.lib
+tools/sail/bin/
+tools/sail/*.tar.gz
 
 # Logs
 *.log

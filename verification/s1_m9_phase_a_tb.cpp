@@ -20,6 +20,7 @@
 #include <iomanip>
 #include <vector>
 #include <deque>
+#include <map>
 #include <cstdint>
 #include <cassert>
 #include <random>
@@ -633,6 +634,184 @@ int main(int argc, char** argv) {
         results.props_passed++;
         results.passed_properties.push_back("PROP_M9_06");
         std::cout << "  -> PASS: WFI sleep, MIE=0/1 wakeups, and pending-interrupt NOP semantics verified\n";
+    }
+
+    // -------------------------------------------------------------------------
+    // PROP_M9_07: Vectored vs Direct Synchronous Exception Redirect Target (Issue #3)
+    //   RISC-V Privileged Spec: synchronous exceptions ALWAYS jump to xtvec.BASE
+    //   even when xtvec.MODE == 2'b01 (Vectored); only interrupts use BASE+4*cause.
+    // -------------------------------------------------------------------------
+    {
+        std::cout << "\n[RUN] Testing PROP_M9_07: Vectored mtvec/stvec Synchronous Trap -> BASE..." << std::endl;
+
+        auto enc_i_u = [](int32_t imm, uint32_t rs1, uint32_t funct3, uint32_t rd, uint32_t opcode) -> uint32_t {
+            return (((uint32_t)imm & 0xFFFU) << 20) | ((rs1 & 0x1FU) << 15) |
+                   ((funct3 & 0x7U) << 12) | ((rd & 0x1FU) << 7) | (opcode & 0x7FU);
+        };
+        auto addi_u = [&](uint32_t rd, uint32_t rs1, int32_t imm) { return enc_i_u(imm, rs1, 0, rd, 0x13); };
+        auto j_self = enc_i_u(0, 0, 0, 0, 0x6F) & 0x00000FFFU; // jal x0, 0 = 0x0000006f
+        (void)j_self;
+
+        auto run_frontend_probe = [&](const std::map<uint64_t, uint32_t>& code,
+                                      uint64_t& out_x10, int max_cycles = 250,
+                                      bool arm_mtip = false, bool arm_seip = false) {
+            struct L1IReq { uint64_t addr; uint8_t tag; int delay; };
+            std::deque<L1IReq> bus_q;
+            tb.dut->frontend_en_i = 1;
+            tb.dut->l1i_bus_rd_req_ready_i = 1;
+            tb.dut->retire_ready_i = 1;
+            // Wake frontend fetch PC at 0x80000000 after toggling frontend_en_i 0 -> 1
+            tb.dut->trap_valid_i = 1;
+            tb.dut->trap_target_i = 0x80000000ULL;
+            tb.dut->flush_valid_i = 1;
+            tb.step();
+            tb.dut->trap_valid_i = 0;
+            tb.dut->trap_target_i = 0;
+            tb.dut->flush_valid_i = 0;
+            if (arm_mtip) tb.dut->irq_timer_i = 1;
+            if (arm_seip) tb.dut->irq_seip_i = 1;
+            bool retired_marker = false;
+
+            for (int cyc = 0; cyc < max_cycles; cyc++) {
+                tb.dut->clk_i = 0;
+                tb.dut->eval();
+
+                if (tb.dut->l1i_bus_rd_req_valid_o && tb.dut->l1i_bus_rd_req_ready_i) {
+                    bus_q.push_back({tb.dut->l1i_bus_rd_req_addr_o, (uint8_t)tb.dut->l1i_bus_rd_req_tag_o, 1});
+                }
+                if (!bus_q.empty() && bus_q.front().delay == 0) {
+                    L1IReq req = bus_q.front();
+                    bus_q.pop_front();
+                    tb.dut->l1i_bus_rd_rsp_valid_i = 1;
+                    tb.dut->l1i_bus_rd_rsp_tag_i   = req.tag;
+                    tb.dut->l1i_bus_rd_rsp_error_i = 0;
+                    uint8_t line[64];
+                    for (int off = 0; off < 64; off += 4) {
+                        uint64_t pa = (req.addr << 6) + (uint64_t)off;
+                        auto it = code.find(pa);
+                        uint32_t w = (it != code.end()) ? it->second : 0x00000013U; // NOP
+                        memcpy(&line[off], &w, 4);
+                    }
+                    memcpy((void*)&tb.dut->l1i_bus_rd_rsp_data_i, line, 64);
+                } else {
+                    tb.dut->l1i_bus_rd_rsp_valid_i = 0;
+                    for (auto& r : bus_q) if (r.delay > 0) r.delay--;
+                }
+
+                tb.dut->clk_i = 1;
+                tb.dut->eval();
+                tb.cycle_count++;
+
+                // Poll ARAT x10 after clock edge
+                tb.dut->probe_paddr_i = tb.dut->arat_map_o[10];
+                tb.dut->eval();
+                if (tb.dut->probe_pdata_o != 0) {
+                    out_x10 = tb.dut->probe_pdata_o;
+                    retired_marker = true;
+                    // Run 2 clean cycles and stop
+                    for (int s = 0; s < 2; s++) {
+                        tb.dut->l1i_bus_rd_rsp_valid_i = 0;
+                        tb.dut->clk_i = 0; tb.dut->eval();
+                        tb.dut->clk_i = 1; tb.dut->eval();
+                    }
+                    break;
+                }
+            }
+            assert(retired_marker && "PROP_M9_07 FAILED: Did not reach trap handler sentinel within max cycles!");
+            tb.dut->frontend_en_i = 0;
+            tb.dut->l1i_bus_rd_rsp_valid_i = 0;
+        };
+
+        // Test sync traps in BOTH Direct (MODE=0) and Vectored (MODE=1) across mtvec and delegated stvec
+        struct SyncCase {
+            const char* name;
+            bool delegate_s;
+            uint64_t tvec;
+            uint64_t base;
+            uint32_t trap_inst;
+            uint64_t expected_cause;
+        };
+        const SyncCase sync_cases[] = {
+            {"M-mode Direct Illegal",    false, 0x80004000ULL, 0x80004000ULL, 0x30009193U, 2ULL},
+            {"M-mode Vectored Illegal",  false, 0x80004001ULL, 0x80004000ULL, 0x30009193U, 2ULL},
+            {"M-mode Vectored EBREAK",   false, 0x80004001ULL, 0x80004000ULL, 0x00100073U, 3ULL},
+            {"M-mode Vectored ECALL",    false, 0x80004001ULL, 0x80004000ULL, 0x00000073U, 11ULL},
+            {"S-mode Direct Illegal",    true,  0x80006000ULL, 0x80006000ULL, 0x30009193U, 2ULL},
+            {"S-mode Vectored Illegal",  true,  0x80006001ULL, 0x80006000ULL, 0x30009193U, 2ULL},
+            {"S-mode Vectored EBREAK",   true,  0x80006001ULL, 0x80006000ULL, 0x00100073U, 3ULL},
+            {"S-mode Vectored U-ECALL",  true,  0x80006001ULL, 0x80006000ULL, 0x00000073U, 8ULL},
+        };
+
+        for (const auto& sc : sync_cases) {
+            tb.reset();
+            if (sc.delegate_s) {
+                tb.write_csr(0x302, (1ULL << 2) | (1ULL << 3) | (1ULL << 8)); // medeleg
+                tb.write_csr(0x105, sc.tvec);                                // stvec
+                tb.write_csr(0x000, 0ULL);                                   // U-mode in priv_mode_q
+            } else {
+                tb.write_csr(0x305, sc.tvec);                                // mtvec
+                tb.write_csr(0x000, 3ULL);                                   // M-mode in priv_mode_q
+            }
+
+            std::map<uint64_t, uint32_t> code;
+            code[0x80000000ULL] = sc.trap_inst;
+            code[sc.base + 0]   = addi_u(10, 0, 0x111);                      // PASS marker at BASE
+            code[sc.base + 4]   = 0x0000006FU;                               // jal x0, 0
+            // Poison BASE + 4*cause in case sync trap erroneously vectored!
+            code[sc.base + 4 * sc.expected_cause]     = addi_u(10, 0, 0x7AD); // FAIL marker
+            code[sc.base + 4 * sc.expected_cause + 4] = 0x0000006FU;
+
+            uint64_t x10_val = 0;
+            run_frontend_probe(code, x10_val);
+            assert(x10_val == 0x111ULL && "PROP_M9_07 FAILED: Synchronous exception vectored instead of jumping to BASE!");
+            if (sc.delegate_s) {
+                assert(tb.dut->csr_scause_o == sc.expected_cause && "PROP_M9_07 FAILED: Wrong scause!");
+            } else {
+                assert(tb.dut->csr_mcause_o == sc.expected_cause && "PROP_M9_07 FAILED: Wrong mcause!");
+            }
+        }
+
+        // Positive control: Vectored asynchronous interrupts MUST still jump to BASE + 4 * cause
+        {
+            // M-mode MTIP (cause 7 -> BASE + 0x1C)
+            tb.reset();
+            tb.write_csr(0x305, 0x80004001ULL);
+            tb.write_csr(0x304, (1ULL << 7));
+            tb.write_csr(0x300, 0x0000000a00001808ULL); // MIE=1
+            tb.set_priv(3);
+            std::map<uint64_t, uint32_t> code;
+            code[0x80004000ULL] = addi_u(10, 0, 0x7AD); // Fail if landed on BASE
+            code[0x80004004ULL] = 0x0000006FU;
+            code[0x8000401CULL] = addi_u(10, 0, 0x222); // Pass if MTIP vectored to BASE + 28
+            code[0x80004020ULL] = 0x0000006FU;
+            uint64_t x10_val = 0;
+            run_frontend_probe(code, x10_val, 250, true, false);
+            tb.dut->irq_timer_i = 0;
+            assert(x10_val == 0x222ULL && "PROP_M9_07 FAILED: Vectored M-mode interrupt did not land at BASE + 4*7!");
+        }
+        {
+            // S-mode delegated SEI (cause 9 -> BASE + 0x24)
+            tb.reset();
+            tb.write_csr(0x303, (1ULL << 9)); // mideleg.SEIP
+            tb.write_csr(0x304, (1ULL << 9)); // mie.SEIE
+            tb.write_csr(0x105, 0x80006001ULL);
+            tb.write_csr(0x100, (1ULL << 1)); // sstatus.SIE = 1
+            tb.write_csr(0x000, 1ULL);        // S-mode in priv_mode_q
+            std::map<uint64_t, uint32_t> code;
+            code[0x80006000ULL] = addi_u(10, 0, 0x7AD); // Fail if landed on BASE
+            code[0x80006004ULL] = 0x0000006FU;
+            code[0x80006024ULL] = addi_u(10, 0, 0x333); // Pass if SEI vectored to BASE + 36
+            code[0x80006028ULL] = 0x0000006FU;
+            uint64_t x10_val = 0;
+            run_frontend_probe(code, x10_val, 250, false, true);
+            tb.dut->irq_seip_i = 0;
+            assert(x10_val == 0x333ULL && "PROP_M9_07 FAILED: Vectored S-mode interrupt did not land at BASE + 4*9!");
+        }
+
+        results.total_props_tested++;
+        results.props_passed++;
+        results.passed_properties.push_back("PROP_M9_07");
+        std::cout << "  -> PASS: Direct & vectored sync traps jump to BASE; vectored interrupts jump to BASE + 4*cause\n";
     }
 
     // =========================================================================

@@ -48,9 +48,7 @@ module fursoy_s1_fconv
     // Port 0/1 Request (Int-to-Float: FMV.W.X, FMV.D.X, FCVT.S/D.W/L/WU/LU)
     input  logic              int2fp_req_valid_i,
     input  uop_subop_t        int2fp_req_subop_i,
-    /* verilator lint_off UNUSEDSIGNAL */
     input  logic [2:0]        int2fp_req_frm_i,
-    /* verilator lint_on UNUSEDSIGNAL */
     input  logic [63:0]       int2fp_req_int_data_i,
     input  fpreg_t            int2fp_req_prd_fp_i,
     input  rob_idx_t          int2fp_req_rob_idx_i,
@@ -90,6 +88,25 @@ module fursoy_s1_fconv
         return (val[63:32] == 32'hFFFF_FFFF);
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
+
+    function automatic logic fp_round_up(
+        input logic [2:0] rm,
+        input logic       sign,
+        input logic       lsb,
+        input logic       guard,
+        input logic       sticky
+    );
+        logic inexact;
+        inexact = guard || sticky;
+        case (rm)
+            3'b000: return guard && (sticky || lsb); // RNE
+            3'b001: return 1'b0;                     // RTZ
+            3'b010: return sign && inexact;          // RDN
+            3'b011: return !sign && inexact;         // RUP
+            3'b100: return guard;                    // RMM
+            default: return guard && (sticky || lsb);
+        endcase
+    endfunction
 
     // -------------------------------------------------------------------------
     // 1. Float-to-Float & Min/Max/Sign-Injection (Direct to FPRF w0_fp)
@@ -374,6 +391,30 @@ module fursoy_s1_fconv
     rob_epoch_t  int2fp_out_rob_epoch;
 
     always_comb begin
+        logic [2:0]  i2f_rm;
+        logic        i2f_is_64;
+        logic        i2f_is_signed;
+        logic        i2f_s;
+        logic [63:0] i2f_mag;
+        int          i2f_lzc;
+        logic [63:0] i2f_sh_m;
+        logic [7:0]  exp_sp;
+        logic [24:0] mant_sp;
+        logic        guard_sp, sticky_sp, inexact_sp, rup_sp;
+        logic [10:0] exp_dp;
+        logic [53:0] mant_dp;
+        logic        guard_dp, sticky_dp, inexact_dp, rup_dp;
+
+        i2f_rm        = (int2fp_req_frm_i == 3'b111) ? fcsr_frm_i : int2fp_req_frm_i;
+        i2f_is_64     = 1'b0;
+        i2f_is_signed = 1'b0;
+        i2f_s         = 1'b0;
+        i2f_mag       = 64'd0;
+        i2f_lzc       = 0;
+        i2f_sh_m      = 64'd0;
+        exp_sp        = '0; mant_sp = '0; guard_sp = '0; sticky_sp = '0; inexact_sp = '0; rup_sp = '0;
+        exp_dp        = '0; mant_dp = '0; guard_dp = '0; sticky_dp = '0; inexact_dp = '0; rup_dp = '0;
+
         int2fp_out_valid     = 1'b0;
         int2fp_out_data      = '0;
         int2fp_out_fflags    = '0;
@@ -393,92 +434,64 @@ module fursoy_s1_fconv
                     int2fp_out_data   = int2fp_req_int_data_i;
                     int2fp_out_fflags = 5'b00000;
                 end
-                FP_FCVT_S_W: begin
-                    // Signed 32-bit int to float
-                    logic signed [31:0] ival; logic s; logic [31:0] mag;
-                    ival = signed'(int2fp_req_int_data_i[31:0]);
-                    s    = ival[31];
-                    mag  = s ? unsigned'(-ival) : unsigned'(ival);
-                    int2fp_out_valid = 1'b1;
-                    if (mag == 32'd0) begin
-                        int2fp_out_data   = {32'hFFFF_FFFF, 32'd0};
-                        int2fp_out_fflags = 5'b00000;
+                FP_FCVT_S_W, FP_FCVT_S_WU, FP_FCVT_S_L, FP_FCVT_S_LU,
+                FP_FCVT_D_W, FP_FCVT_D_WU, FP_FCVT_D_L, FP_FCVT_D_LU: begin
+                    i2f_is_64     = (int2fp_req_subop_i == FP_FCVT_S_L)  || (int2fp_req_subop_i == FP_FCVT_S_LU) ||
+                                    (int2fp_req_subop_i == FP_FCVT_D_L)  || (int2fp_req_subop_i == FP_FCVT_D_LU);
+                    i2f_is_signed = (int2fp_req_subop_i == FP_FCVT_S_W)  || (int2fp_req_subop_i == FP_FCVT_S_L)  ||
+                                    (int2fp_req_subop_i == FP_FCVT_D_W)  || (int2fp_req_subop_i == FP_FCVT_D_L);
+                    if (i2f_is_64) begin
+                        i2f_s   = i2f_is_signed && int2fp_req_int_data_i[63];
+                        i2f_mag = i2f_s ? unsigned'(-signed'(int2fp_req_int_data_i)) : int2fp_req_int_data_i;
                     end else begin
-                        int lzc; logic [31:0] sh_m; logic [7:0] exp;
-                        logic [24:0] mant; logic guard, round_bit, sticky_bit, inexact, round_up;
-                        lzc = 0;
-                        for (int k = 31; k >= 0; k--) begin
-                            if (mag[k]) begin lzc = 31 - k; break; end
-                        end
-                        sh_m = mag << lzc;
-                        exp  = 8'(127 + 31 - lzc);
-                        mant = {1'b0, sh_m[31:8]};
-                        guard = sh_m[7]; round_bit = sh_m[6]; sticky_bit = (sh_m[5:0] != 6'd0);
-                        inexact = guard || round_bit || sticky_bit;
-                        round_up = guard && (round_bit || sticky_bit || mant[0]);
-                        if (round_up) begin
-                            mant = mant + 25'd1;
-                            if (mant == 25'h100_0000) begin mant = mant >> 1; exp = exp + 8'd1; end
-                        end
-                        int2fp_out_data   = {32'hFFFF_FFFF, s, exp, mant[22:0]};
-                        int2fp_out_fflags = {4'b0000, inexact};
+                        i2f_s   = i2f_is_signed && int2fp_req_int_data_i[31];
+                        i2f_mag = i2f_s ? {32'd0, unsigned'(-signed'(int2fp_req_int_data_i[31:0]))}
+                                        : {32'd0, int2fp_req_int_data_i[31:0]};
                     end
-                end
-                FP_FCVT_D_W: begin
-                    // Signed 32-bit int to double (always exact)
-                    logic signed [31:0] ival; logic s; logic [31:0] mag;
-                    ival = signed'(int2fp_req_int_data_i[31:0]);
-                    s    = ival[31];
-                    mag  = s ? unsigned'(-ival) : unsigned'(ival);
+
                     int2fp_out_valid = 1'b1;
-                    if (mag == 32'd0) begin
-                        int2fp_out_data   = 64'd0;
+                    if (i2f_mag == 64'd0) begin
+                        if ((int2fp_req_subop_i == FP_FCVT_S_W) || (int2fp_req_subop_i == FP_FCVT_S_WU) ||
+                            (int2fp_req_subop_i == FP_FCVT_S_L) || (int2fp_req_subop_i == FP_FCVT_S_LU))
+                            int2fp_out_data = {32'hFFFF_FFFF, 32'd0};
+                        else
+                            int2fp_out_data = 64'd0;
                         int2fp_out_fflags = 5'b00000;
                     end else begin
-                        int lzc;
-                        /* verilator lint_off UNUSEDSIGNAL */
-                        logic [31:0] sh_m;
-                        /* verilator lint_on UNUSEDSIGNAL */
-                        logic [10:0] exp;
-                        lzc = 0;
-                        for (int k = 31; k >= 0; k--) begin
-                            if (mag[k]) begin lzc = 31 - k; break; end
-                        end
-                        sh_m = mag << (lzc + 1); // Drop implicit 1
-                        exp  = 11'(1023 + 31 - lzc);
-                        int2fp_out_data   = {s, exp, sh_m[30:0], 21'd0};
-                        int2fp_out_fflags = 5'b00000;
-                    end
-                end
-                FP_FCVT_D_L: begin
-                    // Signed 64-bit int to double
-                    logic signed [63:0] ival; logic s; logic [63:0] mag;
-                    ival = signed'(int2fp_req_int_data_i);
-                    s    = ival[63];
-                    mag  = s ? unsigned'(-ival) : unsigned'(ival);
-                    int2fp_out_valid = 1'b1;
-                    if (mag == 64'd0) begin
-                        int2fp_out_data   = 64'd0;
-                        int2fp_out_fflags = 5'b00000;
-                    end else begin
-                        int lzc; logic [63:0] sh_m; logic [10:0] exp;
-                        logic [52:0] mant; logic guard, round_bit, sticky_bit, inexact, round_up;
-                        lzc = 0;
+                        i2f_lzc = 0;
                         for (int k = 63; k >= 0; k--) begin
-                            if (mag[k]) begin lzc = 63 - k; break; end
+                            if (i2f_mag[k]) begin i2f_lzc = 63 - k; break; end
                         end
-                        sh_m = mag << lzc;
-                        exp  = 11'(1023 + 63 - lzc);
-                        mant = sh_m[63:11];
-                        guard = sh_m[10]; round_bit = sh_m[9]; sticky_bit = (sh_m[8:0] != 9'd0);
-                        inexact = guard || round_bit || sticky_bit;
-                        round_up = guard && (round_bit || sticky_bit || mant[0]);
-                        if (round_up) begin
-                            mant = mant + 53'd1;
-                            if (mant == 53'h10_0000_0000_0000) begin mant = mant >> 1; exp = exp + 11'd1; end
+                        i2f_sh_m = i2f_mag << i2f_lzc;
+
+                        if ((int2fp_req_subop_i == FP_FCVT_S_W) || (int2fp_req_subop_i == FP_FCVT_S_WU) ||
+                            (int2fp_req_subop_i == FP_FCVT_S_L) || (int2fp_req_subop_i == FP_FCVT_S_LU)) begin
+                            exp_sp     = 8'(127 + 63 - i2f_lzc);
+                            mant_sp    = {1'b0, i2f_sh_m[63:40]};
+                            guard_sp   = i2f_sh_m[39];
+                            sticky_sp  = (i2f_sh_m[38:0] != 39'd0);
+                            inexact_sp = guard_sp || sticky_sp;
+                            rup_sp     = fp_round_up(i2f_rm, i2f_s, mant_sp[0], guard_sp, sticky_sp);
+                            if (rup_sp) begin
+                                mant_sp = mant_sp + 25'd1;
+                                if (mant_sp[24]) begin mant_sp = mant_sp >> 1; exp_sp = exp_sp + 8'd1; end
+                            end
+                            int2fp_out_data   = {32'hFFFF_FFFF, i2f_s, exp_sp, mant_sp[22:0]};
+                            int2fp_out_fflags = {4'b0000, inexact_sp};
+                        end else begin
+                            exp_dp     = 11'(1023 + 63 - i2f_lzc);
+                            mant_dp    = {1'b0, i2f_sh_m[63:11]};
+                            guard_dp   = i2f_sh_m[10];
+                            sticky_dp  = (i2f_sh_m[9:0] != 10'd0);
+                            inexact_dp = guard_dp || sticky_dp;
+                            rup_dp     = fp_round_up(i2f_rm, i2f_s, mant_dp[0], guard_dp, sticky_dp);
+                            if (rup_dp) begin
+                                mant_dp = mant_dp + 54'd1;
+                                if (mant_dp[53]) begin mant_dp = mant_dp >> 1; exp_dp = exp_dp + 11'd1; end
+                            end
+                            int2fp_out_data   = {i2f_s, exp_dp, mant_dp[51:0]};
+                            int2fp_out_fflags = {4'b0000, inexact_dp};
                         end
-                        int2fp_out_data   = {s, exp, mant[51:0]};
-                        int2fp_out_fflags = {4'b0000, inexact};
                     end
                 end
                 default: ;
@@ -612,17 +625,32 @@ module fursoy_s1_fconv
         logic [10:0] fclass_e;
         logic [51:0] fclass_f;
         logic [9:0]  fclass_mask;
-        logic fcvt_s;
-        logic [10:0] fcvt_e;
-        logic [51:0] fcvt_f;
-        logic signed [13:0] fcvt_shift;
-        logic [52:0] fcvt_mant;
-        logic signed [63:0] fcvt_int_res;
+        logic [2:0]  f2i_rm;
+        logic        fcvt_is_sp, fcvt_is_64, fcvt_is_signed;
+        logic        fcvt_s, fcvt_is_nan, fcvt_is_inf, fcvt_is_zero;
+        logic signed [13:0] fcvt_exp;
+        logic [52:0] fcvt_sig;
+        logic [63:0] fcvt_sat_val;
+        logic [63:0] fcvt_int_mag;
+        logic        fcvt_g, fcvt_st, fcvt_inc, fcvt_inexact, fcvt_in_range;
+        logic [64:0] fcvt_rmag;
+        logic [63:0] fcvt_sres;
+        logic [31:0] sp_in;
+        int unsigned fcvt_rsh;
+        /* verilator lint_off UNUSEDSIGNAL */
+        logic [52:0] fcvt_rem_bits;
+        /* verilator lint_on UNUSEDSIGNAL */
 
         cmp_s_op1 = '0; cmp_s_op2 = '0;
         cmp_nan1 = '0; cmp_nan2 = '0; cmp_snan1 = '0; cmp_snan2 = '0; cmp_eq = '0; cmp_lt = '0;
         fclass_op = '0; fclass_s = '0; fclass_e = '0; fclass_f = '0; fclass_mask = '0;
-        fcvt_s = '0; fcvt_e = '0; fcvt_f = '0; fcvt_shift = '0; fcvt_mant = '0; fcvt_int_res = '0;
+        f2i_rm = (p4_req_frm_i == 3'b111) ? fcsr_frm_i : p4_req_frm_i;
+        fcvt_is_sp = '0; fcvt_is_64 = '0; fcvt_is_signed = '0;
+        fcvt_s = '0; fcvt_is_nan = '0; fcvt_is_inf = '0; fcvt_is_zero = '0;
+        fcvt_exp = '0; fcvt_sig = '0; fcvt_sat_val = '0; fcvt_int_mag = '0;
+        fcvt_g = '0; fcvt_st = '0; fcvt_inc = '0; fcvt_inexact = '0; fcvt_in_range = '0;
+        fcvt_rmag = '0; fcvt_sres = '0;
+        sp_in = '0; fcvt_rsh = 0; fcvt_rem_bits = '0;
 
         f2i_comb_valid     = 1'b0;
         f2i_comb_data      = '0;
@@ -768,30 +796,90 @@ module fursoy_s1_fconv
                     f2i_comb_fflags = 5'b00000;
                 end
 
-                // FCVT.W.D / FCVT.W.S (sign-extended 32-bit int to 64-bit dest)
-                FP_FCVT_W_D: begin
-                    fcvt_s = p4_req_rs1_fp_data_i[63]; fcvt_e = p4_req_rs1_fp_data_i[62:52]; fcvt_f = p4_req_rs1_fp_data_i[51:0];
-                    f2i_comb_valid = 1'b1;
-                    if (fcvt_e == 11'h7FF) begin
-                        // NaN or inf: saturated to 2^31 - 1 or -2^31
-                        f2i_comb_fflags = 5'b10000; // NV
-                        if (fcvt_f != 52'd0) f2i_comb_data = 64'h0000_0000_7FFF_FFFF;
-                        else f2i_comb_data = fcvt_s ? 64'hFFFF_FFFF_8000_0000 : 64'h0000_0000_7FFF_FFFF;
+                // FCVT.{W,WU,L,LU}.{S,D}
+                FP_FCVT_W_S, FP_FCVT_WU_S, FP_FCVT_L_S, FP_FCVT_LU_S,
+                FP_FCVT_W_D, FP_FCVT_WU_D, FP_FCVT_L_D, FP_FCVT_LU_D: begin
+                    fcvt_is_sp     = (p4_req_subop_i == FP_FCVT_W_S)  || (p4_req_subop_i == FP_FCVT_WU_S) ||
+                                     (p4_req_subop_i == FP_FCVT_L_S)  || (p4_req_subop_i == FP_FCVT_LU_S);
+                    fcvt_is_64     = (p4_req_subop_i == FP_FCVT_L_S)  || (p4_req_subop_i == FP_FCVT_LU_S) ||
+                                     (p4_req_subop_i == FP_FCVT_L_D)  || (p4_req_subop_i == FP_FCVT_LU_D);
+                    fcvt_is_signed = (p4_req_subop_i == FP_FCVT_W_S)  || (p4_req_subop_i == FP_FCVT_L_S)  ||
+                                     (p4_req_subop_i == FP_FCVT_W_D)  || (p4_req_subop_i == FP_FCVT_L_D);
+
+                    if (fcvt_is_sp) begin
+                        sp_in       = is_nanbox_valid(p4_req_rs1_fp_data_i) ? p4_req_rs1_fp_data_i[31:0] : FP32_QNAN;
+                        fcvt_s      = sp_in[31];
+                        fcvt_is_nan = (sp_in[30:23] == 8'hFF) && (sp_in[22:0] != 23'd0);
+                        fcvt_is_inf = (sp_in[30:23] == 8'hFF) && (sp_in[22:0] == 23'd0);
+                        fcvt_is_zero= (sp_in[30:23] == 8'd0)  && (sp_in[22:0] == 23'd0);
+                        fcvt_exp    = (sp_in[30:23] == 8'd0)  ? -14'sd2 : (signed'(14'(sp_in[30:23])) - 14'sd127);
+                        fcvt_sig    = {1'b1, sp_in[22:0], 29'd0};
                     end else begin
-                        fcvt_shift = signed'(14'(fcvt_e)) - 14'sd1023;
-                        fcvt_mant  = (fcvt_e == 11'd0) ? 53'd0 : {1'b1, fcvt_f};
-                        if (fcvt_shift < 14'sd0) begin
-                            fcvt_int_res = 64'd0;
-                            f2i_comb_fflags = (fcvt_mant != 53'd0) ? 5'b00001 : 5'b00000; // NX
-                        end else if (fcvt_shift > 14'sd30) begin
-                            // Overflow
-                            f2i_comb_fflags = 5'b10000; // NV
-                            f2i_comb_data   = fcvt_s ? 64'hFFFF_FFFF_8000_0000 : 64'h0000_0000_7FFF_FFFF;
+                        fcvt_s      = p4_req_rs1_fp_data_i[63];
+                        fcvt_is_nan = (p4_req_rs1_fp_data_i[62:52] == 11'h7FF) && (p4_req_rs1_fp_data_i[51:0] != 52'd0);
+                        fcvt_is_inf = (p4_req_rs1_fp_data_i[62:52] == 11'h7FF) && (p4_req_rs1_fp_data_i[51:0] == 52'd0);
+                        fcvt_is_zero= (p4_req_rs1_fp_data_i[62:52] == 11'd0)   && (p4_req_rs1_fp_data_i[51:0] == 52'd0);
+                        fcvt_exp    = (p4_req_rs1_fp_data_i[62:52] == 11'd0)   ? -14'sd2 : (signed'(14'(p4_req_rs1_fp_data_i[62:52])) - 14'sd1023);
+                        fcvt_sig    = {1'b1, p4_req_rs1_fp_data_i[51:0]};
+                    end
+
+                    // Canonical saturation output on NV (NaN maps to positive max; -overflow to min)
+                    if (!fcvt_is_64 && fcvt_is_signed)
+                        fcvt_sat_val = (!fcvt_is_nan && fcvt_s) ? 64'hFFFF_FFFF_8000_0000 : 64'h0000_0000_7FFF_FFFF;
+                    else if (!fcvt_is_64 && !fcvt_is_signed)
+                        fcvt_sat_val = (!fcvt_is_nan && fcvt_s) ? 64'h0000_0000_0000_0000 : 64'hFFFF_FFFF_FFFF_FFFF;
+                    else if (fcvt_is_64 && fcvt_is_signed)
+                        fcvt_sat_val = (!fcvt_is_nan && fcvt_s) ? 64'h8000_0000_0000_0000 : 64'h7FFF_FFFF_FFFF_FFFF;
+                    else
+                        fcvt_sat_val = (!fcvt_is_nan && fcvt_s) ? 64'h0000_0000_0000_0000 : 64'hFFFF_FFFF_FFFF_FFFF;
+
+                    f2i_comb_valid = 1'b1;
+                    if (fcvt_is_nan || fcvt_is_inf || (fcvt_exp >= 14'sd64)) begin
+                        f2i_comb_data   = fcvt_sat_val;
+                        f2i_comb_fflags = 5'b10000; // NV
+                    end else begin
+                        if (fcvt_is_zero) begin
+                            fcvt_int_mag = 64'd0; fcvt_g = 1'b0; fcvt_st = 1'b0;
+                        end else if (fcvt_exp < -14'sd1) begin
+                            // Subnormal or |x| < 0.5
+                            fcvt_int_mag = 64'd0; fcvt_g = 1'b0; fcvt_st = 1'b1;
+                        end else if (fcvt_exp == -14'sd1) begin
+                            fcvt_int_mag = 64'd0; fcvt_g = fcvt_sig[52]; fcvt_st = (fcvt_sig[51:0] != 52'd0);
+                        end else if (fcvt_exp <= 14'sd52) begin
+                            fcvt_rsh = 32'(unsigned'(14'sd52 - fcvt_exp));
+                            fcvt_int_mag = {11'd0, fcvt_sig} >> fcvt_rsh;
+                            if (fcvt_rsh == 0) begin
+                                fcvt_g = 1'b0; fcvt_st = 1'b0;
+                            end else begin
+                                fcvt_rem_bits = fcvt_sig << (53 - fcvt_rsh);
+                                fcvt_g        = fcvt_rem_bits[52];
+                                fcvt_st       = (fcvt_rem_bits[51:0] != 52'd0);
+                            end
                         end else begin
-                            fcvt_int_res = 64'(64'(fcvt_mant) >> (52 - fcvt_shift));
-                            if (fcvt_s) fcvt_int_res = -fcvt_int_res;
-                            f2i_comb_data   = {{32{fcvt_int_res[31]}}, fcvt_int_res[31:0]};
-                            f2i_comb_fflags = 5'b00000;
+                            fcvt_int_mag = {11'd0, fcvt_sig} << unsigned'(fcvt_exp - 14'sd52);
+                            fcvt_g       = 1'b0; fcvt_st = 1'b0;
+                        end
+
+                        fcvt_inexact = fcvt_g || fcvt_st;
+                        fcvt_inc     = fp_round_up(f2i_rm, fcvt_s, fcvt_int_mag[0], fcvt_g, fcvt_st);
+                        fcvt_rmag    = {1'b0, fcvt_int_mag} + {64'd0, fcvt_inc};
+
+                        if (!fcvt_is_64 && fcvt_is_signed)
+                            fcvt_in_range = (!fcvt_s && (fcvt_rmag <= 65'd2147483647)) || (fcvt_s && (fcvt_rmag <= 65'd2147483648));
+                        else if (!fcvt_is_64 && !fcvt_is_signed)
+                            fcvt_in_range = (!fcvt_s && (fcvt_rmag <= 65'h0_FFFF_FFFF)) || (fcvt_s && (fcvt_rmag == 65'd0));
+                        else if (fcvt_is_64 && fcvt_is_signed)
+                            fcvt_in_range = (!fcvt_s && (fcvt_rmag <= 65'h0_7FFF_FFFF_FFFF_FFFF)) || (fcvt_s && (fcvt_rmag <= 65'h0_8000_0000_0000_0000));
+                        else
+                            fcvt_in_range = (!fcvt_s && (fcvt_rmag <= 65'h0_FFFF_FFFF_FFFF_FFFF)) || (fcvt_s && (fcvt_rmag == 65'd0));
+
+                        if (!fcvt_in_range) begin
+                            f2i_comb_data   = fcvt_sat_val;
+                            f2i_comb_fflags = 5'b10000; // NV (no NX on out-of-range)
+                        end else begin
+                            fcvt_sres = fcvt_s ? (~fcvt_rmag[63:0] + 64'd1) : fcvt_rmag[63:0];
+                            f2i_comb_data   = fcvt_is_64 ? fcvt_sres : {{32{fcvt_sres[31]}}, fcvt_sres[31:0]};
+                            f2i_comb_fflags = {4'b0000, fcvt_inexact};
                         end
                     end
                 end

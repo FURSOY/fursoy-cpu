@@ -925,22 +925,30 @@ module fursoy_s1_fma
     logic [1:0] hold_head;
     logic [1:0] hold_tail;
 
+    wire req_squash     = recover_valid_i && (rob_dist(req_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire s1_squash      = recover_valid_i && (rob_dist(s1_q.rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire s2_squash      = recover_valid_i && (rob_dist(s2_q.rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+
+    wire dp_done_squash = recover_valid_i && (rob_dist(dp_done_rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire sp_done_squash = recover_valid_i && (rob_dist(sp_done_rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+    wire hold_head_squash = recover_valid_i && (rob_dist(hold_fifo[hold_head].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+
     always_comb begin
         if (hold_count > 3'd0) begin
-            wb_valid_o     = hold_fifo[hold_head].valid;
+            wb_valid_o     = hold_fifo[hold_head].valid && !hold_head_squash;
             wb_data_o      = hold_fifo[hold_head].data;
             wb_fflags_o    = hold_fifo[hold_head].fflags;
             wb_prd_fp_o    = hold_fifo[hold_head].prd_fp;
             wb_rob_idx_o   = hold_fifo[hold_head].rob_idx;
             wb_rob_epoch_o = hold_fifo[hold_head].rob_epoch;
-        end else if (dp_done_valid) begin
+        end else if (dp_done_valid && !dp_done_squash) begin
             wb_valid_o     = 1'b1;
             wb_data_o      = dp_done_data;
             wb_fflags_o    = dp_done_fflags;
             wb_prd_fp_o    = dp_done_prd_fp;
             wb_rob_idx_o   = dp_done_rob_idx;
             wb_rob_epoch_o = dp_done_rob_epoch;
-        end else if (sp_done_valid) begin
+        end else if (sp_done_valid && !sp_done_squash) begin
             wb_valid_o     = 1'b1;
             wb_data_o      = sp_done_data;
             wb_fflags_o    = sp_done_fflags;
@@ -960,13 +968,6 @@ module fursoy_s1_fma
     // -------------------------------------------------------------------------
     // Sequential Pipeline Registers & Recovery
     // -------------------------------------------------------------------------
-    wire s1_squash = recover_valid_i && (rob_dist(s1_q.rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
-    wire s2_squash = recover_valid_i && (rob_dist(s2_q.rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
-    wire s3_squash = recover_valid_i && (rob_dist(s3_q.rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
-
-    wire dp_done_squash = recover_valid_i && (rob_dist(dp_done_rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
-    wire sp_done_squash = recover_valid_i && (rob_dist(sp_done_rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
-
     always_ff @(posedge clk_i) begin
         if (rst_i || flush_valid_i) begin
             s1_q       <= '0;
@@ -979,22 +980,22 @@ module fursoy_s1_fma
                 hold_fifo[k] <= '0;
             end
         end else begin
-            // Stage 1
-            if (s1_squash) begin
+            // Stage 1: Check squash against incoming request (req_rob_idx_i)
+            if (req_squash) begin
                 s1_q.valid <= 1'b0;
             end else begin
                 s1_q <= s1_next;
             end
 
-            // Stage 2
-            if (s2_squash) begin
+            // Stage 2: Check squash against Stage 1 register transitioning to Stage 2 (s1_q.rob_idx)
+            if (s1_squash) begin
                 s2_q.valid <= 1'b0;
             end else begin
                 s2_q <= s2_next;
             end
 
-            // Stage 3
-            if (s3_squash) begin
+            // Stage 3: Check squash against Stage 2 register transitioning to Stage 3 (s2_q.rob_idx)
+            if (s2_squash) begin
                 s3_q.valid <= 1'b0;
             end else begin
                 s3_q <= s3_next;

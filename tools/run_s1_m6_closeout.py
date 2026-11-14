@@ -46,6 +46,14 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "1487b2312db2996d3ef0fa384f304e610301641a315775460457ddcea86f5969",  # Stage 3 Pre-CSR-fix (34-file manifest)
     "bf5e9b7bced04d4ad464144e959378a55166129cb0ab5986efc1d3ed58641291",  # Stage 3 Single-Core Closure Final (40-file manifest)
     "a8c15faf4692d45393e06ddb3bcb12b68d4a04f326a71c1de242627175c99ed2",  # Stage 3 Single-Core Closure Final (34-file manifest)
+    "d14fc6aec206c120786f5865b60154a56efded9e8aae10c94fdb121166112420",  # Post-Issue #1/#2/#3 RTL Fixes (40-file manifest)
+    "9db77eb51a4ea1ee283e4e892bb233018c379ed4ee6308f0b70f1141f00bcc35",  # Post-Issue #1/#2/#3 RTL Fixes (34-file manifest)
+    "0729a82a815597a51578e67ee068241fd179e2ec59eba5e9d3e38806f4763600",  # Post-Issue #4 Fetched FP/Vec & Zbb Fixes (40-file manifest)
+    "c3350da8f092bf4e449badb1c082b336aa0ff6a5266192a59b55a229fc57cc48",  # Post-Issue #4 Fetched FP/Vec & Zbb Fixes (34-file manifest)
+    "77ef60fb0e250641aab40a3c03989678f799f409de3e13b2f2b2c52e94d2c3c3",  # Sail Cosim + FMA/FDIV/FCONV/CSR Closure (40-file manifest)
+    "49b14995cabfe11101f42122d70aeafe1e1851fdae848df57f2956dc9e9c7905",  # Sail Cosim + FMA/FDIV/FCONV/CSR Closure (34-file manifest)
+    "0889e47e98000b4c9f41e8a7d8682d26490bc34b5b9971a2c39db40249cc625b",  # Post-Review P1/P2 Fixes + Sail Cosim Closure (40-file manifest)
+    "395f311c62d2ab545f2fe7646a1f7796de5ec48684ca71cf84e7ebe0c1dd6fb5",  # Post-Review P1/P2 Fixes + Sail Cosim Closure (34-file manifest)
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m6-frontend-opt-v1.md"
 SPEC_VERSION = "1.1"

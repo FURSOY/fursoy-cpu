@@ -36,6 +36,10 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "53741012bd63803978aca787b91780f4e3d3a3271ba3ecd808225575c1e0fa52",  # M9 Phase D (31-file manifest)
     "ced10f73147edcafe442edf22406aa0a3eafd4dba013b6b8d45524d25c1acea3",  # M9 Closeout (31-file manifest)
     "a8c15faf4692d45393e06ddb3bcb12b68d4a04f326a71c1de242627175c99ed2",  # Stage 3 Single-Core Closure Final (34-file manifest)
+    "9db77eb51a4ea1ee283e4e892bb233018c379ed4ee6308f0b70f1141f00bcc35",  # Post-Issue #1/#2/#3 RTL Fixes (34-file manifest)
+    "c3350da8f092bf4e449badb1c082b336aa0ff6a5266192a59b55a229fc57cc48",  # Post-Issue #4 Fetched FP/Vec & Zbb Fixes (34-file manifest)
+    "49b14995cabfe11101f42122d70aeafe1e1851fdae848df57f2956dc9e9c7905",  # Sail Cosim + FMA/FDIV/FCONV/CSR Closure (34-file manifest)
+    "395f311c62d2ab545f2fe7646a1f7796de5ec48684ca71cf84e7ebe0c1dd6fb5",  # Post-Review P1/P2 Fixes + Sail Cosim Closure (34-file manifest)
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m7-multibank-l1d-v1.md"
 SPEC_VERSION = "1.1"

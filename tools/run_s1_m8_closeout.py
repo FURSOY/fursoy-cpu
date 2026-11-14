@@ -31,6 +31,11 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "7c7b86ccfce14735c8bdf985cf7c07682b36b41cbdd5eabd15c1b9a795883167",  # M9 Closeout
     "8297a6370982ee81b02177fdd88f060bae09f055034ed73aa414bcc99061f6d8",  # Stage 3 Pre-CSR-fix
     "bf5e9b7bced04d4ad464144e959378a55166129cb0ab5986efc1d3ed58641291",  # Stage 3 Single-Core Closure Final
+    "d14fc6aec206c120786f5865b60154a56efded9e8aae10c94fdb121166112420",  # Post-Issue #1/#2/#3 RTL Fixes (40-file manifest)
+    "0729a82a815597a51578e67ee068241fd179e2ec59eba5e9d3e38806f4763600",  # Post-Issue #4 Fetched FP/Vec & Zbb Fixes (40-file manifest)
+    "46dffaacd8a27e4d8dd9d395fddfeac6fe3abbc8697eba3c0cd79c22978750d4",  # FCONV FCVT variants + FMA/FDIV recovery squash fix
+    "77ef60fb0e250641aab40a3c03989678f799f409de3e13b2f2b2c52e94d2c3c3",  # Sail Cosim + FMA/FDIV/FCONV/CSR Closure (40-file manifest)
+    "0889e47e98000b4c9f41e8a7d8682d26490bc34b5b9971a2c39db40249cc625b",  # Post-Review P1/P2 Fixes + Sail Cosim Closure (40-file manifest)
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m8-fp-vector-v1.md"
 SPEC_VERSION = "1.1"
@@ -178,7 +183,9 @@ def main() -> int:
             "passed_properties": sim_data.get("passed_properties", []),
             "cpi_conservation_status": sim_data.get("cpi_conservation_status", "fail"),
             "torture_ops_completed": sim_data.get("torture_ops_completed", 0),
+            "comparisons_checked": sim_data.get("comparisons_checked", 0),
             "torture_mismatches": sim_data.get("torture_mismatches", 0),
+            "mismatch_detector_self_test": sim_data.get("mismatch_detector_self_test", "fail"),
         },
         "numerical_benchmark_profiles": sim_data.get("profiles", {}),
         "elapsed_seconds": round(time.time() - start_time, 2),

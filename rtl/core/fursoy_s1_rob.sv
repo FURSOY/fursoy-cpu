@@ -65,6 +65,14 @@ module fursoy_s1_rob
     input  logic [4:0]             comp_fflags_i      [4:0],
     output logic [4:0]             comp_ack_o,
 
+    // Vector Execution Completion Interface (non-speculative ROB-head completion)
+    input  logic                   vec_comp_valid_i,
+    input  rob_idx_t               vec_comp_rob_idx_i,
+    input  rob_epoch_t             vec_comp_epoch_i,
+    input  logic                   vec_comp_exception_i,
+    input  logic [4:0]             vec_comp_cause_i,
+    input  logic [63:0]            vec_comp_val_i,
+
     // -------------------------------------------------------------------------
     // In-Order Retirement Interface (Retirement Stage at head_q)
     // -------------------------------------------------------------------------
@@ -209,6 +217,11 @@ module fursoy_s1_rob
     end
     assign comp_ack_o = comp_match;
 
+    wire vec_comp_match = vec_comp_valid_i &&
+                          entries_q[vec_comp_rob_idx_i].valid &&
+                          !entries_q[vec_comp_rob_idx_i].completed &&
+                          (entries_q[vec_comp_rob_idx_i].epoch == vec_comp_epoch_i);
+
     logic [ROB_CNT_W-1:0] free_slots;
     assign free_slots = ROB_CNT_W'(CAPACITY) - count_q;
 
@@ -268,6 +281,14 @@ module fursoy_s1_rob
                 end
             end
         end
+        if (vec_comp_match && (vec_comp_rob_idx_i == head_q)) begin
+            entry0_completed_eff = 1'b1;
+            if (vec_comp_exception_i) begin
+                entry0_exception_eff = 1'b1;
+                entry0_exc_cause_eff = vec_comp_cause_i;
+                entry0_exc_val_eff   = vec_comp_val_i;
+            end
+        end
 
         entry1_completed_eff = entry1.completed;
         entry1_exception_eff = entry1.exception;
@@ -283,6 +304,13 @@ module fursoy_s1_rob
                         entry1_exc_cause_eff = comp_cause_i[w];
                     end
                 end
+            end
+        end
+        if (vec_comp_match && (vec_comp_rob_idx_i == head_next)) begin
+            entry1_completed_eff = 1'b1;
+            if (vec_comp_exception_i) begin
+                entry1_exception_eff = 1'b1;
+                entry1_exc_cause_eff = vec_comp_cause_i;
             end
         end
     end
@@ -510,6 +538,14 @@ module fursoy_s1_rob
                         entries_q[comp_rob_idx_i[w]].exc_cause <= comp_cause_i[w];
                         entries_q[comp_rob_idx_i[w]].exc_val   <= comp_val_i[w];
                     end
+                end
+            end
+            if (vec_comp_match) begin
+                entries_q[vec_comp_rob_idx_i].completed <= 1'b1;
+                if (vec_comp_exception_i) begin
+                    entries_q[vec_comp_rob_idx_i].exception <= 1'b1;
+                    entries_q[vec_comp_rob_idx_i].exc_cause <= vec_comp_cause_i;
+                    entries_q[vec_comp_rob_idx_i].exc_val   <= vec_comp_val_i;
                 end
             end
 

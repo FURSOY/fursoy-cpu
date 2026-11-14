@@ -21,6 +21,8 @@ module fursoy_s1_decode
     import fursoy_s1_pkg::*;
 (
     input  logic [1:0]        priv_mode_i,
+    input  logic [1:0]        mstatus_fs_i,
+    input  logic [1:0]        mstatus_vs_i,
 
     // Input Channels (from Stage F4 Decoupled Fetch Queue)
     input  logic              in0_valid_i,
@@ -43,7 +45,9 @@ module fursoy_s1_decode
     function automatic uop_decoded_t decode_inst(
         input logic               valid,
         input fetch_queue_entry_t entry,
-        input logic [1:0]         priv_mode
+        input logic [1:0]         priv_mode,
+        input logic [1:0]         mstatus_fs,
+        input logic [1:0]         mstatus_vs
     );
         uop_decoded_t uop;
         logic [31:0]  inst;
@@ -178,13 +182,8 @@ module fursoy_s1_decode
                         uop.sub_op    = ALU_XOR;
                     end
                     3'b110: begin
-                        if (funct7 == 7'b0010100 && inst[24:20] == 5'b00111) begin
-                            uop.uop_class = UOP_ALU_ZBB;
-                            uop.sub_op    = ALU_ORC_B;
-                        end else begin
-                            uop.uop_class = UOP_ALU_INT;
-                            uop.sub_op    = ALU_OR;
-                        end
+                        uop.uop_class = UOP_ALU_INT;
+                        uop.sub_op    = ALU_OR;
                     end
                     3'b111: begin
                         uop.uop_class = UOP_ALU_INT;
@@ -195,19 +194,19 @@ module fursoy_s1_decode
                             uop.uop_class = UOP_ALU_SHIFT;
                             uop.sub_op    = ALU_SLL;
                             uop.imm       = {58'd0, inst[25:20]};
-                        end else if (funct7 == 7'b0011000 && inst[24:20] == 5'b00000) begin
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00000) begin
                             uop.uop_class = UOP_ALU_ZBB;
                             uop.sub_op    = ALU_CLZ;
-                        end else if (funct7 == 7'b0011000 && inst[24:20] == 5'b00001) begin
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00001) begin
                             uop.uop_class = UOP_ALU_ZBB;
                             uop.sub_op    = ALU_CTZ;
-                        end else if (funct7 == 7'b0011000 && inst[24:20] == 5'b00010) begin
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00010) begin
                             uop.uop_class = UOP_ALU_ZBB;
                             uop.sub_op    = ALU_CPOP;
-                        end else if (funct7 == 7'b0011000 && inst[24:20] == 5'b00100) begin
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00100) begin
                             uop.uop_class = UOP_ALU_ZBB;
                             uop.sub_op    = ALU_SEXTB;
-                        end else if (funct7 == 7'b0011000 && inst[24:20] == 5'b00101) begin
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00101) begin
                             uop.uop_class = UOP_ALU_ZBB;
                             uop.sub_op    = ALU_SEXTH;
                         end else begin
@@ -228,6 +227,9 @@ module fursoy_s1_decode
                             uop.uop_class = UOP_ALU_ZBB;
                             uop.sub_op    = ALU_ROR;
                             uop.imm       = {58'd0, inst[25:20]};
+                        end else if (funct7 == 7'b0010100 && inst[24:20] == 5'b00111) begin
+                            uop.uop_class = UOP_ALU_ZBB;
+                            uop.sub_op    = ALU_ORC_B;
                         end else if (funct7 == 7'b0110101 && inst[24:20] == 5'b11000) begin
                             uop.uop_class = UOP_ALU_ZBB;
                             uop.sub_op    = ALU_REV8;
@@ -259,11 +261,16 @@ module fursoy_s1_decode
                         3'b111: begin uop.uop_class = UOP_DIV; uop.sub_op = DIV_REMU; end
                     endcase
                 end else if (funct7 == 7'b0010000) begin
-                    // Zba / Zbb
+                    // Zba
                     case (funct3)
                         3'b010: begin uop.uop_class = UOP_ALU_ZBA; uop.sub_op = ALU_SH1ADD; end
                         3'b100: begin uop.uop_class = UOP_ALU_ZBA; uop.sub_op = ALU_SH2ADD; end
                         3'b110: begin uop.uop_class = UOP_ALU_ZBA; uop.sub_op = ALU_SH3ADD; end
+                        default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
+                    endcase
+                end else if (funct7 == 7'b0110000) begin
+                    // Zbb rotate (ROL/ROR)
+                    case (funct3)
                         3'b001: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_ROL; end
                         3'b101: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_ROR; end
                         default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
@@ -280,8 +287,8 @@ module fursoy_s1_decode
                 end else if (funct7 == 7'b0000101) begin
                     case (funct3)
                         3'b100: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_MIN; end
-                        3'b101: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_MAX; end
-                        3'b110: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_MINU; end
+                        3'b101: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_MINU; end
+                        3'b110: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_MAX; end
                         3'b111: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_MAXU; end
                         default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
                     endcase
@@ -321,6 +328,15 @@ module fursoy_s1_decode
                             uop.uop_class = UOP_ALU_ZBA;
                             uop.sub_op    = ALU_SLLI_UW;
                             uop.imm       = {58'd0, inst[25:20]};
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00000) begin
+                            uop.uop_class = UOP_ALU_ZBB;
+                            uop.sub_op    = ALU_CLZW;
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00001) begin
+                            uop.uop_class = UOP_ALU_ZBB;
+                            uop.sub_op    = ALU_CTZW;
+                        end else if (funct7 == 7'b0110000 && inst[24:20] == 5'b00010) begin
+                            uop.uop_class = UOP_ALU_ZBB;
+                            uop.sub_op    = ALU_CPOPW;
                         end else begin
                             uop.exception = 1'b1;
                             uop.exc_cause = 5'd2;
@@ -334,6 +350,10 @@ module fursoy_s1_decode
                         end else if (funct7 == 7'b0100000) begin
                             uop.uop_class = UOP_ALU_SHIFT;
                             uop.sub_op    = ALU_SRAW;
+                            uop.imm       = {59'd0, inst[24:20]};
+                        end else if (funct7 == 7'b0110000) begin
+                            uop.uop_class = UOP_ALU_ZBB;
+                            uop.sub_op    = ALU_RORW;
                             uop.imm       = {59'd0, inst[24:20]};
                         end else begin
                             uop.exception = 1'b1;
@@ -379,10 +399,16 @@ module fursoy_s1_decode
                         3'b110: begin uop.uop_class = UOP_ALU_ZBA; uop.sub_op = ALU_SH3ADD_UW; end
                         default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
                     endcase
+                end else if (funct7 == 7'b0110000) begin
+                    case (funct3)
+                        3'b001: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_ROLW; end
+                        3'b101: begin uop.uop_class = UOP_ALU_ZBB; uop.sub_op = ALU_RORW; end
+                        default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
+                    endcase
                 end else if (funct7 == 7'b0000100 && funct3 == 3'b000) begin
                     uop.uop_class = UOP_ALU_ZBA;
                     uop.sub_op    = ALU_ADD_UW;
-                end else if (funct7 == 7'b0000100 && funct3 == 3'b100) begin
+                end else if (funct7 == 7'b0000100 && funct3 == 3'b100 && inst[24:20] == 5'b00000) begin
                     uop.uop_class = UOP_ALU_ZBB;
                     uop.sub_op    = ALU_ZEXTH;
                 end else begin
@@ -423,38 +449,401 @@ module fursoy_s1_decode
                 endcase
             end
 
-            // Floating-Point Loads (RV64F / RV64D)
+            // Scalar Floating-Point Loads (FLW/FLD) & Vector Loads (VLE/VLEFF/VLSE)
             7'b0000111: begin
-                uop.uop_class      = UOP_LOAD;
-                uop.is_fp          = 1'b1;
-                uop.fp_dest_valid  = 1'b1;
-                uop.rd             = inst[11:7]; // fd
-                uop.rs1            = inst[19:15]; // rs1 (integer base)
-                uop.rs2            = 5'd0;
-                uop.use_imm        = 1'b1;
-                uop.imm            = {{52{inst[31]}}, inst[31:20]};
-                case (funct3)
-                    3'b010: uop.sub_op = MEM_FLW;
-                    3'b011: uop.sub_op = MEM_FLD;
-                    default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
-                endcase
+                if (funct3 == 3'b010 || funct3 == 3'b011) begin
+                    if (mstatus_fs == 2'b00) begin
+                        uop.exception = 1'b1;
+                        uop.exc_cause = 5'd2;
+                    end else begin
+                        uop.uop_class      = UOP_LOAD;
+                        uop.is_fp          = 1'b1;
+                        uop.fp_dest_valid  = 1'b1;
+                        uop.rd             = inst[11:7];
+                        uop.rs1            = inst[19:15];
+                        uop.rs2            = 5'd0;
+                        uop.use_imm        = 1'b1;
+                        uop.imm            = {{52{inst[31]}}, inst[31:20]};
+                        uop.sub_op         = (funct3 == 3'b010) ? MEM_FLW : MEM_FLD;
+                    end
+                end else if (funct3 == 3'b000 || funct3 == 3'b101 || funct3 == 3'b110 || funct3 == 3'b111) begin
+                    if (mstatus_vs == 2'b00 || inst[31:29] != 3'b000 || inst[28] != 1'b0) begin
+                        uop.exception = 1'b1;
+                        uop.exc_cause = 5'd2;
+                    end else begin
+                        uop.uop_class      = UOP_VEC;
+                        uop.is_vec         = 1'b1;
+                        uop.vec_dest_valid = 1'b1;
+                        uop.rd             = 5'd0;
+                        uop.rs1            = inst[19:15];
+                        uop.vec_uses_rs1   = 1'b1;
+                        uop.vec_vm         = inst[25];
+                        uop.vec_vd         = inst[11:7];
+                        uop.vec_mop        = inst[27:26];
+                        case (funct3)
+                            3'b000:  uop.vec_eew = 3'd0;
+                            3'b101:  uop.vec_eew = 3'd1;
+                            3'b110:  uop.vec_eew = 3'd2;
+                            default: uop.vec_eew = 3'd3;
+                        endcase
+                        if (inst[27:26] == 2'b00 && inst[24:20] == 5'b00000) begin
+                            uop.sub_op = VEC_VLE;
+                        end else if (inst[27:26] == 2'b00 && inst[24:20] == 5'b10000) begin
+                            uop.sub_op = VEC_VLEFF;
+                        end else if (inst[27:26] == 2'b10) begin
+                            uop.sub_op       = VEC_VLSE;
+                            uop.rs2          = inst[24:20];
+                            uop.vec_uses_rs2 = 1'b1;
+                        end else begin
+                            uop.exception = 1'b1;
+                            uop.exc_cause = 5'd2;
+                        end
+                    end
+                end else begin
+                    uop.exception = 1'b1;
+                    uop.exc_cause = 5'd2;
+                end
             end
 
-            // Floating-Point Stores (RV64F / RV64D)
+            // Scalar Floating-Point Stores (FSW/FSD) & Vector Stores (VSE/VSSE)
             7'b0100111: begin
-                uop.uop_class      = UOP_STORE;
-                uop.is_fp          = 1'b1;
-                uop.fp_dest_valid  = 1'b0;
-                uop.rd             = 5'd0;
-                uop.rs1            = inst[19:15]; // rs1 (integer base)
-                uop.rs2            = inst[24:20]; // fs2 (floating-point store data)
-                uop.use_imm        = 1'b1;
-                uop.imm            = {{52{inst[31]}}, inst[31:25], inst[11:7]};
-                case (funct3)
-                    3'b010: uop.sub_op = MEM_FSW;
-                    3'b011: uop.sub_op = MEM_FSD;
-                    default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
-                endcase
+                if (funct3 == 3'b010 || funct3 == 3'b011) begin
+                    if (mstatus_fs == 2'b00) begin
+                        uop.exception = 1'b1;
+                        uop.exc_cause = 5'd2;
+                    end else begin
+                        uop.uop_class      = UOP_STORE;
+                        uop.is_fp          = 1'b1;
+                        uop.fp_dest_valid  = 1'b0;
+                        uop.rd             = 5'd0;
+                        uop.rs1            = inst[19:15];
+                        uop.rs2            = inst[24:20];
+                        uop.use_imm        = 1'b1;
+                        uop.imm            = {{52{inst[31]}}, inst[31:25], inst[11:7]};
+                        uop.sub_op         = (funct3 == 3'b010) ? MEM_FSW : MEM_FSD;
+                    end
+                end else if (funct3 == 3'b000 || funct3 == 3'b101 || funct3 == 3'b110 || funct3 == 3'b111) begin
+                    if (mstatus_vs == 2'b00 || inst[31:29] != 3'b000 || inst[28] != 1'b0) begin
+                        uop.exception = 1'b1;
+                        uop.exc_cause = 5'd2;
+                    end else begin
+                        uop.uop_class      = UOP_VEC;
+                        uop.is_vec         = 1'b1;
+                        uop.vec_dest_valid = 1'b0;
+                        uop.rd             = 5'd0;
+                        uop.rs1            = inst[19:15];
+                        uop.vec_uses_rs1   = 1'b1;
+                        uop.vec_vm         = inst[25];
+                        uop.vec_vd         = inst[11:7]; // vs3 stored register
+                        uop.vec_mop        = inst[27:26];
+                        case (funct3)
+                            3'b000:  uop.vec_eew = 3'd0;
+                            3'b101:  uop.vec_eew = 3'd1;
+                            3'b110:  uop.vec_eew = 3'd2;
+                            default: uop.vec_eew = 3'd3;
+                        endcase
+                        if (inst[27:26] == 2'b00 && inst[24:20] == 5'b00000) begin
+                            uop.sub_op = VEC_VSE;
+                        end else if (inst[27:26] == 2'b10) begin
+                            uop.sub_op       = VEC_VSSE;
+                            uop.rs2          = inst[24:20];
+                            uop.vec_uses_rs2 = 1'b1;
+                        end else begin
+                            uop.exception = 1'b1;
+                            uop.exc_cause = 5'd2;
+                        end
+                    end
+                end else begin
+                    uop.exception = 1'b1;
+                    uop.exc_cause = 5'd2;
+                end
+            end
+
+            // Floating-Point Fused Multiply-Add (RV64F / RV64D)
+            7'b1000011, 7'b1000111, 7'b1001011, 7'b1001111: begin
+                if (mstatus_fs == 2'b00 || inst[26] != 1'b0 || funct3 == 3'b101 || funct3 == 3'b110) begin
+                    uop.exception = 1'b1;
+                    uop.exc_cause = 5'd2;
+                end else begin
+                    uop.uop_class     = UOP_FP;
+                    uop.is_fp         = 1'b1;
+                    uop.fp_dest_valid = 1'b1;
+                    uop.rd            = inst[11:7];
+                    uop.rs1           = inst[19:15];
+                    uop.rs2           = inst[24:20];
+                    uop.fs3           = inst[31:27];
+                    uop.frm           = funct3;
+                    case ({opcode[3:2], inst[25]})
+                        3'b000: uop.sub_op = FP_FMADD_S;
+                        3'b001: uop.sub_op = FP_FMADD_D;
+                        3'b010: uop.sub_op = FP_FMSUB_S;
+                        3'b011: uop.sub_op = FP_FMSUB_D;
+                        3'b100: uop.sub_op = FP_FNMSUB_S;
+                        3'b101: uop.sub_op = FP_FNMSUB_D;
+                        3'b110: uop.sub_op = FP_FNMADD_S;
+                        default: uop.sub_op = FP_FNMADD_D;
+                    endcase
+                end
+            end
+
+            // Floating-Point Computational & Conversion Operations (OP-FP, RV64F / RV64D)
+            7'b1010011: begin
+                if (mstatus_fs == 2'b00) begin
+                    uop.exception = 1'b1;
+                    uop.exc_cause = 5'd2;
+                end else begin
+                    logic fp_rm_invalid;
+                    fp_rm_invalid     = (funct3 == 3'b101) || (funct3 == 3'b110);
+                    uop.uop_class     = UOP_FP;
+                    uop.is_fp         = 1'b1;
+                    uop.fp_dest_valid = 1'b1;
+                    uop.rd            = inst[11:7];
+                    uop.rs1           = inst[19:15];
+                    uop.rs2           = inst[24:20];
+                    uop.frm           = funct3;
+                    case (funct7)
+                        7'b0000000: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FADD_S;
+                        7'b0000001: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FADD_D;
+                        7'b0000100: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FSUB_S;
+                        7'b0000101: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FSUB_D;
+                        7'b0001000: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FMUL_S;
+                        7'b0001001: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FMUL_D;
+                        7'b0001100: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FDIV_S;
+                        7'b0001101: if (fp_rm_invalid) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = FP_FDIV_D;
+                        7'b0101100, 7'b0101101: begin
+                            uop.rs2 = 5'd0;
+                            if (fp_rm_invalid || inst[24:20] != 5'd0) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else begin
+                                uop.sub_op = funct7[0] ? FP_FSQRT_D : FP_FSQRT_S;
+                            end
+                        end
+                        7'b0010000, 7'b0010001: begin
+                            case (funct3)
+                                3'b000: uop.sub_op = funct7[0] ? FP_FSGNJ_D  : FP_FSGNJ_S;
+                                3'b001: uop.sub_op = funct7[0] ? FP_FSGNJN_D : FP_FSGNJN_S;
+                                3'b010: uop.sub_op = funct7[0] ? FP_FSGNJX_D : FP_FSGNJX_S;
+                                default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
+                            endcase
+                        end
+                        7'b0010100, 7'b0010101: begin
+                            case (funct3)
+                                3'b000: uop.sub_op = funct7[0] ? FP_FMIN_D : FP_FMIN_S;
+                                3'b001: uop.sub_op = funct7[0] ? FP_FMAX_D : FP_FMAX_S;
+                                default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
+                            endcase
+                        end
+                        7'b0100000: begin
+                            uop.rs2 = 5'd0;
+                            if (fp_rm_invalid || inst[24:20] != 5'd1) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else begin
+                                uop.sub_op = FP_FCVT_S_D;
+                            end
+                        end
+                        7'b0100001: begin
+                            uop.rs2 = 5'd0;
+                            if (fp_rm_invalid || inst[24:20] != 5'd0) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else begin
+                                uop.sub_op = FP_FCVT_D_S;
+                            end
+                        end
+                        7'b1010000, 7'b1010001: begin
+                            uop.fp_dest_valid = 1'b0;
+                            case (funct3)
+                                3'b010: uop.sub_op = funct7[0] ? FP_FEQ_D : FP_FEQ_S;
+                                3'b001: uop.sub_op = funct7[0] ? FP_FLT_D : FP_FLT_S;
+                                3'b000: uop.sub_op = funct7[0] ? FP_FLE_D : FP_FLE_S;
+                                default: begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end
+                            endcase
+                        end
+                        7'b1110000, 7'b1110001: begin
+                            uop.fp_dest_valid = 1'b0;
+                            uop.rs2           = 5'd0;
+                            if (inst[24:20] != 5'd0) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else if (funct3 == 3'b000) begin
+                                uop.sub_op = funct7[0] ? FP_FMV_X_D : FP_FMV_X_W;
+                            end else if (funct3 == 3'b001) begin
+                                uop.sub_op = funct7[0] ? FP_FCLASS_D : FP_FCLASS_S;
+                            end else begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end
+                        end
+                        7'b1100000, 7'b1100001: begin
+                            uop.fp_dest_valid = 1'b0;
+                            uop.rs2           = 5'd0;
+                            if (fp_rm_invalid || inst[24:22] != 3'b000) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else begin
+                                case (inst[21:20])
+                                    2'b00: uop.sub_op = funct7[0] ? FP_FCVT_W_D  : FP_FCVT_W_S;
+                                    2'b01: uop.sub_op = funct7[0] ? FP_FCVT_WU_D : FP_FCVT_WU_S;
+                                    2'b10: uop.sub_op = funct7[0] ? FP_FCVT_L_D  : FP_FCVT_L_S;
+                                    2'b11: uop.sub_op = funct7[0] ? FP_FCVT_LU_D : FP_FCVT_LU_S;
+                                endcase
+                            end
+                        end
+                        7'b1111000, 7'b1111001: begin
+                            uop.rs2 = 5'd0;
+                            if (funct3 != 3'b000 || inst[24:20] != 5'd0) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else begin
+                                uop.sub_op = funct7[0] ? FP_FMV_D_X : FP_FMV_W_X;
+                            end
+                        end
+                        7'b1101000, 7'b1101001: begin
+                            uop.rs2 = 5'd0;
+                            if (fp_rm_invalid || inst[24:22] != 3'b000) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else begin
+                                case (inst[21:20])
+                                    2'b00: uop.sub_op = funct7[0] ? FP_FCVT_D_W  : FP_FCVT_S_W;
+                                    2'b01: uop.sub_op = funct7[0] ? FP_FCVT_D_WU : FP_FCVT_S_WU;
+                                    2'b10: uop.sub_op = funct7[0] ? FP_FCVT_D_L  : FP_FCVT_S_L;
+                                    2'b11: uop.sub_op = funct7[0] ? FP_FCVT_D_LU : FP_FCVT_S_LU;
+                                endcase
+                            end
+                        end
+                        default: begin
+                            uop.exception = 1'b1;
+                            uop.exc_cause = 5'd2;
+                        end
+                    endcase
+                end
+            end
+
+            // RISC-V Vector Configuration & Integer Vector Arithmetic (OP-V)
+            7'b1010111: begin
+                if (mstatus_vs == 2'b00) begin
+                    uop.exception = 1'b1;
+                    uop.exc_cause = 5'd2;
+                end else if (funct3 == 3'b111) begin
+                    uop.uop_class = UOP_SYSTEM;
+                    uop.rd        = inst[11:7];
+                    uop.use_imm   = 1'b0;
+                    if (inst[31] == 1'b0) begin
+                        uop.sub_op = VEC_VSETVLI;
+                        uop.rs1    = inst[19:15];
+                        uop.rs2    = 5'd0;
+                        uop.imm    = {47'd0, inst[19:15], (inst[11:7] == 5'd0), inst[30:20]};
+                    end else if (inst[31:30] == 2'b11) begin
+                        uop.sub_op = VEC_VSETIVLI;
+                        uop.rs1    = 5'd0;
+                        uop.rs2    = 5'd0;
+                        uop.imm    = {47'd0, inst[19:15], (inst[11:7] == 5'd0), 1'b0, inst[29:20]};
+                    end else if (inst[31:25] == 7'b1000000) begin
+                        uop.sub_op = VEC_VSETVL;
+                        uop.rs1    = inst[19:15];
+                        uop.rs2    = inst[24:20];
+                        uop.imm    = {47'd0, inst[19:15], (inst[11:7] == 5'd0), 11'd0};
+                    end else begin
+                        uop.exception = 1'b1;
+                        uop.exc_cause = 5'd2;
+                    end
+                end else if (funct3 == 3'b000 || funct3 == 3'b011 || funct3 == 3'b100) begin
+                    logic [5:0] v_funct6;
+                    v_funct6           = inst[31:26];
+                    uop.uop_class      = UOP_VEC;
+                    uop.is_vec         = 1'b1;
+                    uop.vec_dest_valid = 1'b1;
+                    uop.rd             = 5'd0;
+                    uop.vec_vm         = inst[25];
+                    uop.vec_vd         = inst[11:7];
+                    uop.vec_vs2        = inst[24:20];
+                    uop.vec_vs1        = inst[19:15];
+                    uop.vec_uses_vs2   = 1'b1;
+                    uop.vec_uses_vs1   = (funct3 == 3'b000);
+                    uop.vec_uses_rs1   = (funct3 == 3'b100);
+                    if (funct3 == 3'b100) begin
+                        uop.rs1 = inst[19:15];
+                    end
+                    if (funct3 == 3'b011) begin
+                        uop.use_imm = 1'b1;
+                        uop.imm     = {{59{inst[19]}}, inst[19:15]};
+                    end
+                    case (v_funct6)
+                        6'b000000: uop.sub_op = VEC_VADD;
+                        6'b000010: if (funct3 == 3'b011) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VSUB;
+                        6'b000011: if (funct3 == 3'b000) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VRSUB;
+                        6'b000100: if (funct3 == 3'b011) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMINU;
+                        6'b000101: if (funct3 == 3'b011) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMIN;
+                        6'b000110: if (funct3 == 3'b011) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMAXU;
+                        6'b000111: if (funct3 == 3'b011) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMAX;
+                        6'b001001: uop.sub_op = VEC_VAND;
+                        6'b001010: uop.sub_op = VEC_VOR;
+                        6'b001011: uop.sub_op = VEC_VXOR;
+                        6'b001110: if (funct3 == 3'b000) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VSLIDEUP;
+                        6'b001111: if (funct3 == 3'b000) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VSLIDEDOWN;
+                        6'b010111: begin
+                            uop.vec_uses_vs2 = 1'b0;
+                            if (!inst[25] || inst[24:20] != 5'd0) begin
+                                uop.exception = 1'b1;
+                                uop.exc_cause = 5'd2;
+                            end else begin
+                                uop.sub_op = VEC_VMV;
+                            end
+                        end
+                        6'b011000: uop.sub_op = VEC_VMSEQ;
+                        6'b011001: uop.sub_op = VEC_VMSNE;
+                        6'b011010: if (funct3 == 3'b011) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMSLTU;
+                        6'b011011: if (funct3 == 3'b011) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMSLT;
+                        6'b011100: uop.sub_op = VEC_VMSLEU;
+                        6'b011101: uop.sub_op = VEC_VMSLE;
+                        6'b011110: if (funct3 == 3'b000) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMSGTU;
+                        6'b011111: if (funct3 == 3'b000) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMSGT;
+                        6'b100101: uop.sub_op = VEC_VSLL;
+                        6'b101000: uop.sub_op = VEC_VSRL;
+                        6'b101001: uop.sub_op = VEC_VSRA;
+                        default: begin
+                            uop.exception = 1'b1;
+                            uop.exc_cause = 5'd2;
+                        end
+                    endcase
+                end else if (funct3 == 3'b010 || funct3 == 3'b110) begin
+                    logic [5:0] v_funct6;
+                    v_funct6           = inst[31:26];
+                    uop.uop_class      = UOP_VEC;
+                    uop.is_vec         = 1'b1;
+                    uop.vec_dest_valid = 1'b1;
+                    uop.rd             = 5'd0;
+                    uop.vec_vm         = inst[25];
+                    uop.vec_vd         = inst[11:7];
+                    uop.vec_vs2        = inst[24:20];
+                    uop.vec_vs1        = inst[19:15];
+                    uop.vec_uses_vs2   = 1'b1;
+                    uop.vec_uses_vs1   = (funct3 == 3'b010);
+                    uop.vec_uses_rs1   = (funct3 == 3'b110);
+                    if (funct3 == 3'b110) begin
+                        uop.rs1 = inst[19:15];
+                    end
+                    case (v_funct6)
+                        6'b000000: if (funct3 != 3'b010) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VREDSUM;
+                        6'b001110: if (funct3 != 3'b110) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VSLIDE1UP;
+                        6'b001111: if (funct3 != 3'b110) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VSLIDE1DOWN;
+                        6'b011001: if (funct3 != 3'b010 || !inst[25]) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMAND;
+                        6'b011010: if (funct3 != 3'b010 || !inst[25]) begin uop.exception = 1'b1; uop.exc_cause = 5'd2; end else uop.sub_op = VEC_VMOR;
+                        6'b100000: uop.sub_op = VEC_VDIVU;
+                        6'b100001: uop.sub_op = VEC_VDIV;
+                        6'b100101: uop.sub_op = VEC_VMUL;
+                        default: begin
+                            uop.exception = 1'b1;
+                            uop.exc_cause = 5'd2;
+                        end
+                    endcase
+                end else begin
+                    uop.exception = 1'b1;
+                    uop.exc_cause = 5'd2;
+                end
             end
 
             // Atomics (RV64A: LR/SC & AMO)
@@ -603,8 +992,12 @@ module fursoy_s1_decode
         endcase
 
         if (uop.exception) begin
-            uop.uop_class = UOP_SYSTEM;
-            uop.rd        = 5'd0;
+            uop.uop_class      = UOP_SYSTEM;
+            uop.rd             = 5'd0;
+            uop.fp_dest_valid  = 1'b0;
+            uop.vec_dest_valid = 1'b0;
+            uop.is_fp          = 1'b0;
+            uop.is_vec         = 1'b0;
         end
 
         return uop;
@@ -612,10 +1005,10 @@ module fursoy_s1_decode
 
     // Decode Channel 0 and Channel 1
     assign uop0_valid_o = in0_valid_i;
-    assign uop0_o       = decode_inst(in0_valid_i, in0_entry_i, priv_mode_i);
+    assign uop0_o       = decode_inst(in0_valid_i, in0_entry_i, priv_mode_i, mstatus_fs_i, mstatus_vs_i);
 
     assign uop1_valid_o = in1_valid_i;
-    assign uop1_o       = decode_inst(in1_valid_i, in1_entry_i, priv_mode_i);
+    assign uop1_o       = decode_inst(in1_valid_i, in1_entry_i, priv_mode_i, mstatus_fs_i, mstatus_vs_i);
 
 endmodule
 

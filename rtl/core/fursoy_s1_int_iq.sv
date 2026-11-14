@@ -163,11 +163,11 @@ module fursoy_s1_int_iq
     wire uop1_is_mem = (uop1_class_i == UOP_LOAD) || (uop1_class_i == UOP_STORE) ||
                        (uop1_class_i == UOP_AMO)  || (uop1_class_i == UOP_FENCE);
 
-    wire uop0_is_fpiq = (uop0_class_i == UOP_FP) && !is_int2fp_op(uop0_subop_i);
-    wire uop1_is_fpiq = (uop1_class_i == UOP_FP) && !is_int2fp_op(uop1_subop_i);
+    wire uop0_is_fpiq = !uop0_exception_i && (uop0_class_i == UOP_FP) && !is_int2fp_op(uop0_subop_i);
+    wire uop1_is_fpiq = !uop1_exception_i && (uop1_class_i == UOP_FP) && !is_int2fp_op(uop1_subop_i);
 
-    wire uop0_for_intiq = !uop0_is_mem && !uop0_is_fpiq;
-    wire uop1_for_intiq = !uop1_is_mem && !uop1_is_fpiq;
+    wire uop0_for_intiq = !uop0_is_mem && !uop0_is_fpiq && (uop0_class_i != UOP_VEC);
+    wire uop1_for_intiq = !uop1_is_mem && !uop1_is_fpiq && (uop1_class_i != UOP_VEC);
 
     // Count free entries
     logic [IQ_CNT_W-1:0] free_count;

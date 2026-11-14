@@ -133,6 +133,14 @@ module fursoy_s1_substrate
     input  logic [4:0]             comp_fflags_i         [4:0],
     output logic [4:0]             comp_ack_o,
 
+    // Vector Execution Completion Interface
+    input  logic                   vec_comp_valid_i,
+    input  rob_idx_t               vec_comp_rob_idx_i,
+    input  rob_epoch_t             vec_comp_epoch_i,
+    input  logic                   vec_comp_exception_i,
+    input  logic [4:0]             vec_comp_cause_i,
+    input  logic [63:0]            vec_comp_val_i,
+
     // Dedicated Floating-Point Writeback Completion Interface (w0: P4, w1: P2, w2: P3)
     input  logic [2:0]             comp_fp_wb_valid_i,
     input  fpreg_t                 comp_fp_wb_preg_i     [2:0],
@@ -785,6 +793,12 @@ module fursoy_s1_substrate
         .comp_val_i           (comp_val_i),
         .comp_fflags_i        (comp_fflags_i),
         .comp_ack_o           (rob_comp_ack),
+        .vec_comp_valid_i     (vec_comp_valid_i),
+        .vec_comp_rob_idx_i   (vec_comp_rob_idx_i),
+        .vec_comp_epoch_i     (vec_comp_epoch_i),
+        .vec_comp_exception_i (vec_comp_exception_i),
+        .vec_comp_cause_i     (vec_comp_cause_i),
+        .vec_comp_val_i       (vec_comp_val_i),
         .retire_ready_i       (retire_ready_i),
         .irq_pending_i        (irq_pending_i),
         .lsu_violation_valid_i(lsu_violation_valid_i),

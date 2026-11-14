@@ -545,7 +545,34 @@ package fursoy_s1_pkg;
         VEC_VSLIDEUP  = 8'd186,
         VEC_VSLIDEDOWN= 8'd187,
         VEC_VMAND     = 8'd188,
-        VEC_VMOR      = 8'd189
+        VEC_VMOR      = 8'd189,
+        // RV64 Zbb Word Sub-Operations
+        ALU_CLZW      = 8'd190,
+        ALU_CTZW      = 8'd191,
+        ALU_CPOPW     = 8'd192,
+        ALU_ROLW      = 8'd193,
+        ALU_RORW      = 8'd194,
+        // Extended Vector Sub-Operations (Full Frontend Integration)
+        VEC_VRSUB     = 8'd195,
+        VEC_VMV       = 8'd196,
+        VEC_VDIVU     = 8'd197,
+        VEC_VSLIDE1UP = 8'd198,
+        VEC_VSLIDE1DOWN = 8'd199,
+        VEC_VMINU     = 8'd200,
+        VEC_VMAXU     = 8'd201,
+        VEC_VMSEQ     = 8'd202,
+        VEC_VMSNE     = 8'd203,
+        VEC_VMSLTU    = 8'd204,
+        VEC_VMSLT     = 8'd205,
+        VEC_VMSLEU    = 8'd206,
+        VEC_VMSLE     = 8'd207,
+        VEC_VMSGTU    = 8'd208,
+        VEC_VMSGT     = 8'd209,
+        VEC_VSLL      = 8'd210,
+        VEC_VSRL      = 8'd211,
+        VEC_VSRA      = 8'd212,
+        VEC_VMIN      = 8'd213,
+        VEC_VMAX      = 8'd214
     } uop_subop_t;
 
     // -------------------------------------------------------------------------
@@ -685,6 +712,19 @@ package fursoy_s1_pkg;
         logic        fp_dest_valid;
         fareg_t      fs3;
         logic [2:0]  frm;
+        // Milestone 8 Full Vector Frontend Metadata
+        logic        is_vec;
+        logic        vec_dest_valid;
+        logic        vec_vm;
+        logic        vec_uses_rs1;
+        logic        vec_uses_rs2;
+        logic        vec_uses_vs1;
+        logic        vec_uses_vs2;
+        logic [2:0]  vec_eew;
+        logic [1:0]  vec_mop;
+        logic [4:0]  vec_vd;
+        logic [4:0]  vec_vs1;
+        logic [4:0]  vec_vs2;
     } uop_decoded_t;
 
     // -------------------------------------------------------------------------

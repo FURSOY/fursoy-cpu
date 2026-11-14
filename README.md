@@ -97,7 +97,7 @@ sudo apt-get install -y \
   gcc-riscv64-unknown-elf gcc-riscv64-linux-gnu
 ```
 
-*(Optional, for physical synthesis & STA: `yosys`, `sv2v`, OpenSTA `sta`, and Nangate45 `.lib` via `FURSOY_LIBERTY` or `tools/synth/lib/NangateOpenCellLibrary_typical.lib`.)*
+*(Optional, for physical synthesis & STA: `yosys`, `sv2v`, OpenSTA `sta`, and Nangate45 `.lib` via `FURSOY_LIBERTY` or `tools/synth/lib/NangateOpenCellLibrary_typical.lib`. For `sail-riscv` golden-model differential co-simulation: extract the official `sail-riscv` Linux x86_64 release tarball so `tools/sail/bin/bin/sail_riscv_sim` exists; the Fursoy-matched machine configuration is checked in at [`tools/sail/fursoy_s1_sail_config.json`](tools/sail/fursoy_s1_sail_config.json).)*
 
 ### Running Verification
 
@@ -116,10 +116,13 @@ python3 tools/run_s1_m8_closeout.py  # RV64FD + RVV 1.0 FP/Vector backend
 python3 tools/run_s1_m7_closeout.py  # Multi-bank non-blocking L1D + coherency
 python3 tools/run_s1_m6_closeout.py  # Frontend BPU / ITLB / L1I NLP
 
-# 3. Nangate 45nm @ 500 MHz synthesis & OpenSTA check
+# 3. Sail-RISC-V golden-model differential co-simulation (RV64IMAFDV + Zba + Zbb + Sv39 + traps)
+python3 tools/run_s1_sail_cosim.py
+
+# 4. Nangate 45nm @ 500 MHz synthesis & OpenSTA check
 python3 tools/run_s1_synth.py --run-synth
 
-# 4. Full Linux 6.6.50 + BusyBox boot closeout (~1.5-2 hours wall time)
+# 5. Full Linux 6.6.50 + BusyBox boot closeout (~1.5-2 hours wall time)
 # Requires a built RISC-V Image at build/linux-6.6.50/arch/riscv/boot/Image
 # (kernel config/patches in software/linux/, initramfs helper in tools/build_initramfs.py).
 python3 tools/run_s1_m9_closeout.py
@@ -134,8 +137,8 @@ python3 tools/run_s1_m9_closeout.py
 | [`rtl/core/`](rtl/core/) | Slice-1 64-bit OoO core SystemVerilog modules (`fursoy_s1_core`, ROB, rename, IQs, ALU/Branch/Mul/Div, FP/Vec, DTLB/ITLB/PTW, L1I/L1D) |
 | [`rtl/platform/`](rtl/platform/) | Slice-1/Slice-0 SoC integration (`fursoy_s1_soc`), 5-master crossbar, CLINT, PLIC, 16550 UART |
 | [`software/`](software/) | Minimal SBI v2.0 M-mode firmware, Fursoy Slice-1 Device Tree (`fursoy_s1.dts`), Linux 6.6.50 defconfig/patches, BusyBox `/init` & `mem_stress` |
-| [`verification/`](verification/) | Verilator C++ self-checking testbenches (`s1_m9_closeout_tb.cpp`, M5–M9 phase/closeout benches, unit checks) |
-| [`tools/`](tools/) | Python lint, regression, Linux closeout, synthesis (`run_s1_synth.py`), and analysis runners |
+| [`verification/`](verification/) | Verilator C++ self-checking testbenches (`s1_m9_closeout_tb.cpp`, `s1_sail_cosim_tb.cpp`, M5–M9 phase/closeout benches, unit checks) |
+| [`tools/`](tools/) | Python lint, regression, Sail cosim (`run_s1_sail_cosim.py`), Linux closeout, synthesis (`run_s1_synth.py`), and analysis runners |
 | [`docs/architecture/`](docs/architecture/) | Normative microarchitecture, MMU, cache, and SoC specification documents |
 | [`results/`](results/) | Verified milestone JSON evidence reports (including `results/s1-m9-closeout.json`) |
 

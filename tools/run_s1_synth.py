@@ -14,8 +14,10 @@ import os
 import re
 import sys
 import json
+import hashlib
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,21 +64,29 @@ def check_toolchain():
     return tools
 
 
-def run_module_synth_and_sta(key, top, sv_path, is_sequential):
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    h.update(path.read_bytes())
+    return h.hexdigest()
+
+
+def run_module_synth_and_sta(key, top, sv_path, source_sv_path, is_sequential):
     BUILD_SYNTH.mkdir(parents=True, exist_ok=True)
     CONSTR_PATH.parent.mkdir(parents=True, exist_ok=True)
     if not CONSTR_PATH.exists():
         CONSTR_PATH.write_text("set_driving_cell BUF_X2\nset_load 2.0\n")
 
     sv2v_bin = shutil.which("sv2v") or "sv2v"
+    pkg_path = ROOT / "rtl/core/fursoy_s1_pkg.sv"
     v_file = BUILD_SYNTH / f"{key}.v"
     net_file = BUILD_SYNTH / f"{key}_netlist.v"
     synth_log = BUILD_SYNTH / f"{key}_synth.log"
     sta_tcl = BUILD_SYNTH / f"{key}_sta.tcl"
     sta_log = BUILD_SYNTH / f"{key}_sta.log"
+    meta_file = BUILD_SYNTH / f"{key}_meta.json"
 
     subprocess.run(
-        [sv2v_bin, "-DSYNTHESIS", f"-I{ROOT / 'rtl/core'}", str(ROOT / "rtl/core/fursoy_s1_pkg.sv"), str(sv_path)],
+        [sv2v_bin, "-DSYNTHESIS", f"-I{ROOT / 'rtl/core'}", str(pkg_path), str(sv_path)],
         stdout=open(v_file, "w"),
         check=True,
     )
@@ -120,6 +130,16 @@ exit
     sta_tcl.write_text(tcl)
     subprocess.run([str(STA_BIN), "-exit", str(sta_tcl)], stdout=open(sta_log, "w"), stderr=subprocess.STDOUT, check=True)
 
+    meta = {
+        "key": key,
+        "top": top,
+        "sv_path": str(source_sv_path.relative_to(ROOT)),
+        "sv_sha256": sha256_file(source_sv_path),
+        "pkg_sha256": sha256_file(pkg_path),
+        "generated_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    meta_file.write_text(json.dumps(meta, indent=2) + "\n")
+
 
 def parse_yosys_log(log_path):
     if not os.path.exists(log_path):
@@ -133,13 +153,13 @@ def parse_yosys_log(log_path):
     chip_area = float(area_matches[-1]) if area_matches else None
 
     dff_matches = re.findall(r"DFF[A-Z0-9_]*_X\d+\s+(\d+)", content)
-    dff_count = sum(int(x) for x in dff_matches) if dff_matches else 0
+    dff_count = sum(int(x) for x in dff_matches) if cell_count is not None else None
 
     return {
         "cell_count": cell_count,
         "dff_count": dff_count,
         "chip_area_um2": chip_area,
-        "gate_equivalent_ge": round(chip_area / NAND2_AREA, 1) if chip_area else None,
+        "gate_equivalent_ge": round(chip_area / NAND2_AREA, 1) if chip_area is not None else None,
     }
 
 
@@ -158,7 +178,7 @@ def parse_sta_log(log_path):
         wns = None
 
     tns_matches = re.findall(r"tns (?:max)?\s+([-\d\.]+)", content)
-    tns = float(tns_matches[-1]) if tns_matches else 0.0
+    tns = float(tns_matches[-1]) if tns_matches else None
 
     delay_matches = re.findall(r"^\s*([\d\.]+)\s+data arrival time", content, re.MULTILINE)
     data_arrival = float(delay_matches[-1]) if delay_matches else None
@@ -234,7 +254,7 @@ def main():
             "name": "fursoy_s1_itlb",
             "type": "Sequential",
             "sv_path": ROOT / "rtl/core/fursoy_s1_itlb.sv",
-            "description": "Architectural Sv39 Instruction TLB (32-entry base TLB + superpage CAM)",
+            "description": "Architectural Sv39 Instruction TLB (64-entry base TLB + superpage CAM)",
             "synth_log": BUILD_SYNTH / "itlb_synth.log",
             "sta_log": BUILD_SYNTH / "itlb_sta.log",
             "baseline_arrival_ns": 4.057,
@@ -291,6 +311,10 @@ def main():
         },
     ]
 
+    execution_mode = "fresh_run" if run_synth else "cached_logs"
+    pkg_path = ROOT / "rtl/core/fursoy_s1_pkg.sv"
+    pkg_sha256 = sha256_file(pkg_path)
+
     if run_synth:
         for m in modules:
             sv_path = m["sv_path"]
@@ -300,16 +324,21 @@ def main():
                 e_idx = lsu_text.index("endmodule", s_idx) + len("endmodule\n")
                 tmp_sv = BUILD_SYNTH / "dtlb_extract.sv"
                 tmp_sv.write_text(lsu_text[s_idx:e_idx])
-                run_module_synth_and_sta(m["key"], m["name"], tmp_sv, m["type"] == "Sequential")
+                run_module_synth_and_sta(m["key"], m["name"], tmp_sv, sv_path, m["type"] == "Sequential")
                 tmp_sv.unlink(missing_ok=True)
             else:
-                run_module_synth_and_sta(m["key"], m["name"], sv_path, m["type"] == "Sequential")
+                run_module_synth_and_sta(m["key"], m["name"], sv_path, sv_path, m["type"] == "Sequential")
+
+    print(f"Mode:     {execution_mode}")
+    print("-" * 105)
 
     results = []
     total_cells = 0
     total_area = 0.0
     total_ge = 0.0
     total_dffs = 0
+    complete_modules = 0
+    stale_modules = []
 
     header = (
         f"{'Module Name':<23} {'Cells':<8} {'DFFs':<7} {'kGE':<8} "
@@ -319,32 +348,68 @@ def main():
     print("-" * 105)
 
     for m in modules:
-        y_data = parse_yosys_log(m["synth_log"]) or {}
-        s_data = parse_sta_log(m["sta_log"]) or {}
+        y_data = parse_yosys_log(m["synth_log"])
+        s_data = parse_sta_log(m["sta_log"])
 
-        cell_count = y_data.get("cell_count", 0)
-        dff_count = y_data.get("dff_count", 0)
-        area = y_data.get("chip_area_um2", 0.0)
-        ge = y_data.get("gate_equivalent_ge", 0.0)
-        kge = round(ge / 1000.0, 2) if ge else 0.0
+        sv_sha256 = sha256_file(m["sv_path"])
+        meta_file = BUILD_SYNTH / f"{m['key']}_meta.json"
+        recorded_sv_sha = None
+        meta_fresh = False
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text())
+                recorded_sv_sha = meta.get("sv_sha256")
+                recorded_pkg_sha = meta.get("pkg_sha256")
+                meta_fresh = (
+                    isinstance(recorded_sv_sha, str)
+                    and isinstance(recorded_pkg_sha, str)
+                    and (recorded_sv_sha == sv_sha256)
+                    and (recorded_pkg_sha == pkg_sha256)
+                )
+            except Exception:
+                meta_fresh = False
+        logs_fresh = (y_data is not None) and (s_data is not None) and meta_fresh
+        if not logs_fresh:
+            stale_modules.append(m["name"])
 
-        arrival = s_data.get("max_delay_ns", 0.0)
-        wns = s_data.get("wns_ns", None)
+        cell_count = y_data.get("cell_count") if y_data else None
+        dff_count = y_data.get("dff_count") if y_data else None
+        area = y_data.get("chip_area_um2") if y_data else None
+        ge = y_data.get("gate_equivalent_ge") if y_data else None
+        kge = round(ge / 1000.0, 2) if ge is not None else None
+
+        arrival = s_data.get("max_delay_ns") if s_data else None
+        wns = s_data.get("wns_ns") if s_data else None
+        tns = s_data.get("tns_ns") if s_data else None
+
+        module_complete = all(
+            v is not None for v in (cell_count, dff_count, area, ge, kge, arrival, wns, tns)
+        )
+        if module_complete:
+            complete_modules += 1
+
         base_arr = m["baseline_arrival_ns"]
         base_wns = m["baseline_wns_ns"]
 
+        cell_str = str(cell_count) if cell_count is not None else "N/A"
+        dff_str = str(dff_count) if dff_count is not None else "N/A"
+        kge_str = f"{kge:.2f}" if kge is not None else "N/A"
         base_arr_str = f"{base_arr:.3f} ns"
         arrival_str = f"{arrival:.3f} ns" if arrival is not None else "N/A"
         base_wns_str = f"{base_wns:+.3f} ns"
         wns_str = f"{wns:+.3f} ns" if wns is not None else "N/A"
 
-        total_cells += cell_count
-        total_dffs += dff_count
-        total_area += area
-        total_ge += ge
+        if cell_count is not None:
+            total_cells += cell_count
+        if dff_count is not None:
+            total_dffs += dff_count
+        if area is not None:
+            total_area += area
+        if ge is not None:
+            total_ge += ge
 
         print(
-            f"{m['name']:<23} {cell_count:<8} {dff_count:<7} {kge:<8.2f} "
+            f"{m['name']:<23} {cell_str:<8} {dff_str:<7} {kge_str:<8} "
             f"{base_arr_str:<10} {arrival_str:<10} {base_wns_str:<11} {wns_str:<14}"
         )
 
@@ -353,6 +418,11 @@ def main():
                 "name": m["name"],
                 "type": m["type"],
                 "description": m["description"],
+                "sv_path": str(m["sv_path"].relative_to(ROOT)),
+                "sv_sha256": sv_sha256,
+                "recorded_sv_sha256": recorded_sv_sha,
+                "logs_fresh": logs_fresh,
+                "data_complete": module_complete,
                 "cell_count": cell_count,
                 "dff_count": dff_count,
                 "area_um2": area,
@@ -361,24 +431,40 @@ def main():
                 "max_delay_ns": arrival,
                 "baseline_wns_ns_at_500mhz": base_wns,
                 "wns_ns_at_500mhz": wns,
-                "tns_ns_at_500mhz": s_data.get("tns_ns", 0.0),
+                "tns_ns_at_500mhz": tns,
                 "critical_path": {
-                    "startpoint": s_data.get("startpoint"),
-                    "endpoint": s_data.get("endpoint"),
+                    "startpoint": s_data.get("startpoint") if s_data else None,
+                    "endpoint": s_data.get("endpoint") if s_data else None,
                     "bottleneck": m["bottleneck"],
                 },
             }
         )
 
-    print("-" * 105)
-    print(
-        f"{'TOTAL (8 Core Blocks)':<23} {total_cells:<8} {total_dffs:<7} {round(total_ge / 1000.0, 2):<8.2f} "
-        f"(Total standard-cell area: {total_area:.1f} um^2)"
+    modules_meeting = sum(
+        1 for r in results
+        if r["wns_ns_at_500mhz"] is not None and r["wns_ns_at_500mhz"] >= 0.0
     )
+    data_complete = (complete_modules == len(results))
+    timing_closed = data_complete and (modules_meeting == len(results))
+    all_logs_fresh = (len(stale_modules) == 0)
+
+    print("-" * 105)
+    if data_complete:
+        print(
+            f"{'TOTAL (8 Core Blocks)':<23} {total_cells:<8} {total_dffs:<7} {round(total_ge / 1000.0, 2):<8.2f} "
+            f"(Total standard-cell area: {total_area:.1f} um^2)"
+        )
+    else:
+        print(
+            f"{'TOTAL (8 Core Blocks)':<23} {'INCOMP':<8} {'-':<7} {'-':<8} "
+            f"(Incomplete synthesis/STA logs: {complete_modules}/{len(results)})"
+        )
     print("=" * 105)
 
     report = {
         "title": "Fursoy Slice-1 Stage 1 Physical Synthesis & Timing Analysis",
+        "execution_mode": execution_mode,
+        "pkg_sha256": pkg_sha256,
         "library": {
             "name": "NangateOpenCellLibrary",
             "process_node": "45nm",
@@ -388,12 +474,17 @@ def main():
         "toolchain": tools,
         "clock_constraint": {"frequency_mhz": 500.0, "period_ns": 2.0},
         "summary": {
-            "total_cells": total_cells,
-            "total_dffs": total_dffs,
-            "total_area_um2": round(total_area, 2),
-            "total_kge": round(total_ge / 1000.0, 2),
-            "modules_meeting_500mhz": sum(1 for r in results if (r["wns_ns_at_500mhz"] or -1.0) >= 0.0),
+            "total_cells": total_cells if data_complete else None,
+            "total_dffs": total_dffs if data_complete else None,
+            "total_area_um2": round(total_area, 2) if data_complete else None,
+            "total_kge": round(total_ge / 1000.0, 2) if data_complete else None,
+            "modules_meeting_500mhz": modules_meeting,
             "total_modules_evaluated": len(results),
+            "modules_with_complete_data": complete_modules,
+            "data_complete": data_complete,
+            "timing_closed": timing_closed,
+            "all_logs_fresh": all_logs_fresh,
+            "stale_modules": stale_modules,
         },
         "modules": results,
     }
@@ -403,7 +494,19 @@ def main():
     with open(report_file, "w") as f:
         json.dump(report, f, indent=2)
 
-    print(f"\n[PASS] Physical Synthesis & Timing Report generated at: {report_file}")
+    if stale_modules:
+        print(f"\n[WARN] Stale or unverified cached logs vs current RTL for: {', '.join(stale_modules)}")
+
+    if data_complete and timing_closed and all_logs_fresh:
+        print(f"\n[PASS] Physical Synthesis & Timing Report generated at: {report_file}")
+    else:
+        print(
+            f"\n[FAIL] Synthesis/STA gate failed (data_complete={data_complete}, "
+            f"timing_closed={timing_closed}, all_logs_fresh={all_logs_fresh}, "
+            f"complete={complete_modules}/{len(results)}, "
+            f"meeting_500mhz={modules_meeting}/{len(results)}). Report: {report_file}"
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

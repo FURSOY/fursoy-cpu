@@ -179,16 +179,20 @@ module fursoy_s1_alu
     logic [63:0] sh_res;
 
     always_comb begin
-        sh_is_w      = (sub_op_i == ALU_SLLW) || (sub_op_i == ALU_SRLW) || (sub_op_i == ALU_SRAW);
+        sh_is_w      = (sub_op_i == ALU_SLLW) || (sub_op_i == ALU_SRLW) || (sub_op_i == ALU_SRAW) ||
+                       (sub_op_i == ALU_ROLW) || (sub_op_i == ALU_RORW);
         sh_is_left   = (sub_op_i == ALU_SLL)  || (sub_op_i == ALU_SLLW) ||
-                       (sub_op_i == ALU_SLLI_UW) || (sub_op_i == ALU_ROL);
-        sh_is_rotate = (sub_op_i == ALU_ROL)  || (sub_op_i == ALU_ROR);
+                       (sub_op_i == ALU_SLLI_UW) || (sub_op_i == ALU_ROL) || (sub_op_i == ALU_ROLW);
+        sh_is_rotate = (sub_op_i == ALU_ROL)  || (sub_op_i == ALU_ROR)  ||
+                       (sub_op_i == ALU_ROLW) || (sub_op_i == ALU_RORW);
         sh_fill_bit  = (sub_op_i == ALU_SRA)  ? op_a_i[63] :
                        (sub_op_i == ALU_SRAW) ? op_a_i[31] : 1'b0;
         sh_amt       = sh_is_w ? {1'b0, op_b_i[4:0]} : op_b_i[5:0];
 
         if (sub_op_i == ALU_SRAW) begin
             sh_data_base = {{32{op_a_i[31]}}, op_a_i[31:0]};
+        end else if ((sub_op_i == ALU_ROLW) || (sub_op_i == ALU_RORW)) begin
+            sh_data_base = {op_a_i[31:0], op_a_i[31:0]};
         end else if ((sub_op_i == ALU_SLLW) || (sub_op_i == ALU_SRLW) || (sub_op_i == ALU_SLLI_UW)) begin
             sh_data_base = {32'd0, op_a_i[31:0]};
         end else begin
@@ -214,9 +218,10 @@ module fursoy_s1_alu
     end
 
     // -------------------------------------------------------------------------
-    // 4. Unified 6-Level Binary-Tree CLZ / CTZ
+    // 4. Unified 6-Level Binary-Tree CLZ / CTZ / CLZW / CTZW
     // -------------------------------------------------------------------------
-    wire        clz_is_ctz = (sub_op_i == ALU_CTZ);
+    wire        clz_is_ctz = (sub_op_i == ALU_CTZ) || (sub_op_i == ALU_CTZW);
+    wire        clz_is_w   = (sub_op_i == ALU_CLZW) || (sub_op_i == ALU_CTZW);
     logic [63:0] cz_x;
     logic [31:0] cz_v1, cz_z1;
     logic [15:0] cz_v2;
@@ -232,8 +237,12 @@ module fursoy_s1_alu
     logic [63:0] clz_ctz_res;
 
     always_comb begin
-        for (int i = 0; i < 64; i++) begin
-            cz_x[i] = clz_is_ctz ? op_a_i[i] : op_a_i[63 - i];
+        for (int i = 0; i < 32; i++) begin
+            cz_x[i] = clz_is_ctz ? op_a_i[i] :
+                      (clz_is_w ? op_a_i[31 - i] : op_a_i[63 - i]);
+        end
+        for (int i = 32; i < 64; i++) begin
+            cz_x[i] = clz_is_w ? 1'b1 : (clz_is_ctz ? op_a_i[i] : op_a_i[63 - i]);
         end
         for (int i = 0; i < 32; i++) begin
             cz_v1[i] = cz_x[2*i] | cz_x[2*i+1];
@@ -274,10 +283,12 @@ module fursoy_s1_alu
         for (int i = 0; i < 16; i++) begin
             logic b0, b1, b2, b3;
             logic fa_s, fa_c, ha_s, ha_c;
-            b0   = op_a_i[4*i + 0];
-            b1   = op_a_i[4*i + 1];
-            b2   = op_a_i[4*i + 2];
-            b3   = op_a_i[4*i + 3];
+            logic mask_hi;
+            mask_hi = (sub_op_i == ALU_CPOPW) && (i >= 8);
+            b0   = mask_hi ? 1'b0 : op_a_i[4*i + 0];
+            b1   = mask_hi ? 1'b0 : op_a_i[4*i + 1];
+            b2   = mask_hi ? 1'b0 : op_a_i[4*i + 2];
+            b3   = mask_hi ? 1'b0 : op_a_i[4*i + 3];
             fa_s = b0 ^ b1 ^ b2;
             fa_c = (b0 & b1) | (b2 & (b0 ^ b1));
             ha_s = fa_s ^ b3;
@@ -339,10 +350,12 @@ module fursoy_s1_alu
 
             ALU_SLL, ALU_SRL, ALU_SRA,
             ALU_SLLW, ALU_SRLW, ALU_SRAW,
-            ALU_SLLI_UW, ALU_ROL, ALU_ROR: result_o = sh_res;
+            ALU_SLLI_UW, ALU_ROL, ALU_ROR,
+            ALU_ROLW, ALU_RORW: result_o = sh_res;
 
-            ALU_CLZ, ALU_CTZ: result_o = clz_ctz_res;
-            ALU_CPOP:         result_o = cpop_res;
+            ALU_CLZ, ALU_CTZ,
+            ALU_CLZW, ALU_CTZW: result_o = clz_ctz_res;
+            ALU_CPOP, ALU_CPOPW: result_o = cpop_res;
 
             default: result_o = add_res;
         endcase

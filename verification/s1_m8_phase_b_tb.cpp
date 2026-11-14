@@ -23,11 +23,13 @@
 
 #include <iostream>
 #include <iomanip>
+#include <array>
 #include <vector>
 #include <deque>
 #include <set>
 #include <map>
 #include <cstdint>
+#include <cstdlib>
 #include <cassert>
 #include <random>
 #include <memory>
@@ -123,6 +125,8 @@ static inline uint64_t box_f32(uint32_t val) {
     return 0xFFFFFFFF00000000ULL | (uint64_t)val;
 }
 
+static constexpr size_t kRobDepth = 128;
+
 struct HistoryEntry {
     int op_num;
     uint8_t subop;
@@ -133,8 +137,38 @@ struct HistoryEntry {
     uint8_t frm;
     bool fp_dest;
     uint8_t rob_idx;
+    bool valid;
+    uint64_t generation;
 };
-static HistoryEntry g_history[64];
+static std::array<HistoryEntry, kRobDepth> g_history{};
+static uint64_t g_history_seq = 0;
+
+static inline void reset_rob_history() {
+    g_history.fill({});
+    g_history_seq = 0;
+}
+
+static inline void assert_rob_idx_in_bounds(uint8_t idx, const char* label) {
+    if (static_cast<size_t>(idx) >= kRobDepth) {
+        std::cerr << "[FATAL] ROB index out of bounds for " << label
+                  << ": idx=" << static_cast<int>(idx)
+                  << " >= kRobDepth(" << kRobDepth << ")\n";
+        std::abort();
+    }
+}
+
+static inline void record_rob_history(uint8_t idx, int op_num, uint8_t subop,
+                                      uint8_t rd, uint8_t rs1, uint8_t rs2,
+                                      uint8_t rs3, uint8_t frm, bool fp_dest) {
+    assert_rob_idx_in_bounds(idx, "rob_tail_o");
+    uint64_t gen = (g_history_seq++) / kRobDepth;
+    g_history.at(idx) = { op_num, subop, rd, rs1, rs2, rs3, frm, fp_dest, idx, true, gen };
+}
+
+static inline const HistoryEntry& read_rob_history(uint8_t idx) {
+    assert_rob_idx_in_bounds(idx, "rob_head_o");
+    return g_history.at(idx);
+}
 
 // -----------------------------------------------------------------------------
 // Testbench Harness & Cycle Stepper
@@ -313,9 +347,10 @@ public:
         if (reg == 0) return;
         set_fpreg(31, val);
         uint8_t pre_tail = dut->rob_tail_o;
+        assert_rob_idx_in_bounds(pre_tail, "pre_tail");
         bool ok = dispatch_fp(FP_FMV_X_D, reg, 31, 0, 0, 0, false, 0x80000000);
         if (ok) {
-            g_history[pre_tail] = { -1, FP_FMV_X_D, reg, 31, 0, 0, 0, false, pre_tail };
+            record_rob_history(pre_tail, -1, FP_FMV_X_D, reg, 31, 0, 0, 0, false);
         }
         drain_until_retire(20);
     }
@@ -865,6 +900,38 @@ int main(int argc, char** argv) {
     }
 
     // =========================================================================
+    // SECTION 1B: DIRECTED 128-ENTRY ROB WRAP & HISTORY BOUNDS CHECK (Issue #7)
+    // =========================================================================
+    {
+        std::cout << "\n[TEST] Verifying 128-entry ROB wrap (63 -> 64 -> 127 -> 0) & g_history bounds..." << std::endl;
+        tb.reset();
+        reset_rob_history();
+        tb.set_fpreg(1, 0x3FF0000000000000ULL); // 1.0
+        tb.set_fpreg(2, 0x4000000000000000ULL); // 2.0
+
+        bool saw_63 = false, saw_64 = false, saw_127 = false, saw_wrap_0 = false;
+        uint8_t prev_tail = tb.dut->rob_tail_o;
+        for (int i = 0; i < 132; i++) {
+            uint8_t pre_tail = tb.dut->rob_tail_o;
+            assert_rob_idx_in_bounds(pre_tail, "wrap_pre_tail");
+            bool ok = tb.dispatch_fp(FP_FADD_D, 3, 1, 2, 0, 0, true, 0x80001000ULL + (i * 4));
+            assert(ok && "Unexpected dispatch failure during 128-entry ROB wrap test!");
+            record_rob_history(pre_tail, i, FP_FADD_D, 3, 1, 2, 0, 0, true);
+            if (pre_tail == 63) saw_63 = true;
+            if (prev_tail == 63 && pre_tail == 64) saw_64 = true;
+            if (pre_tail == 127) saw_127 = true;
+            if (prev_tail == 127 && pre_tail == 0) saw_wrap_0 = true;
+            const auto& entry = read_rob_history(pre_tail);
+            assert(entry.valid && entry.rob_idx == pre_tail && entry.op_num == i);
+            prev_tail = pre_tail;
+            tb.drain_until_retire(20);
+        }
+        assert(saw_63 && saw_64 && saw_127 && saw_wrap_0 && "Failed to observe 63->64->127->0 ROB wrap!");
+        assert(read_rob_history(0).generation >= 1 && "Generation failed to increment after ROB wrap!");
+        std::cout << "  -> PASS: Verified 128-entry ROB wrap (63 -> 64 -> 127 -> 0) and generation bounds\n";
+    }
+
+    // =========================================================================
     // SECTION 2: MULTI-SEED RANDOMIZED STRESS TORTURE (75,000 Operations)
     // =========================================================================
     std::cout << "\n===================================================================\n";
@@ -878,6 +945,7 @@ int main(int argc, char** argv) {
         std::cout << "\n[TORTURE] Executing Seed " << seed << " (" << OPS_PER_SEED << " operations)..." << std::endl;
         std::mt19937_64 rng(seed);
         tb.reset();
+        reset_rob_history();
 
         // Initialize register file with diverse initial values
         for (int r = 0; r < 32; r++) {
@@ -917,11 +985,13 @@ int main(int argc, char** argv) {
 
             static int consecutive_fail = 0;
             uint8_t pre_tail = tb.dut->rob_tail_o;
+            assert_rob_idx_in_bounds(pre_tail, "torture_pre_tail");
             bool ok = tb.dispatch_fp(subop, rd, rs1, rs2, rs3, frm, is_fp_dest, 0x80000000 + (op_count * 4));
             if (!ok) {
                 consecutive_fail++;
                 if (consecutive_fail % 50 == 0) {
                     uint8_t h = tb.dut->rob_head_o;
+                    const auto& head_entry = read_rob_history(h);
                     std::cout << "[BACKPRESSURE] op_count=" << op_count
                               << " fail=" << consecutive_fail
                               << " rob_count=" << (int)tb.dut->rob_count_o
@@ -929,12 +999,14 @@ int main(int argc, char** argv) {
                               << " tail=" << (int)tb.dut->rob_tail_o
                               << " fl=" << (int)tb.dut->freelist_count_o
                               << " ret=" << (int)tb.dut->retire_valid_o
-                              << " head_op=" << g_history[h].op_num
-                              << " head_subop=" << (int)g_history[h].subop
-                              << " head_rd=" << (int)g_history[h].rd
-                              << " head_rs1=" << (int)g_history[h].rs1
-                              << " head_rs2=" << (int)g_history[h].rs2
-                              << " head_fpdest=" << g_history[h].fp_dest
+                              << " head_valid=" << head_entry.valid
+                              << " head_gen=" << head_entry.generation
+                              << " head_op=" << head_entry.op_num
+                              << " head_subop=" << (int)head_entry.subop
+                              << " head_rd=" << (int)head_entry.rd
+                              << " head_rs1=" << (int)head_entry.rs1
+                              << " head_rs2=" << (int)head_entry.rs2
+                              << " head_fpdest=" << head_entry.fp_dest
                               << std::endl;
                 }
                 if (consecutive_fail >= 200) {
@@ -944,7 +1016,7 @@ int main(int argc, char** argv) {
                 tb.drain_cycles(5);
                 continue;
             }
-            g_history[pre_tail] = { (int)op_count, subop, rd, rs1, rs2, rs3, frm, is_fp_dest, pre_tail };
+            record_rob_history(pre_tail, (int)op_count, subop, rd, rs1, rs2, rs3, frm, is_fp_dest);
             consecutive_fail = 0;
 
             op_count++;

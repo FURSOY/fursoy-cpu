@@ -106,6 +106,8 @@ inline uint32_t rv_ebreak()                                         { return enc
 inline uint32_t rv_mret()                                           { return enc_i(0x302, 0, 0, 0, 0x73); }
 inline uint32_t rv_sret()                                           { return enc_i(0x102, 0, 0, 0, 0x73); }
 inline uint32_t rv_wfi()                                            { return enc_i(0x105, 0, 0, 0, 0x73); }
+inline uint32_t rv_ori(uint32_t rd, uint32_t rs1, int32_t imm)     { return enc_i(imm, rs1, 6, rd, 0x13); }
+inline uint32_t rv_slli(uint32_t rd, uint32_t rs1, uint32_t shamt) { return enc_i(shamt & 0x3F, rs1, 1, rd, 0x13); }
 
 // -----------------------------------------------------------------------------
 // Testbench Memory System & Test Harness
@@ -529,6 +531,12 @@ public:
                   << ", sq_drain_head: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_drain_head_q
                   << ", sq_tail: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_tail_q
                   << ", sq_free: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_free_count
+                  << "\n";
+        std::cerr << "  Rename ack: " << (int)dut->rename_ack_o
+                  << ", dispatch_ready: " << (int)dut->dispatch_ready_o
+                  << ", fl_cnt: " << (int)dut->freelist_count_o
+                  << ", fl_fp: " << (int)dut->fl_fp_count_o
+                  << ", chkpt: " << (int)dut->chkpt_free_count_o
                   << "\n";
         std::cerr << "----------------------------------------\n";
     }
@@ -1115,16 +1123,21 @@ void test_31_fence_i_dirty_l1d_clean(FrontendTB& tb) {
 
     // 2. Program at pc stores new instruction into code_addr and executes FENCE.I
     uint32_t new_inst = rv_addi(31, 0, 31);
-    tb.write_mem_word(pc + 0,  rv_lui(1, code_addr >> 12));
-    tb.write_mem_word(pc + 4,  rv_lui(2, new_inst >> 12));
-    tb.write_mem_word(pc + 8,  rv_addi(2, 2, new_inst & 0xFFF));
-    tb.write_mem_word(pc + 12, rv_sw(2, 1, 0));
+    tb.write_mem_word(pc + 0,  enc_u(0, 1, 0x17)); // auipc x1, 0 -> 0x0000000080000000
+    tb.write_mem_word(pc + 4,  rv_lui(2, (new_inst + 0x800U) >> 12));
+    tb.write_mem_word(pc + 8,  rv_addi(2, 2, (int32_t)(new_inst & 0xFFFU)));
+    tb.write_mem_word(pc + 12, rv_sw(2, 1, (int32_t)(code_addr - pc)));
     tb.write_mem_word(pc + 16, rv_fence_i());
     tb.write_mem_word(pc + 20, rv_jal(0, (int32_t)(code_addr - (pc + 20))));
     tb.write_mem_word(code_addr + 4, rv_addi(31, 31, 1));
 
-    tb.wait_until_retired(7, 300);
-    assert(tb.retired_pcs.back() == code_addr + 4);
+    tb.wait_until_retired(8, 500);
+    assert(std::find(tb.retired_pcs.begin(), tb.retired_pcs.end(), code_addr) != tb.retired_pcs.end());
+    assert(std::find(tb.retired_pcs.begin(), tb.retired_pcs.end(), code_addr + 4) != tb.retired_pcs.end());
+    tb.run_cycles(2);
+    tb.dut->probe_paddr_i = tb.dut->arat_map_o[31];
+    tb.dut->eval();
+    assert(tb.dut->probe_pdata_o == 32ULL && "Test 31: FENCE.I did not observe stored instruction new_inst!");
     std::cout << "[PASS] Test 31: FENCE.I dirty L1D clean and L1I flash invalidation verified.\n";
 }
 
@@ -1137,16 +1150,21 @@ void test_32_fence_i_wbb(FrontendTB& tb) {
     tb.write_mem_word(code_addr, rv_nop());
 
     uint32_t new_inst = rv_addi(31, 0, 32);
-    tb.write_mem_word(pc + 0,  rv_lui(1, code_addr >> 12));
-    tb.write_mem_word(pc + 4,  rv_lui(2, new_inst >> 12));
-    tb.write_mem_word(pc + 8,  rv_addi(2, 2, new_inst & 0xFFF));
-    tb.write_mem_word(pc + 12, rv_sw(2, 1, 0x40));
+    tb.write_mem_word(pc + 0,  enc_u(0, 1, 0x17)); // auipc x1, 0 -> 0x0000000080000000
+    tb.write_mem_word(pc + 4,  rv_lui(2, (new_inst + 0x800U) >> 12));
+    tb.write_mem_word(pc + 8,  rv_addi(2, 2, (int32_t)(new_inst & 0xFFFU)));
+    tb.write_mem_word(pc + 12, rv_sw(2, 1, (int32_t)(code_addr - pc)));
     tb.write_mem_word(pc + 16, rv_fence_i());
     tb.write_mem_word(pc + 20, rv_jal(0, (int32_t)(code_addr - (pc + 20))));
     tb.write_mem_word(code_addr + 4, rv_addi(31, 31, 1));
 
-    tb.wait_until_retired(7, 350);
-    assert(tb.retired_pcs.back() == code_addr + 4);
+    tb.wait_until_retired(8, 550);
+    assert(std::find(tb.retired_pcs.begin(), tb.retired_pcs.end(), code_addr) != tb.retired_pcs.end());
+    assert(std::find(tb.retired_pcs.begin(), tb.retired_pcs.end(), code_addr + 4) != tb.retired_pcs.end());
+    tb.run_cycles(2);
+    tb.dut->probe_paddr_i = tb.dut->arat_map_o[31];
+    tb.dut->eval();
+    assert(tb.dut->probe_pdata_o == 33ULL && "Test 32: FENCE.I WBB test did not observe stored instruction new_inst!");
     std::cout << "[PASS] Test 32: FENCE.I drains WBB completely before L1I invalidation.\n";
 }
 
@@ -1585,6 +1603,219 @@ void test_48_csr_system_ops(FrontendTB& tb) {
     std::cout << "[PASS] Test 48: All 16 RV64 Privileged SYSTEM & CSR architectural scenarios verified.\n";
 }
 
+// 49. Canonical Zbb Fetch + 2-Wide Decode (Both Channels) + Execute Verification (Issues #1, #2)
+void test_49_zbb_canonical_decode_exec(FrontendTB& tb) {
+    auto read_arch = [&](uint8_t r) -> uint64_t {
+        if (r == 0) return 0;
+        tb.dut->probe_paddr_i = tb.dut->arat_map_o[r];
+        tb.dut->eval();
+        return tb.dut->probe_pdata_o;
+    };
+
+    // Test both channel 0 (offset +0) and channel 1 (offset +4 preceded by NOP)
+    for (int lane = 0; lane < 2; lane++) {
+        tb.reset();
+        uint64_t base = 0x80000000ULL;
+        uint64_t pc = base;
+        auto emit_op = [&](uint32_t inst) {
+            if (lane == 1) {
+                tb.write_mem_word(pc, rv_nop());
+                pc += 4;
+            }
+            tb.write_mem_word(pc, inst);
+            pc += 4;
+        };
+
+        // Build test inputs in x1..x7 using fetched RV64I shifts/adds:
+        // x1 = 0x8000_0000_0000_0005 (-huge signed, big unsigned)
+        tb.write_mem_word(pc, rv_addi(1, 0, 1));      pc += 4;
+        tb.write_mem_word(pc, rv_slli(1, 1, 63));     pc += 4;
+        tb.write_mem_word(pc, rv_addi(1, 1, 5));      pc += 4;
+        // x2 = 3
+        tb.write_mem_word(pc, rv_addi(2, 0, 3));      pc += 4;
+        // x4 = 0x00F0_0000_0000_8000 (clz=8, ctz=15, cpop=5)
+        tb.write_mem_word(pc, rv_addi(4, 0, 0x0F));   pc += 4;
+        tb.write_mem_word(pc, rv_slli(4, 4, 52));     pc += 4;
+        tb.write_mem_word(pc, rv_addi(8, 0, 1));      pc += 4;
+        tb.write_mem_word(pc, rv_slli(8, 8, 15));     pc += 4;
+        tb.write_mem_word(pc, enc_r(0, 8, 4, 6, 4, 0x33)); pc += 4; // or x4, x4, x8
+        // x5 = 0x0000_0000_0000_0080 (for sext.b -> 0xFFFFFFFFFFFFFF80)
+        tb.write_mem_word(pc, rv_addi(5, 0, 0x80));   pc += 4;
+        // x6 = 0x1234_5000_0000_8001 (upper garbage + low 16b 0x8001 for sext.h / zext.h)
+        tb.write_mem_word(pc, rv_lui(6, 0x12345));    pc += 4;
+        tb.write_mem_word(pc, rv_slli(6, 6, 32));     pc += 4;
+        tb.write_mem_word(pc, rv_addi(9, 0, 1));      pc += 4;
+        tb.write_mem_word(pc, rv_slli(9, 9, 15));     pc += 4;
+        tb.write_mem_word(pc, rv_addi(9, 9, 1));      pc += 4; // 0x8001
+        tb.write_mem_word(pc, enc_r(0, 9, 6, 6, 6, 0x33)); pc += 4;
+        // x7 = 0x0001_8000_FF00_0002 (for orc.b, ori 0x287, rev8)
+        tb.write_mem_word(pc, rv_addi(7, 0, 0x18));   pc += 4;
+        tb.write_mem_word(pc, rv_slli(7, 7, 44));     pc += 4;
+        tb.write_mem_word(pc, rv_addi(8, 0, 0xFF));   pc += 4;
+        tb.write_mem_word(pc, rv_slli(8, 8, 24));     pc += 4;
+        tb.write_mem_word(pc, enc_r(0, 8, 7, 6, 7, 0x33)); pc += 4;
+        tb.write_mem_word(pc, rv_addi(7, 7, 2));      pc += 4;
+
+        // Ensure alignment starts at 8B boundary before emitting lane-tested Zbb ops
+        if ((pc & 7ULL) != 0) {
+            tb.write_mem_word(pc, rv_nop());
+            pc += 4;
+        }
+
+        // Canonical Zbb encodings (Issues #1 & #2):
+        emit_op(enc_r(0x05, 2, 1, 4, 10, 0x33)); // min   x10, x1, x2
+        emit_op(enc_r(0x05, 2, 1, 5, 11, 0x33)); // minu  x11, x1, x2
+        emit_op(enc_r(0x05, 2, 1, 6, 12, 0x33)); // max   x12, x1, x2
+        emit_op(enc_r(0x05, 2, 1, 7, 13, 0x33)); // maxu  x13, x1, x2
+        emit_op(enc_i(0x600, 4, 1, 14, 0x13));   // clz   x14, x4
+        emit_op(enc_i(0x601, 4, 1, 15, 0x13));   // ctz   x15, x4
+        emit_op(enc_i(0x602, 4, 1, 16, 0x13));   // cpop  x16, x4
+        emit_op(enc_i(0x604, 5, 1, 17, 0x13));   // sext.b x17, x5
+        emit_op(enc_i(0x605, 6, 1, 18, 0x13));   // sext.h x18, x6
+        emit_op(enc_i(0x287, 7, 5, 19, 0x13));   // orc.b x19, x7 (funct3=101)
+        emit_op(rv_ori(20, 7, 0x287));           // ori   x20, x7, 0x287 (must remain ORI!)
+        emit_op(enc_i(0x6B8, 7, 5, 21, 0x13));   // rev8   x21, x7
+        emit_op(enc_r(0x04, 0, 6, 4, 22, 0x3B)); // zext.h x22, x6 (rs2=0)
+        emit_op(enc_r(0x20, 2, 1, 7, 23, 0x33)); // andn   x23, x1, x2
+        emit_op(enc_r(0x20, 2, 1, 6, 24, 0x33)); // orn    x24, x1, x2
+        emit_op(enc_r(0x20, 2, 1, 4, 25, 0x33)); // xnor   x25, x1, x2
+        emit_op(enc_r(0x30, 2, 1, 1, 26, 0x33)); // rol    x26, x1, x2 (funct7=0x30)
+        emit_op(enc_r(0x30, 2, 1, 5, 27, 0x33)); // ror    x27, x1, x2 (funct7=0x30)
+        emit_op(enc_i(0x604, 1, 5, 28, 0x13));   // rori   x28, x1, 4
+        emit_op(enc_i(0x600, 6, 1, 29, 0x1B));   // clzw   x29, x6 (low 32b = 0x00008001 -> 16)
+        emit_op(enc_i(0x601, 4, 1, 30, 0x1B));   // ctzw   x30, x4 (low 32b = 0x00008000 -> 15)
+        emit_op(enc_i(0x602, 4, 1, 31, 0x1B));   // cpopw  x31, x4 (low 32b has 1 bit -> 1)
+        tb.write_mem_word(pc, rv_jal(0, 0));     pc += 4;
+
+        uint64_t expected_ops = (pc - base) / 4 - 1;
+        tb.wait_until_retired(expected_ops, 500);
+        tb.run_cycles(2);
+        assert(!tb.exception_seen && "Canonical Zbb sequence unexpectedly raised an exception!");
+
+        assert(read_arch(10) == 0x8000000000000005ULL && "min failed!");
+        assert(read_arch(11) == 3ULL && "minu failed (minu/max swap check)!");
+        assert(read_arch(12) == 3ULL && "max failed (minu/max swap check)!");
+        assert(read_arch(13) == 0x8000000000000005ULL && "maxu failed!");
+        assert(read_arch(14) == 8ULL && "clz failed!");
+        assert(read_arch(15) == 15ULL && "ctz failed!");
+        assert(read_arch(16) == 5ULL && "cpop failed!");
+        assert(read_arch(17) == 0xFFFFFFFFFFFFFF80ULL && "sext.b failed!");
+        assert(read_arch(18) == 0xFFFFFFFFFFFF8001ULL && "sext.h failed!");
+        assert(read_arch(19) == 0x00FFFF00FF0000FFULL && "orc.b failed!");
+        assert(read_arch(20) == (0x00018000FF000002ULL | 0x287ULL) && "ori 0x287 misdecoded!");
+        assert(read_arch(21) == 0x020000FF00800100ULL && "rev8 failed!");
+        assert(read_arch(22) == 0x0000000000008001ULL && "zext.h failed!");
+        uint64_t x1_v = 0x8000000000000005ULL;
+        uint64_t x2_v = 3ULL;
+        assert(read_arch(23) == (x1_v & ~x2_v) && "andn failed!");
+        assert(read_arch(24) == (x1_v | ~x2_v) && "orn failed!");
+        assert(read_arch(25) == ~(x1_v ^ x2_v) && "xnor failed!");
+        assert(read_arch(26) == ((x1_v << 3) | (x1_v >> 61)) && "rol failed!");
+        assert(read_arch(27) == ((x1_v >> 3) | (x1_v << 61)) && "ror failed!");
+        assert(read_arch(28) == ((x1_v >> 4) | (x1_v << 60)) && "rori failed!");
+        assert(read_arch(29) == 16ULL && "clzw failed!");
+        assert(read_arch(30) == 15ULL && "ctzw failed!");
+        assert(read_arch(31) == 1ULL && "cpopw failed!");
+
+        // Phase 2: Complete Zba + remaining Zbb W-forms (rolw/rorw/roriw + 0-low-word clzw/ctzw/cpopw) on both lanes
+        tb.reset();
+        pc = base;
+        // x1 = 0xFFFF_FFFF_0000_0000 (low32 = 0 -> clzw=32, ctzw=32, cpopw=0)
+        tb.write_mem_word(pc, rv_addi(1, 0, -1));     pc += 4;
+        tb.write_mem_word(pc, rv_slli(1, 1, 32));     pc += 4;
+        // x2 = 0xAAAA_BBBB_8000_0005 (for rolw/rorw/roriw/add.uw/sh*add*)
+        tb.write_mem_word(pc, rv_lui(2, 0xAAAAC));    pc += 4;
+        tb.write_mem_word(pc, rv_addi(2, 2, -0x445)); pc += 4; // 0xAAAA_BBBB in low32
+        tb.write_mem_word(pc, rv_slli(2, 2, 32));     pc += 4;
+        tb.write_mem_word(pc, rv_lui(8, 0x80000));    pc += 4;
+        tb.write_mem_word(pc, enc_r(0x04, 0, 8, 0, 8, 0x3B)); pc += 4; // add.uw x8, x8, x0 -> 0x00000000_80000000
+        tb.write_mem_word(pc, enc_r(0, 8, 2, 6, 2, 0x33)); pc += 4;    // or x2, x2, x8
+        tb.write_mem_word(pc, rv_addi(2, 2, 5));      pc += 4;         // x2 = 0xAAAABBBB_80000005
+        // x3 = 5 (shift/rotate amount)
+        tb.write_mem_word(pc, rv_addi(3, 0, 5));      pc += 4;
+        if ((pc & 7ULL) != 0) {
+            tb.write_mem_word(pc, rv_nop());
+            pc += 4;
+        }
+        emit_op(enc_i(0x600, 1, 1, 10, 0x1B));   // clzw    x10, x1 -> 32
+        emit_op(enc_i(0x601, 1, 1, 11, 0x1B));   // ctzw    x11, x1 -> 32
+        emit_op(enc_i(0x602, 1, 1, 12, 0x1B));   // cpopw   x12, x1 -> 0
+        emit_op(enc_r(0x30, 3, 2, 1, 13, 0x3B)); // rolw    x13, x2, x3
+        emit_op(enc_r(0x30, 3, 2, 5, 14, 0x3B)); // rorw    x14, x2, x3
+        emit_op(enc_i(0x607, 2, 5, 15, 0x1B));   // roriw   x15, x2, 7
+        emit_op(enc_r(0x10, 3, 2, 2, 16, 0x33)); // sh1add  x16, x2, x3
+        emit_op(enc_r(0x10, 3, 2, 4, 17, 0x33)); // sh2add  x17, x2, x3
+        emit_op(enc_r(0x10, 3, 2, 6, 18, 0x33)); // sh3add  x18, x2, x3
+        emit_op(enc_r(0x04, 3, 2, 0, 19, 0x3B)); // add.uw  x19, x2, x3
+        emit_op(enc_r(0x10, 3, 2, 2, 20, 0x3B)); // sh1add.uw x20, x2, x3
+        emit_op(enc_r(0x10, 3, 2, 4, 21, 0x3B)); // sh2add.uw x21, x2, x3
+        emit_op(enc_r(0x10, 3, 2, 6, 22, 0x3B)); // sh3add.uw x22, x2, x3
+        emit_op(enc_i(0x083, 2, 1, 23, 0x1B));   // slli.uw x23, x2, 3
+        tb.write_mem_word(pc, rv_jal(0, 0));     pc += 4;
+
+        expected_ops = (pc - base) / 4 - 1;
+        tb.wait_until_retired(expected_ops, 500);
+        tb.run_cycles(2);
+        assert(!tb.exception_seen && "Canonical Zba/Zbb-W sequence unexpectedly raised an exception!");
+
+        uint64_t x2_w = 0xAAAABBBB80000005ULL;
+        uint32_t w2 = static_cast<uint32_t>(x2_w);
+        uint32_t rol5 = (w2 << 5) | (w2 >> 27);
+        uint32_t ror5 = (w2 >> 5) | (w2 << 27);
+        uint32_t ror7 = (w2 >> 7) | (w2 << 25);
+        assert(read_arch(10) == 32ULL && "clzw(low32=0) failed!");
+        assert(read_arch(11) == 32ULL && "ctzw(low32=0) failed!");
+        assert(read_arch(12) == 0ULL && "cpopw(low32=0) failed!");
+        assert(read_arch(13) == static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(rol5))) && "rolw failed!");
+        assert(read_arch(14) == static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(ror5))) && "rorw failed!");
+        assert(read_arch(15) == static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(ror7))) && "roriw failed!");
+        assert(read_arch(16) == ((x2_w << 1) + 5ULL) && "sh1add failed!");
+        assert(read_arch(17) == ((x2_w << 2) + 5ULL) && "sh2add failed!");
+        assert(read_arch(18) == ((x2_w << 3) + 5ULL) && "sh3add failed!");
+        assert(read_arch(19) == (static_cast<uint64_t>(w2) + 5ULL) && "add.uw failed!");
+        assert(read_arch(20) == ((static_cast<uint64_t>(w2) << 1) + 5ULL) && "sh1add.uw failed!");
+        assert(read_arch(21) == ((static_cast<uint64_t>(w2) << 2) + 5ULL) && "sh2add.uw failed!");
+        assert(read_arch(22) == ((static_cast<uint64_t>(w2) << 3) + 5ULL) && "sh3add.uw failed!");
+        assert(read_arch(23) == (static_cast<uint64_t>(w2) << 3) && "slli.uw failed!");
+    }
+    std::cout << "[PASS] Test 49: Full Zba + Zbb (64b & W-forms) fetched, decoded on both lanes, and executed.\n";
+}
+
+// 50. Non-Canonical Zbb Encodings Must Trap as Illegal Instruction (Both Channels) (Issue #2)
+void test_50_zbb_noncanonical_illegal_traps(FrontendTB& tb) {
+    const uint32_t bad_insts[] = {
+        enc_i(0x300, 1, 1, 10, 0x13),   // Old wrong funct7=0011000 for clz
+        enc_i(0x301, 1, 1, 10, 0x13),   // Old wrong funct7=0011000 for ctz
+        enc_i(0x302, 1, 1, 10, 0x13),   // Old wrong funct7=0011000 for cpop
+        enc_i(0x304, 1, 1, 10, 0x13),   // Old wrong funct7=0011000 for sext.b
+        enc_i(0x305, 1, 1, 10, 0x13),   // Old wrong funct7=0011000 for sext.h
+        enc_r(0x04, 1, 1, 4, 10, 0x3B), // zext.h with non-zero rs2=1 (reserved)
+        enc_r(0x04, 31, 1, 4, 10, 0x3B),// zext.h with non-zero rs2=31 (reserved)
+        enc_r(0x10, 2, 1, 1, 10, 0x33), // Old wrong funct7=0010000 for rol (must trap)
+        enc_r(0x10, 2, 1, 5, 10, 0x33), // Old wrong funct7=0010000 for ror (must trap)
+        enc_r(0x10, 2, 1, 1, 10, 0x3B), // Wrong funct7=0010000 for rolw (must trap)
+        enc_r(0x10, 2, 1, 5, 10, 0x3B), // Wrong funct7=0010000 for rorw (must trap)
+        enc_i(0x621, 1, 5, 10, 0x1B),   // roriw with shamt[5]=1 (bit 25 = 1, illegal on RV64)
+        enc_i(0x603, 1, 1, 10, 0x1B),   // clzw/ctzw/cpopw invalid rs2=3
+        enc_i(0x604, 1, 1, 10, 0x1B)    // invalid op-imm-32 funct7=0110000 rs2=4
+    };
+    for (int lane = 0; lane < 2; lane++) {
+        for (uint32_t bad : bad_insts) {
+            tb.reset();
+            uint64_t base = 0x80000000ULL;
+            if (lane == 0) {
+                tb.write_mem_word(base + 0, bad);
+            } else {
+                tb.write_mem_word(base + 0, rv_nop());
+                tb.write_mem_word(base + 4, bad);
+            }
+            assert(tb.wait_for_exception(100) && "Non-canonical Zbb encoding did not trap!");
+            assert(tb.exception_cause == 2 && "Expected Illegal Instruction (cause 2)!");
+        }
+    }
+    std::cout << "[PASS] Test 50: Non-canonical Zbb (0x300..0x305) & zext.h rs2!=0 trap as Illegal Instruction on both channels.\n";
+}
+
 // Adversarial Control-Flow Torture / Randomized Reference Verification
 void run_randomized_stress(FrontendTB& tb, uint32_t seed, int target_ops) {
     std::cout << "Starting randomized adversarial stress test: seed=" << seed
@@ -1767,8 +1998,10 @@ int main(int argc, char** argv) {
     test_46_f2_skid_flush(tb);
     test_47_itrt_stale_response(tb);
     test_48_csr_system_ops(tb);
+    test_49_zbb_canonical_decode_exec(tb);
+    test_50_zbb_noncanonical_illegal_traps(tb);
 
-    std::cout << "\nAll 48 Directed Scenarios Passed Successfully!\n\n";
+    std::cout << "\nAll 50 Directed Scenarios Passed Successfully!\n\n";
 
     // Scenario 48+ Stress: Adversarial Randomized Stress Test (seed 42 and seed 20260919, 50,000 total ops)
     run_randomized_stress(tb, 42, 25000);
@@ -1777,7 +2010,7 @@ int main(int argc, char** argv) {
     std::cout << "\n===============================================================\n"
               << " MILESTONE 4 VERIFICATION EVIDENCE SUMMARY\n"
               << "===============================================================\n"
-              << "  Directed scenarios executed:      48\n"
+              << "  Directed scenarios executed:      50\n"
               << "  Total operations accepted/retired:50000\n"
               << "  L1I hits:                         " << (tb.cnt_l1i_hits + tb.dut->hpm_l1i_hits_o) << "\n"
               << "  L1I misses:                       " << (tb.cnt_l1i_misses + tb.dut->hpm_l1i_misses_o) << "\n"

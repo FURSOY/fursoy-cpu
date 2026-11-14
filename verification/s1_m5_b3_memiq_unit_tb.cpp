@@ -58,7 +58,7 @@ struct MemIQTestUop {
 
 inline uint8_t calc_rob_dist(uint8_t idx, uint8_t head) {
     if (idx >= head) return idx - head;
-    return (48 - head) + idx;
+    return (128 - head) + idx;
 }
 
 class MemIQTB {
@@ -368,8 +368,8 @@ int main(int argc, char** argv) {
     {
         for (int rev = 0; rev < 4; rev++) {
             for (int i = 0; i < 8; i++) {
-                MemIQTestUop u0 = make_uop((rev * 16 + i * 2) % 48);
-                MemIQTestUop u1 = make_uop((rev * 16 + i * 2 + 1) % 48);
+                MemIQTestUop u0 = make_uop((rev * 16 + i * 2) % 128);
+                MemIQTestUop u1 = make_uop((rev * 16 + i * 2 + 1) % 128);
                 tb.dut->port2_busy_i = 1;
                 tb.dispatch(&u0, &u1);
             }
@@ -650,13 +650,13 @@ int main(int argc, char** argv) {
             }
 
             // Randomly advance rob_head
-            if (rng() % 20 == 0) current_rob_head = (current_rob_head + 1) % 48;
+            if (rng() % 20 == 0) current_rob_head = (current_rob_head + 1) % 128;
             unit_tb.dut->rob_head_i = current_rob_head;
 
             // Compute expected issue from golden model
             bool exp_issue_valid = false;
             uint8_t exp_sel_slot = 0;
-            uint8_t min_dist = 63;
+            uint8_t min_dist = 255;
 
             for (int i = 0; i < 16; i++) {
                 if (golden[i].valid && golden[i].prs1_ready) {
@@ -673,7 +673,7 @@ int main(int argc, char** argv) {
             unit_tb.dut->port2_busy_i = (rng() % 10 < 3) ? 1 : 0; // 30% busy
 
             bool do_recover = (rng() % 500 == 0);
-            uint8_t rec_rob_idx = rng() % 48;
+            uint8_t rec_rob_idx = rng() % 128;
             unit_tb.dut->recover_valid_i = do_recover ? 1 : 0;
             unit_tb.dut->recover_rob_idx_i = rec_rob_idx;
 
@@ -728,7 +728,7 @@ int main(int argc, char** argv) {
             uint8_t ack = 0;
             MemIQTestUop u0, u1;
             if (try_alloc0 && (exp_ready & 1)) {
-                u0 = make_uop(rng() % 48, (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1);
+                u0 = make_uop(rng() % 128, (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1);
                 unit_tb.set_uop0(u0);
                 ack |= 1;
             } else {
@@ -738,7 +738,7 @@ int main(int argc, char** argv) {
             if (try_alloc1) {
                 bool ready1 = (ack & 1) ? ((exp_ready & 2) != 0) : ((exp_ready & 1) != 0);
                 if (ready1) {
-                    u1 = make_uop(rng() % 48, (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1);
+                    u1 = make_uop(rng() % 128, (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1, (rng() % 4 == 0), (rng() % 63) + 1);
                     unit_tb.set_uop1(u1);
                     ack |= 2;
                 } else {

@@ -52,7 +52,7 @@ constexpr uint8_t MEM_SIZE_DOUBLE = 3;
 
 inline uint8_t calc_rob_dist(uint8_t idx, uint8_t head) {
     if (idx >= head) return idx - head;
-    return (48 - head) + idx;
+    return (128 - head) + idx;
 }
 
 void set_wide_512(VlWide<16>& dest, const uint64_t dwords[8]) {
@@ -718,7 +718,7 @@ TortureResult run_stress_torture(uint32_t seed, uint32_t target_ops) {
 
         // Periodically advance ROB head
         if (rng() % 16 == 0) {
-            cur_rob_head = (cur_rob_head + 1) % 48;
+            cur_rob_head = (cur_rob_head + 1) % 128;
             tb.dut->rob_head_i = cur_rob_head;
         }
 
@@ -731,7 +731,7 @@ TortureResult run_stress_torture(uint32_t seed, uint32_t target_ops) {
         bool gen_l0 = (rng() % 100) < 85;
         uint8_t l0_dw = rng() % 8;
         uint64_t l0_line = 0x800000ULL + (rng() % 32);
-        uint8_t l0_rob = (cur_rob_head + (rng() % 16)) % 48;
+        uint8_t l0_rob = (cur_rob_head + (rng() % 16)) % 128;
 
         if (gen_l0) {
             tb.dut->load0_req_valid_i   = 1;
@@ -744,7 +744,7 @@ TortureResult run_stress_torture(uint32_t seed, uint32_t target_ops) {
         bool gen_l1 = (rng() % 100) < 85;
         uint8_t l1_dw = (rng() % 100 < 30) ? ((l0_dw & 0x3) | ((rng() % 2) << 2)) : (rng() % 8);
         uint64_t l1_line = (rng() % 100 < 40) ? l0_line : (0x800000ULL + (rng() % 32));
-        uint8_t l1_rob = (cur_rob_head + (rng() % 16)) % 48;
+        uint8_t l1_rob = (cur_rob_head + (rng() % 16)) % 128;
 
         if (gen_l1) {
             tb.dut->load1_req_valid_i   = 1;

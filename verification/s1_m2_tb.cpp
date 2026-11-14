@@ -328,6 +328,8 @@ public:
     // Architectural Register Reference File (32 x 64-bit)
     uint64_t arch_rf[32];
 
+    static constexpr int kRobDepth = 128;
+
     struct RobTracker {
         bool valid = false;
         int uop_class = 0;
@@ -337,7 +339,7 @@ public:
         int rs2 = 0;
         uint64_t pc = 0;
         uint64_t alloc_cycle = 0;
-    } rob_slots[48];
+    } rob_slots[kRobDepth];
 
     // Reference Model Scoreboard Tracking
     struct RefOp {
@@ -359,7 +361,7 @@ public:
         uint64_t spec_rf_snapshot[32];
     };
 
-    RefOp ref_rob[48];
+    RefOp ref_rob[kRobDepth];
     uint64_t spec_ref_rf[32];
 
     uint64_t ref_eval_alu_count = 0;
@@ -376,7 +378,7 @@ public:
             arch_rf[i] = 0;
             spec_ref_rf[i] = 0;
         }
-        for (int i = 0; i < 48; i++) {
+        for (int i = 0; i < kRobDepth; i++) {
             rob_slots[i] = RobTracker();
             ref_rob[i] = RefOp();
         }
@@ -462,7 +464,7 @@ public:
         }
 
         if (dut->retire_valid_o & 2) {
-            uint8_t head1 = (head + 1) % 48;
+            uint8_t head1 = (head + 1) % kRobDepth;
             if (ref_rob[head1].valid && !ref_rob[head1].squashed) {
                 uint8_t rd = dut->retire_rd_o[1];
                 if (rd != 0) {
@@ -488,13 +490,14 @@ public:
     void handle_ref_recovery() {
         uint8_t rec_idx = dut->diag_recover_rob_idx_o;
         uint8_t rec_head = dut->rob_head_o;
+        assert(rec_idx < kRobDepth && rec_head < kRobDepth);
         auto dist = [](int idx, int h) -> int {
-            int diff = idx + 48 - h;
-            return (diff >= 48) ? (diff - 48) : diff;
+            int diff = idx + kRobDepth - h;
+            return (diff >= kRobDepth) ? (diff - kRobDepth) : diff;
         };
 
         int br_dist = dist(rec_idx, rec_head);
-        for (int i = 0; i < 48; i++) {
+        for (int i = 0; i < kRobDepth; i++) {
             if (ref_rob[i].valid) {
                 if (dist(i, rec_head) > br_dist) {
                     ref_rob[i].valid = false;
@@ -547,7 +550,7 @@ public:
             arch_rf[i] = 0;
             spec_ref_rf[i] = 0;
         }
-        for (int i = 0; i < 48; i++) {
+        for (int i = 0; i < kRobDepth; i++) {
             rob_slots[i] = RobTracker();
             ref_rob[i] = RefOp();
         }
@@ -702,7 +705,7 @@ public:
             if (enable_ref_check) track_dispatch(cur_tail, u0);
         }
         if (ack & 2) {
-            uint8_t tail1 = (cur_tail + ((ack & 1) ? 1 : 0)) % 48;
+            uint8_t tail1 = (cur_tail + ((ack & 1) ? 1 : 0)) % kRobDepth;
             rob_slots[tail1].valid = true;
             rob_slots[tail1].uop_class = u1->u_class;
             rob_slots[tail1].sub_op = u1->sub_op;
@@ -748,7 +751,7 @@ public:
                       << " head_pnew=" << (int)dut->diag_head_pnew_o
                       << " head_is_branch=" << (int)dut->diag_head_is_branch_o
                       << std::endl;
-            for (int r = (int)dut->rob_head_o; r != (int)dut->rob_tail_o; r = (r + 1) % 48) {
+            for (int r = (int)dut->rob_head_o; r != (int)dut->rob_tail_o; r = (r + 1) % kRobDepth) {
                 std::cerr << "  ROB[" << r << "]: valid=" << rob_slots[r].valid
                           << " class=" << rob_slots[r].uop_class
                           << " subop=" << rob_slots[r].sub_op
@@ -775,56 +778,57 @@ public:
 };
 
 // -----------------------------------------------------------------------------
-// P0 Exhaustive Verification: Modulo-48 ROB Distance (48 x 48 = 2304 cases)
+// P0 Exhaustive Verification: Modulo-128 ROB Distance (128 x 128 = 16384 cases)
 // -----------------------------------------------------------------------------
 void test_exhaustive_rob_dist() {
-    std::cout << "Testing exhaustive 48x48 modulo-48 ROB distance (2304 combinations)..." << std::endl;
+    constexpr int kRobDepth = 128;
+    std::cout << "Testing exhaustive 128x128 modulo-128 ROB distance (16384 combinations)..." << std::endl;
     int combinations_tested = 0;
 
     auto sw_rob_dist = [](int idx, int head) -> int {
-        return (idx - head + 48) % 48;
+        return (idx - head + kRobDepth) % kRobDepth;
     };
 
     auto hw_rob_dist = [](int idx, int head) -> int {
-        int diff = idx + 48 - head;
-        return (diff >= 48) ? (diff - 48) : diff;
+        int diff = idx + kRobDepth - head;
+        return (diff >= kRobDepth) ? (diff - kRobDepth) : diff;
     };
 
-    for (int h = 0; h < 48; h++) {
-        for (int i = 0; i < 48; i++) {
+    for (int h = 0; h < kRobDepth; h++) {
+        for (int i = 0; i < kRobDepth; i++) {
             int exp = sw_rob_dist(i, h);
             int act = hw_rob_dist(i, h);
             assert(act == exp);
             combinations_tested++;
         }
     }
-    assert(combinations_tested == 2304);
+    assert(combinations_tested == kRobDepth * kRobDepth);
 
-    // Explicit test vectors requested by specification:
-    // head=0,  idx=16 => 16
-    // head=44, idx=47 => 3
-    // head=44, idx=0  => 4
-    // head=47, idx=0  => 1
-    // head=47, idx=1  => 2
-    // head=10, idx=9  => 47
+    // Explicit wraparound test vectors for 128-entry ROB:
+    // head=0,   idx=16  => 16
+    // head=124, idx=127 => 3
+    // head=124, idx=0   => 4
+    // head=127, idx=0   => 1
+    // head=127, idx=1   => 2
+    // head=10,  idx=9   => 127
     assert(hw_rob_dist(16, 0) == 16);
-    assert(hw_rob_dist(47, 44) == 3);
-    assert(hw_rob_dist(0, 44) == 4);
-    assert(hw_rob_dist(0, 47) == 1);
-    assert(hw_rob_dist(1, 47) == 2);
-    assert(hw_rob_dist(9, 10) == 47);
+    assert(hw_rob_dist(127, 124) == 3);
+    assert(hw_rob_dist(0, 124) == 4);
+    assert(hw_rob_dist(0, 127) == 1);
+    assert(hw_rob_dist(1, 127) == 2);
+    assert(hw_rob_dist(9, 10) == 127);
 
     // Verify younger-than logic across wrap:
-    // With head=44 and branch at slot 47:
+    // With head=124 and branch at slot 127:
     // Younger uops at 0 and 1 must be younger than branch:
-    assert(hw_rob_dist(0, 44) > hw_rob_dist(47, 44)); // dist 4 > 3
-    assert(hw_rob_dist(1, 44) > hw_rob_dist(47, 44)); // dist 5 > 3
-    // Older uops at 44, 45, 46 must NOT be younger than branch:
-    assert(!(hw_rob_dist(44, 44) > hw_rob_dist(47, 44))); // dist 0 not > 3
-    assert(!(hw_rob_dist(45, 44) > hw_rob_dist(47, 44))); // dist 1 not > 3
-    assert(!(hw_rob_dist(46, 44) > hw_rob_dist(47, 44))); // dist 2 not > 3
+    assert(hw_rob_dist(0, 124) > hw_rob_dist(127, 124)); // dist 4 > 3
+    assert(hw_rob_dist(1, 124) > hw_rob_dist(127, 124)); // dist 5 > 3
+    // Older uops at 124, 125, 126 must NOT be younger than branch:
+    assert(!(hw_rob_dist(124, 124) > hw_rob_dist(127, 124))); // dist 0 not > 3
+    assert(!(hw_rob_dist(125, 124) > hw_rob_dist(127, 124))); // dist 1 not > 3
+    assert(!(hw_rob_dist(126, 124) > hw_rob_dist(127, 124))); // dist 2 not > 3
 
-    std::cout << "[PASS] Exhaustive ROB distance (2304 combinations + edge vectors) verified." << std::endl;
+    std::cout << "[PASS] Exhaustive ROB distance (16384 combinations + edge vectors) verified." << std::endl;
 }
 
 // -----------------------------------------------------------------------------
@@ -1137,28 +1141,28 @@ void run_directed_tests(CoreTB& tb) {
     // -------------------------------------------------------------------------
     {
         tb.reset();
-        // Advance ROB head to slot 44 by dispatching and draining 44 uops
-        for (int i = 0; i < 44; i++) {
+        // Advance ROB head to slot 124 by dispatching and draining 124 uops
+        for (int i = 0; i < 124; i++) {
             CoreTB::UopReq u{0, 0, 0, UOP_ALU_INT, ALU_ADD, 0, true, 0x1000, false, false, false, false, 0};
             tb.dispatch(&u);
             tb.wait_drain(20);
         }
-        assert(tb.dut->rob_head_o == 44);
+        assert(tb.dut->rob_head_o == 124);
         assert(tb.dut->rob_count_o == 0);
 
-        // 1. Dispatch 3 older surviving uops into slots 44, 45, 46
-        CoreTB::UopReq u44{1, 0, 0, UOP_ALU_INT, ALU_ADD, 111, true, 0x1000, false, false, false, false, 0};
-        CoreTB::UopReq u45{2, 0, 0, UOP_ALU_INT, ALU_ADD, 222, true, 0x1004, false, false, false, false, 0};
-        CoreTB::UopReq u46{3, 0, 0, UOP_ALU_INT, ALU_ADD, 333, true, 0x1008, false, false, false, false, 0};
-        tb.dispatch(&u44, &u45);
-        tb.dispatch(&u46);
-        assert(tb.dut->rob_tail_o == 47);
+        // 1. Dispatch 3 older surviving uops into slots 124, 125, 126
+        CoreTB::UopReq u124{1, 0, 0, UOP_ALU_INT, ALU_ADD, 111, true, 0x1000, false, false, false, false, 0};
+        CoreTB::UopReq u125{2, 0, 0, UOP_ALU_INT, ALU_ADD, 222, true, 0x1004, false, false, false, false, 0};
+        CoreTB::UopReq u126{3, 0, 0, UOP_ALU_INT, ALU_ADD, 333, true, 0x1008, false, false, false, false, 0};
+        tb.dispatch(&u124, &u125);
+        tb.dispatch(&u126);
+        assert(tb.dut->rob_tail_o == 127);
 
-        // 2. Dispatch mispredicted branch at slot 47
-        CoreTB::UopReq u47{0, 0, 0, UOP_BRANCH, BR_BEQ, 16, true, 0x100C, true, false, false, false, 0x1010};
+        // 2. Dispatch mispredicted branch at slot 127
+        CoreTB::UopReq u127{0, 0, 0, UOP_BRANCH, BR_BEQ, 16, true, 0x100C, true, false, false, false, 0x1010};
         // 3. Dispatch younger uop wrapping into slot 0
         CoreTB::UopReq u0{4, 0, 0, UOP_ALU_INT, ALU_ADD, 444, true, 0x1010, false, false, false, false, 0};
-        tb.dispatch(&u47, &u0);
+        tb.dispatch(&u127, &u0);
         // Dispatch another younger uop wrapping into slot 1
         CoreTB::UopReq u1{5, 0, 0, UOP_ALU_INT, ALU_ADD, 555, true, 0x1014, false, false, false, false, 0};
         tb.dispatch(&u1);
@@ -1603,33 +1607,33 @@ void run_directed_tests(CoreTB& tb) {
     // -------------------------------------------------------------------------
     {
         tb.reset();
-        // 1. Test structural backpressure: Fill IntIQ with 16 entries
+        // 1. Test structural backpressure: Fill IntIQ with 32 entries
         // Dispatch long divider to hold back consumers
         CoreTB::UopReq u_div{1, 0, 0, UOP_DIV, D_DIV, 1, true, 0x1000, false, false, false, false, 0};
         tb.dispatch(&u_div);
-        // Dispatch 16 dependent uops waiting on x1 (8 pairs)
-        for (int i = 0; i < 8; i++) {
-            CoreTB::UopReq uA{static_cast<uint8_t>(2 + 2*i), 1, 0, UOP_ALU_INT, ALU_ADD, 1, true, (uint64_t)(0x1004 + i*8), false, false, false, false, 0};
-            CoreTB::UopReq uB{static_cast<uint8_t>(3 + 2*i), 1, 0, UOP_ALU_INT, ALU_ADD, 2, true, (uint64_t)(0x1008 + i*8), false, false, false, false, 0};
+        // Dispatch 32 dependent uops waiting on x1 (16 pairs, cycling rd across x2..x31)
+        for (int i = 0; i < 16; i++) {
+            CoreTB::UopReq uA{static_cast<uint8_t>(2 + ((2*i) % 30)), 1, 0, UOP_ALU_INT, ALU_ADD, 1, true, (uint64_t)(0x1004 + i*8), false, false, false, false, 0};
+            CoreTB::UopReq uB{static_cast<uint8_t>(2 + ((2*i + 1) % 30)), 1, 0, UOP_ALU_INT, ALU_ADD, 2, true, (uint64_t)(0x1008 + i*8), false, false, false, false, 0};
             tb.dispatch(&uA, &uB);
         }
-        // Now IntIQ is completely full (16 entries)!
+        // Now IntIQ is completely full (32 entries)!
         // Verify dispatch_ready is 0
         assert(tb.dut->dispatch_ready_o == 0);
         // Attempting to dispatch another uop must be rejected (rename_ack == 0)
         CoreTB::UopReq u_extra{20, 0, 0, UOP_ALU_INT, ALU_ADD, 99, true, 0x2000, false, false, false, false, 0};
         uint8_t ack_extra = tb.dispatch(&u_extra);
         assert(ack_extra == 0);
-        tb.wait_drain(100);
+        tb.wait_drain(150);
 
-        // 2. Test Partial Acceptance: ROB has exactly 1 free slot
+        // 2. Test Partial Acceptance: ROB has exactly 1 free slot (127/128 occupied)
         tb.reset();
         tb.dut->retire_ready_i = 0; // Hold retirements to accurately control ROB occupancy
-        for (int i = 0; i < 47; i++) {
+        for (int i = 0; i < 127; i++) {
             CoreTB::UopReq u{0, 0, 0, UOP_ALU_INT, ALU_ADD, 0, true, (uint64_t)(0x1000 + i*4), false, false, false, false, 0};
             tb.dispatch(&u);
         }
-        assert(tb.dut->rob_count_o == 47); // Exactly 1 free slot remaining!
+        assert(tb.dut->rob_count_o == 127); // Exactly 1 free slot remaining!
 
         // Dispatch a pair: lane 0 must be accepted, lane 1 must be rejected!
         CoreTB::UopReq u_pair0{2, 0, 0, UOP_ALU_INT, ALU_ADD, 50, true, 0x3000, false, false, false, false, 0};
@@ -1770,7 +1774,7 @@ void run_randomized_stress(CoreTB& tb, uint32_t seed, int target_ops) {
             tb.dut->flush_valid_i = 1;
             tb.step();
             tb.dut->flush_valid_i = 0;
-            for (int i = 0; i < 48; i++) tb.ref_rob[i].valid = false;
+            for (int i = 0; i < CoreTB::kRobDepth; i++) tb.ref_rob[i].valid = false;
             for (int r = 0; r < 32; r++) tb.spec_ref_rf[r] = tb.arch_rf[r];
             while (tb.dut->reconstructing_o) tb.step();
         }

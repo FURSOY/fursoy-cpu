@@ -748,13 +748,14 @@ module fursoy_s1_core
     wire areg_t sub_uop0_rd        = frontend_en_i ? fe_uop0.rd        : uop0_rd_i;
     wire        sub_uop0_is_branch = frontend_en_i ? (fe_uop0.is_branch || fe_uop0.is_jalr) : uop0_is_branch_i;
     wire [63:0] sub_uop0_pc        = frontend_en_i ? fe_uop0.pc        : uop0_pc_i;
-    wire        sub_uop0_is_fp         = frontend_en_i ? 1'b0 : uop0_is_fp_i;
-    wire        sub_uop0_fp_dest_valid = frontend_en_i ? 1'b0 : uop0_fp_dest_valid_i;
-    wire fareg_t sub_uop0_fs3          = frontend_en_i ? 5'd0 : uop0_fs3_i;
+    wire        sub_uop0_is_fp         = frontend_en_i ? fe_uop0.is_fp         : uop0_is_fp_i;
+    wire        sub_uop0_fp_dest_valid = frontend_en_i ? fe_uop0.fp_dest_valid : uop0_fp_dest_valid_i;
+    wire fareg_t sub_uop0_fs3          = frontend_en_i ? fe_uop0.fs3           : uop0_fs3_i;
+    wire [2:0]  sub_uop0_frm           = frontend_en_i ? fe_uop0.frm           : uop0_frm_i;
 
-    wire        sub_uop0_is_vec         = frontend_en_i ? 1'b0 : uop0_is_vec_i;
-    wire        sub_uop0_vec_dest_valid = frontend_en_i ? 1'b0 : uop0_vec_dest_valid_i;
-    wire vreg_t sub_uop0_prd_vec        = frontend_en_i ? 6'd0 : uop0_prd_vec_i;
+    wire        sub_uop0_is_vec         = frontend_en_i ? fe_uop0.is_vec         : uop0_is_vec_i;
+    wire        sub_uop0_vec_dest_valid = frontend_en_i ? fe_uop0.vec_dest_valid : uop0_vec_dest_valid_i;
+    wire vreg_t sub_uop0_prd_vec        = frontend_en_i ? {1'b0, fe_uop0.vec_vd} : uop0_prd_vec_i;
 
     wire        sub_uop1_valid     = frontend_en_i ? fe_uop1_valid     : uop1_valid_i;
     wire areg_t sub_uop1_rs1       = frontend_en_i ? fe_uop1.rs1       : uop1_rs1_i;
@@ -762,12 +763,48 @@ module fursoy_s1_core
     wire areg_t sub_uop1_rd        = frontend_en_i ? fe_uop1.rd        : uop1_rd_i;
     wire        sub_uop1_is_branch = frontend_en_i ? (fe_uop1.is_branch || fe_uop1.is_jalr) : uop1_is_branch_i;
     wire [63:0] sub_uop1_pc        = frontend_en_i ? fe_uop1.pc        : uop1_pc_i;
-    wire        sub_uop1_is_fp         = frontend_en_i ? 1'b0 : uop1_is_fp_i;
-    wire        sub_uop1_fp_dest_valid = frontend_en_i ? 1'b0 : uop1_fp_dest_valid_i;
-    wire fareg_t sub_uop1_fs3          = frontend_en_i ? 5'd0 : uop1_fs3_i;
-    wire        sub_uop1_is_vec         = frontend_en_i ? 1'b0 : uop1_is_vec_i;
-    wire        sub_uop1_vec_dest_valid = frontend_en_i ? 1'b0 : uop1_vec_dest_valid_i;
-    wire vreg_t sub_uop1_prd_vec        = frontend_en_i ? 6'd0 : uop1_prd_vec_i;
+    wire        sub_uop1_is_fp         = frontend_en_i ? fe_uop1.is_fp         : uop1_is_fp_i;
+    wire        sub_uop1_fp_dest_valid = frontend_en_i ? fe_uop1.fp_dest_valid : uop1_fp_dest_valid_i;
+    wire fareg_t sub_uop1_fs3          = frontend_en_i ? fe_uop1.fs3           : uop1_fs3_i;
+    wire [2:0]  sub_uop1_frm           = frontend_en_i ? fe_uop1.frm           : uop1_frm_i;
+    wire        sub_uop1_is_vec         = frontend_en_i ? fe_uop1.is_vec         : uop1_is_vec_i;
+    wire        sub_uop1_vec_dest_valid = frontend_en_i ? fe_uop1.vec_dest_valid : uop1_vec_dest_valid_i;
+    wire vreg_t sub_uop1_prd_vec        = frontend_en_i ? {1'b0, fe_uop1.vec_vd} : uop1_prd_vec_i;
+
+    // Vector Queue & Execution Interconnect Signals
+    logic [1:0]  vec_dispatch_ready;
+    logic        vec_active;
+    preg_t       vec_rs1_paddr;
+    logic [63:0] vec_rs1_data;
+    preg_t       vec_rs2_paddr;
+    logic [63:0] vec_rs2_data;
+    logic        vec_mem_req_valid;
+    logic        vec_mem_req_is_store;
+    mem_size_t   vec_mem_req_size;
+    logic [63:0] vec_mem_req_va;
+    logic [63:0] vec_mem_req_wdata;
+    rob_idx_t    vec_mem_req_rob_idx;
+    rob_epoch_t  vec_mem_req_rob_epoch;
+    logic        vec_mem_rsp_valid;
+    logic [63:0] vec_mem_rsp_rdata;
+    logic        vec_mem_rsp_exception;
+    logic [4:0]  vec_mem_rsp_cause;
+    logic        vec_comp_valid;
+    rob_idx_t    vec_comp_rob_idx;
+    rob_epoch_t  vec_comp_epoch;
+    logic        vec_comp_exception;
+    logic [4:0]  vec_comp_cause;
+    logic [63:0] vec_comp_val;
+    logic        vec_fof_fault_valid;
+    logic [63:0] vec_fof_fault_elem;
+    vreg_t       vec_vrf_raddr0, vec_vrf_raddr1, vec_vrf_raddr2;
+    logic [3:0]  vec_vrf_ren0, vec_vrf_ren1, vec_vrf_ren2;
+    logic [255:0] vec_vrf_rdata0, vec_vrf_rdata1, vec_vrf_rdata2;
+    logic        vec_vrf_w0_valid;
+    vreg_t       vec_vrf_w0_paddr;
+    logic [3:0]  vec_vrf_w0_bank_mask;
+    logic [31:0] vec_vrf_w0_byte_mask;
+    logic [255:0] vec_vrf_w0_data;
 
     // Substrate to CSR / Core FP retirement wires
     logic [1:0] sub_retire_is_fp;
@@ -903,7 +940,7 @@ module fursoy_s1_core
         .uop0_is_fp_i            (sub_uop0_is_fp),
         .uop0_fp_dest_valid_i    (sub_uop0_fp_dest_valid),
         .uop0_fs3_i              (sub_uop0_fs3),
-        .uop0_frm_i              (uop0_frm_i),
+        .uop0_frm_i              (sub_uop0_frm),
         .uop0_is_vec_i           (sub_uop0_is_vec),
         .uop0_vec_dest_valid_i   (sub_uop0_vec_dest_valid),
         .uop0_prd_vec_i          (sub_uop0_prd_vec),
@@ -917,7 +954,7 @@ module fursoy_s1_core
         .uop1_is_fp_i            (sub_uop1_is_fp),
         .uop1_fp_dest_valid_i    (sub_uop1_fp_dest_valid),
         .uop1_fs3_i              (sub_uop1_fs3),
-        .uop1_frm_i              (uop1_frm_i),
+        .uop1_frm_i              (sub_uop1_frm),
         .uop1_is_vec_i           (sub_uop1_is_vec),
         .uop1_vec_dest_valid_i   (sub_uop1_vec_dest_valid),
         .uop1_prd_vec_i          (sub_uop1_prd_vec),
@@ -982,6 +1019,13 @@ module fursoy_s1_core
 
         .comp_fp_wb_valid_i      (int_comp_fp_wb_valid),
         .comp_fp_wb_preg_i       (int_comp_fp_wb_preg),
+
+        .vec_comp_valid_i        (vec_comp_valid),
+        .vec_comp_rob_idx_i      (vec_comp_rob_idx),
+        .vec_comp_epoch_i        (vec_comp_epoch),
+        .vec_comp_exception_i    (vec_comp_exception),
+        .vec_comp_cause_i        (vec_comp_cause),
+        .vec_comp_val_i          (vec_comp_val),
 
         // Branch recovery
         .recover_valid_i         (int_recover_valid),
@@ -1117,7 +1161,7 @@ module fursoy_s1_core
         .uop0_prs2_fp_ready_i    (uop0_prs2_fp_ready_o),
         .uop0_prs3_fp_i          (uop0_prs3_fp_o),
         .uop0_prs3_fp_ready_i    (uop0_prs3_fp_ready_o),
-        .uop0_frm_i              (uop0_frm_i),
+        .uop0_frm_i              (sub_uop0_frm),
 
         // Uop 1 Payload
         .uop1_valid_i            (be_uop1_valid),
@@ -1153,7 +1197,7 @@ module fursoy_s1_core
         .uop1_prs2_fp_ready_i    (uop1_prs2_fp_ready_o),
         .uop1_prs3_fp_i          (uop1_prs3_fp_o),
         .uop1_prs3_fp_ready_i    (uop1_prs3_fp_ready_o),
-        .uop1_frm_i              (uop1_frm_i),
+        .uop1_frm_i              (sub_uop1_frm),
 
         .fcsr_frm_i              (fcsr_frm_o),
 
@@ -1352,7 +1396,25 @@ module fursoy_s1_core
         .mmio_rsp_valid_i        (mmio_rsp_valid_i),
         .mmio_rsp_rdata_i        (mmio_rsp_rdata_i),
         .mmio_rsp_error_i        (mmio_rsp_error_i),
-        .mmio_rsp_ready_o        (mmio_rsp_ready_o)
+        .mmio_rsp_ready_o        (mmio_rsp_ready_o),
+
+        .vec_dispatch_ready_i    (vec_dispatch_ready),
+        .vec_active_i            (vec_active),
+        .vec_rs1_paddr_i         (vec_rs1_paddr),
+        .vec_rs1_data_o          (vec_rs1_data),
+        .vec_rs2_paddr_i         (vec_rs2_paddr),
+        .vec_rs2_data_o          (vec_rs2_data),
+        .vec_mem_req_valid_i     (vec_mem_req_valid),
+        .vec_mem_req_is_store_i  (vec_mem_req_is_store),
+        .vec_mem_req_size_i      (vec_mem_req_size),
+        .vec_mem_req_va_i        (vec_mem_req_va),
+        .vec_mem_req_wdata_i     (vec_mem_req_wdata),
+        .vec_mem_req_rob_idx_i   (vec_mem_req_rob_idx),
+        .vec_mem_req_rob_epoch_i (vec_mem_req_rob_epoch),
+        .vec_mem_rsp_valid_o     (vec_mem_rsp_valid),
+        .vec_mem_rsp_rdata_o     (vec_mem_rsp_rdata),
+        .vec_mem_rsp_exception_o (vec_mem_rsp_exception),
+        .vec_mem_rsp_cause_o     (vec_mem_rsp_cause)
     );
 
     /* verilator lint_off UNUSEDSIGNAL */
@@ -1437,6 +1499,7 @@ module fursoy_s1_core
         .retire_exc_val_i        (sub_retire_exc_val),
 
         // Milestone 8 Phase A Floating-Point Retirement Interface
+        .retire_is_fp_i          (sub_retire_is_fp),
         .retire_fp_dest_valid_i  (sub_retire_fp_dest_valid),
         .retire_fflags_i         (sub_retire_fflags),
 
@@ -1453,8 +1516,8 @@ module fursoy_s1_core
         .vec_cfg_new_vtype_o     (unused_vec_cfg_new_vtype),
         .vec_cfg_illegal_o       (unused_vec_cfg_illegal),
 
-        .fof_fault_valid_i       (test_fof_fault_valid_i),
-        .fof_fault_elem_i        (test_fof_fault_elem_i),
+        .fof_fault_valid_i       (vec_fof_fault_valid || test_fof_fault_valid_i),
+        .fof_fault_elem_i        (vec_fof_fault_valid ? vec_fof_fault_elem : test_fof_fault_elem_i),
 
         // Architectural State Outputs
         .priv_mode_o             (csr_priv_mode),
@@ -1542,30 +1605,30 @@ module fursoy_s1_core
     );
 
     // =========================================================================
-    // 4. Milestone 8 Phase D Vector Register File (VRF)
+    // 4. Milestone 8 Phase D Vector Register File (VRF) & Fetched Vector Engine
     // =========================================================================
     /* verilator lint_off PINCONNECTEMPTY */
     fursoy_s1_vrf u_vrf (
         .clk_i                   (clk_i),
         .rst_i                   (rst_i),
 
-        .raddr0_v_i              (6'd0),
-        .ren0_bank_i             (4'd0),
-        .rdata0_v_o              (),
+        .raddr0_v_i              (vec_vrf_raddr0),
+        .ren0_bank_i             (vec_vrf_ren0),
+        .rdata0_v_o              (vec_vrf_rdata0),
 
-        .raddr1_v_i              (6'd0),
-        .ren1_bank_i             (4'd0),
-        .rdata1_v_o              (),
+        .raddr1_v_i              (vec_vrf_raddr1),
+        .ren1_bank_i             (vec_vrf_ren1),
+        .rdata1_v_o              (vec_vrf_rdata1),
 
-        .raddr2_v_i              (6'd0),
-        .ren2_bank_i             (4'd0),
-        .rdata2_v_o              (),
+        .raddr2_v_i              (vec_vrf_raddr2),
+        .ren2_bank_i             (vec_vrf_ren2),
+        .rdata2_v_o              (vec_vrf_rdata2),
 
-        .w0_valid_i              (1'b0),
-        .w0_paddr_i              (6'd0),
-        .w0_bank_mask_i          (4'd0),
-        .w0_byte_mask_i          (32'd0),
-        .w0_data_i               (256'd0),
+        .w0_valid_i              (vec_vrf_w0_valid),
+        .w0_paddr_i              (vec_vrf_w0_paddr),
+        .w0_bank_mask_i          (vec_vrf_w0_bank_mask),
+        .w0_byte_mask_i          (vec_vrf_w0_byte_mask),
+        .w0_data_i               (vec_vrf_w0_data),
 
         .bank_collision_o        (bank_collision_o),
 
@@ -1577,6 +1640,598 @@ module fursoy_s1_core
         .probe_paddr_i           (probe_vrf_paddr_i),
         .probe_pdata_o           (probe_vrf_pdata_o)
     );
+
+    typedef struct packed {
+        uop_subop_t  sub_op;
+        logic [63:0] imm;
+        logic        use_imm;
+        areg_t       rs1;
+        areg_t       rs2;
+        logic        vec_vm;
+        logic        vec_uses_rs1;
+        logic [1:0]  vec_eew;
+        logic [4:0]  vec_vd;
+        logic [4:0]  vec_vs1;
+        logic [4:0]  vec_vs2;
+        rob_idx_t    rob_idx;
+        rob_epoch_t  rob_epoch;
+        logic        exception;
+        logic [4:0]  exc_cause;
+    } vecq_entry_t;
+
+    typedef enum logic [2:0] {
+        VEC_IDLE        = 3'd0,
+        VEC_INIT        = 3'd1,
+        VEC_EXEC        = 3'd2,
+        VEC_MASK_WB     = 3'd3,
+        VEC_RED_WB      = 3'd4,
+        VEC_MEM_STEP    = 3'd5,
+        VEC_DONE        = 3'd6,
+        VEC_WAIT_RETIRE = 3'd7
+    } vec_fsm_t;
+
+    vecq_entry_t  vecq_q [8];
+    logic [2:0]   vecq_head_q;
+    logic [3:0]   vecq_count_q;
+
+    vec_fsm_t     vec_state_q;
+    logic [8:0]   vec_elem_idx_q;
+    logic [63:0]  vec_rs1_q;
+    logic [63:0]  vec_rs2_q;
+    logic [63:0]  vec_va_q;
+    logic [255:0] vec_v0_q;
+    logic [255:0] vec_mask_buf_q;
+    logic [63:0]  vec_acc_q;
+    logic         vec_w0_valid_q;
+    vreg_t        vec_w0_paddr_q;
+    logic [31:0]  vec_w0_bmask_q;
+    logic [255:0] vec_w0_data_q;
+    logic         vec_exc_q;
+    logic [4:0]   vec_cause_q;
+    logic [63:0]  vec_tval_q;
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic logic [63:0] vec_elem_mask(input logic [1:0] sew);
+        case (sew)
+            2'd0:    return 64'h0000_0000_0000_00FF;
+            2'd1:    return 64'h0000_0000_0000_FFFF;
+            2'd2:    return 64'h0000_0000_FFFF_FFFF;
+            default: return 64'hFFFF_FFFF_FFFF_FFFF;
+        endcase
+    endfunction
+
+    function automatic logic signed [63:0] vec_sign_ext(input logic [63:0] val, input logic [1:0] sew);
+        case (sew)
+            2'd0:    return $signed({{56{val[7]}},  val[7:0]});
+            2'd1:    return $signed({{48{val[15]}}, val[15:0]});
+            2'd2:    return $signed({{32{val[31]}}, val[31:0]});
+            default: return $signed(val);
+        endcase
+    endfunction
+
+    function automatic logic [63:0] vec_sign_min(input logic [1:0] sew);
+        case (sew)
+            2'd0:    return 64'hFFFF_FFFF_FFFF_FF80;
+            2'd1:    return 64'hFFFF_FFFF_FFFF_8000;
+            2'd2:    return 64'hFFFF_FFFF_8000_0000;
+            default: return 64'h8000_0000_0000_0000;
+        endcase
+    endfunction
+
+    function automatic logic [63:0] vec_get_elem(input logic [255:0] vdata, input logic [4:0] boff, input logic [1:0] sew);
+        logic [255:0] shifted;
+        shifted = vdata >> {boff, 3'b000};
+        return shifted[63:0] & vec_elem_mask(sew);
+    endfunction
+
+    function automatic logic [31:0] vec_elem_byte_mask(input logic [4:0] boff, input logic [1:0] sew);
+        case (sew)
+            2'd0:    return 32'h0000_0001 << boff;
+            2'd1:    return 32'h0000_0003 << boff;
+            2'd2:    return 32'h0000_000F << boff;
+            default: return 32'h0000_00FF << boff;
+        endcase
+    endfunction
+
+    function automatic logic is_vec_mem_subop(input uop_subop_t sop);
+        return (sop == VEC_VLE)  || (sop == VEC_VLEFF) || (sop == VEC_VLSE) ||
+               (sop == VEC_VSE)  || (sop == VEC_VSSE);
+    endfunction
+
+    function automatic logic is_vec_mask_dest_subop(input uop_subop_t sop);
+        case (sop)
+            VEC_VMSEQ, VEC_VMSNE, VEC_VMSLTU, VEC_VMSLT,
+            VEC_VMSLEU, VEC_VMSLE, VEC_VMSGTU, VEC_VMSGT,
+            VEC_VMAND, VEC_VMOR: return 1'b1;
+            default: return 1'b0;
+        endcase
+    endfunction
+
+    function automatic rob_idx_t vec_rob_dist(input rob_idx_t a, input rob_idx_t b);
+        return a - b;
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    assign vec_active            = (vecq_count_q != 4'd0);
+    assign vec_dispatch_ready[0] = (vecq_count_q < 4'd8);
+    assign vec_dispatch_ready[1] = (vecq_count_q < 4'd7);
+
+    wire vec_has_head            = (vecq_count_q != 4'd0);
+    wire vecq_entry_t vec_head_e = vecq_q[vecq_head_q];
+
+    assign vec_rs1_paddr = vec_has_head ? arat_map_o[vec_head_e.rs1] : preg_t'(0);
+    assign vec_rs2_paddr = vec_has_head ? arat_map_o[vec_head_e.rs2] : preg_t'(0);
+
+    // Current SEW for active vector operation
+    wire [1:0]  vec_exec_sew     = is_vec_mem_subop(vec_head_e.sub_op) ? vec_head_e.vec_eew : vtype_o[4:3];
+    wire [8:0]  vec_vlmax_w      = calc_vlmax(vtype_bundle_t'({vtype_o[63], vtype_o[7:6], vsew_t'(vtype_o[5:3]), vlmul_t'(vtype_o[2:0])}));
+    wire [63:0] vec_slide_off_w  = vec_head_e.use_imm ? {59'd0, vec_head_e.imm[4:0]} : vec_rs1_q;
+
+    // Element byte coordinates (element index <= 255 for VLEN=256)
+    logic [7:0]  vec_cur_byte_abs;
+    logic [4:0]  vec_cur_reg_off;
+    logic [4:0]  vec_cur_boff;
+    logic [7:0]  vec_src_elem_idx;
+    logic        vec_src_elem_oob;
+    logic [7:0]  vec_src_byte_abs;
+    logic [4:0]  vec_src_reg_off;
+    logic [4:0]  vec_src_boff;
+    logic        vec_elem_mask_en;
+
+    always_comb begin
+        vec_cur_byte_abs = vec_elem_idx_q[7:0] << vec_exec_sew;
+        vec_cur_reg_off  = {2'b00, vec_cur_byte_abs[7:5]};
+        vec_cur_boff     = vec_cur_byte_abs[4:0];
+        vec_elem_mask_en = vec_head_e.vec_vm || vec_v0_q[vec_elem_idx_q[7:0]];
+
+        vec_src_elem_idx = vec_elem_idx_q[7:0];
+        vec_src_elem_oob = 1'b0;
+        case (vec_head_e.sub_op)
+            VEC_VSLIDEUP: begin
+                if ({55'd0, vec_elem_idx_q} >= vec_slide_off_w) begin
+                    vec_src_elem_idx = vec_elem_idx_q[7:0] - vec_slide_off_w[7:0];
+                end else begin
+                    vec_src_elem_oob = 1'b1;
+                end
+            end
+            VEC_VSLIDEDOWN: begin
+                if (({55'd0, vec_elem_idx_q} + vec_slide_off_w) < {55'd0, vec_vlmax_w}) begin
+                    vec_src_elem_idx = vec_elem_idx_q[7:0] + vec_slide_off_w[7:0];
+                end else begin
+                    vec_src_elem_oob = 1'b1;
+                end
+            end
+            VEC_VSLIDE1UP: begin
+                if (vec_elem_idx_q > 9'd0) begin
+                    vec_src_elem_idx = vec_elem_idx_q[7:0] - 8'd1;
+                end else begin
+                    vec_src_elem_oob = 1'b1; // element 0 comes from rs1
+                end
+            end
+            VEC_VSLIDE1DOWN: begin
+                if (({55'd0, vec_elem_idx_q} + 64'd1) < vl_o) begin
+                    vec_src_elem_idx = vec_elem_idx_q[7:0] + 8'd1;
+                end else begin
+                    vec_src_elem_oob = 1'b1; // last element comes from rs1
+                end
+            end
+            default: ;
+        endcase
+        vec_src_byte_abs = vec_src_elem_idx << vec_exec_sew;
+        vec_src_reg_off  = {2'b00, vec_src_byte_abs[7:5]};
+        vec_src_boff     = vec_src_byte_abs[4:0];
+    end
+
+    // Separate VRF Read Address Driver (breaks false UNOPTFLAT loop with VRF rdata)
+    always_comb begin
+        vec_vrf_raddr0 = 6'd0;
+        vec_vrf_raddr1 = 6'd0;
+        vec_vrf_raddr2 = 6'd0;
+        vec_vrf_ren0   = 4'd0;
+        vec_vrf_ren1   = 4'd0;
+        vec_vrf_ren2   = 4'd0;
+        case (vec_state_q)
+            VEC_INIT: begin
+                vec_vrf_raddr0 = {1'b0, vec_head_e.vec_vd};
+                vec_vrf_raddr1 = {1'b0, vec_head_e.vec_vs1};
+                vec_vrf_raddr2 = 6'd0;
+                vec_vrf_ren0   = 4'b1111;
+                vec_vrf_ren1   = 4'b1111;
+                vec_vrf_ren2   = 4'b1111;
+            end
+            VEC_EXEC: begin
+                if (vec_head_e.sub_op == VEC_VMAND || vec_head_e.sub_op == VEC_VMOR) begin
+                    vec_vrf_raddr0 = {1'b0, vec_head_e.vec_vs2};
+                    vec_vrf_raddr1 = {1'b0, vec_head_e.vec_vs1};
+                end else begin
+                    vec_vrf_raddr0 = {1'b0, 5'(vec_head_e.vec_vs2 + vec_src_reg_off)};
+                    vec_vrf_raddr1 = {1'b0, 5'(vec_head_e.vec_vs1 + vec_cur_reg_off)};
+                end
+                vec_vrf_ren0 = 4'b1111;
+                vec_vrf_ren1 = 4'b1111;
+            end
+            VEC_MEM_STEP: begin
+                vec_vrf_raddr1 = {1'b0, 5'(vec_head_e.vec_vd + vec_cur_reg_off)};
+                vec_vrf_ren1   = 4'b1111;
+            end
+            default: ;
+        endcase
+    end
+
+    // Registered VRF Writeback Channel (completely loop-free w0_paddr/data -> rdata bypass)
+    assign vec_vrf_w0_valid     = vec_w0_valid_q;
+    assign vec_vrf_w0_paddr     = vec_w0_paddr_q;
+    assign vec_vrf_w0_byte_mask = vec_w0_bmask_q;
+    assign vec_vrf_w0_bank_mask = {|vec_w0_bmask_q[31:24], |vec_w0_bmask_q[23:16],
+                                   |vec_w0_bmask_q[15:8],  |vec_w0_bmask_q[7:0]};
+    assign vec_vrf_w0_data      = vec_w0_data_q;
+
+    // Element ALU / Memory Control Evaluation
+    logic [63:0] vec_alu_op1, vec_alu_op2, vec_alu_res;
+    logic        vec_cmp_res;
+
+    always_comb begin
+        vec_alu_op1 = 64'd0;
+        vec_alu_op2 = 64'd0;
+        vec_alu_res = 64'd0;
+        vec_cmp_res = 1'b0;
+
+        vec_mem_req_valid     = 1'b0;
+        vec_mem_req_is_store  = (vec_head_e.sub_op == VEC_VSE) || (vec_head_e.sub_op == VEC_VSSE);
+        vec_mem_req_size      = mem_size_t'(vec_exec_sew);
+        vec_mem_req_va        = vec_va_q;
+        vec_mem_req_wdata     = 64'd0;
+        vec_mem_req_rob_idx   = vec_head_e.rob_idx;
+        vec_mem_req_rob_epoch = vec_head_e.rob_epoch;
+
+        vec_comp_valid        = 1'b0;
+        vec_comp_rob_idx      = vec_head_e.rob_idx;
+        vec_comp_epoch        = vec_head_e.rob_epoch;
+        vec_comp_exception    = vec_exc_q;
+        vec_comp_cause        = vec_cause_q;
+        vec_comp_val          = vec_tval_q;
+
+        case (vec_state_q)
+            VEC_EXEC: begin
+                vec_alu_op2 = vec_get_elem(vec_vrf_rdata0, vec_src_boff, vec_exec_sew);
+                if (vec_head_e.vec_uses_rs1) begin
+                    vec_alu_op1 = vec_rs1_q & vec_elem_mask(vec_exec_sew);
+                end else if (vec_head_e.use_imm) begin
+                    vec_alu_op1 = vec_head_e.imm & vec_elem_mask(vec_exec_sew);
+                end else begin
+                    vec_alu_op1 = vec_get_elem(vec_vrf_rdata1, vec_cur_boff, vec_exec_sew);
+                end
+
+                begin : blk_vec_alu
+                    logic [5:0]         shamt;
+                    logic signed [63:0] s_op1, s_op2;
+                    logic [63:0]        em;
+                    em    = vec_elem_mask(vec_exec_sew);
+                    s_op1 = vec_sign_ext(vec_alu_op1, vec_exec_sew);
+                    s_op2 = vec_sign_ext(vec_alu_op2, vec_exec_sew);
+                    case (vec_exec_sew)
+                        2'd0:    shamt = {3'b000, vec_alu_op1[2:0]};
+                        2'd1:    shamt = {2'b00,  vec_alu_op1[3:0]};
+                        2'd2:    shamt = {1'b0,   vec_alu_op1[4:0]};
+                        default: shamt = vec_head_e.use_imm ? {1'b0, vec_head_e.imm[4:0]} : vec_alu_op1[5:0];
+                    endcase
+
+                    case (vec_head_e.sub_op)
+                        VEC_VADD:   vec_alu_res = (vec_alu_op2 + vec_alu_op1) & em;
+                        VEC_VSUB:   vec_alu_res = (vec_alu_op2 - vec_alu_op1) & em;
+                        VEC_VRSUB:  vec_alu_res = (vec_alu_op1 - vec_alu_op2) & em;
+                        VEC_VMUL:   vec_alu_res = (vec_alu_op2 * vec_alu_op1) & em;
+                        VEC_VDIVU:  vec_alu_res = (vec_alu_op1 == 64'd0) ? em : ((vec_alu_op2 / vec_alu_op1) & em);
+                        VEC_VDIV: begin
+                            if (s_op1 == 64'sd0) begin
+                                vec_alu_res = em;
+                            end else if ((vec_alu_op2 == (vec_sign_min(vec_exec_sew) & em)) && (s_op1 == -64'sd1)) begin
+                                vec_alu_res = vec_alu_op2;
+                            end else begin
+                                vec_alu_res = ($unsigned(s_op2 / s_op1)) & em;
+                            end
+                        end
+                        VEC_VAND:   vec_alu_res = (vec_alu_op2 & vec_alu_op1) & em;
+                        VEC_VOR:    vec_alu_res = (vec_alu_op2 | vec_alu_op1) & em;
+                        VEC_VXOR:   vec_alu_res = (vec_alu_op2 ^ vec_alu_op1) & em;
+                        VEC_VMINU:  vec_alu_res = (vec_alu_op2 < vec_alu_op1) ? vec_alu_op2 : vec_alu_op1;
+                        VEC_VMAXU:  vec_alu_res = (vec_alu_op2 > vec_alu_op1) ? vec_alu_op2 : vec_alu_op1;
+                        VEC_VMIN:   vec_alu_res = (s_op2 < s_op1) ? vec_alu_op2 : vec_alu_op1;
+                        VEC_VMAX:   vec_alu_res = (s_op2 > s_op1) ? vec_alu_op2 : vec_alu_op1;
+                        VEC_VSLL:   vec_alu_res = (vec_alu_op2 << shamt) & em;
+                        VEC_VSRL:   vec_alu_res = (vec_alu_op2 >> shamt) & em;
+                        VEC_VSRA:   vec_alu_res = ($unsigned(s_op2 >>> shamt)) & em;
+                        VEC_VMV:    vec_alu_res = vec_alu_op1;
+                        VEC_VSLIDEUP:   vec_alu_res = vec_alu_op2;
+                        VEC_VSLIDEDOWN: vec_alu_res = vec_src_elem_oob ? 64'd0 : vec_alu_op2;
+                        VEC_VSLIDE1UP,
+                        VEC_VSLIDE1DOWN: vec_alu_res = vec_src_elem_oob ? (vec_rs1_q & em) : vec_alu_op2;
+                        VEC_VMSEQ:  vec_cmp_res = (vec_alu_op2 == vec_alu_op1);
+                        VEC_VMSNE:  vec_cmp_res = (vec_alu_op2 != vec_alu_op1);
+                        VEC_VMSLTU: vec_cmp_res = (vec_alu_op2 < vec_alu_op1);
+                        VEC_VMSLT:  vec_cmp_res = (s_op2 < s_op1);
+                        VEC_VMSLEU: vec_cmp_res = (vec_alu_op2 <= vec_alu_op1);
+                        VEC_VMSLE:  vec_cmp_res = (s_op2 <= s_op1);
+                        VEC_VMSGTU: vec_cmp_res = (vec_alu_op2 > vec_alu_op1);
+                        VEC_VMSGT:  vec_cmp_res = (s_op2 > s_op1);
+                        VEC_VMAND:  vec_cmp_res = vec_vrf_rdata0[vec_elem_idx_q[7:0]] & vec_vrf_rdata1[vec_elem_idx_q[7:0]];
+                        VEC_VMOR:   vec_cmp_res = vec_vrf_rdata0[vec_elem_idx_q[7:0]] | vec_vrf_rdata1[vec_elem_idx_q[7:0]];
+                        default:    vec_alu_res = 64'd0;
+                    endcase
+                end
+            end
+
+            VEC_MEM_STEP: begin
+                vec_mem_req_wdata = vec_get_elem(vec_vrf_rdata1, vec_cur_boff, vec_exec_sew);
+                if (vec_elem_mask_en && !vec_mem_rsp_valid) begin
+                    vec_mem_req_valid = 1'b1;
+                end
+            end
+
+            VEC_DONE: begin
+                vec_comp_valid = vec_has_head && !vec_w0_valid_q;
+            end
+
+            default: ;
+        endcase
+    end
+
+    wire vec_push0 = frontend_en_i && sub_uop0_ack && (fe_uop0.uop_class == UOP_VEC) &&
+                     !(int_recover_valid && (vec_rob_dist(sub_uop0_rob_idx, int_rob_head) > vec_rob_dist(int_recover_rob_idx, int_rob_head)));
+    wire vec_push1 = frontend_en_i && sub_uop1_ack && (fe_uop1.uop_class == UOP_VEC) &&
+                     !(int_recover_valid && (vec_rob_dist(sub_uop1_rob_idx, int_rob_head) > vec_rob_dist(int_recover_rob_idx, int_rob_head)));
+    wire vec_head_retired = vec_has_head && ((retire_valid_o[0] && (int_retire_rob_idx[0] == vec_head_e.rob_idx)) ||
+                                             (retire_valid_o[1] && (int_retire_rob_idx[1] == vec_head_e.rob_idx)));
+    wire vec_pop   = (((vec_state_q == VEC_DONE) && !vec_w0_valid_q) || (vec_state_q == VEC_WAIT_RETIRE)) && vec_head_retired;
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i || core_flush_valid) begin
+            vecq_head_q         <= 3'd0;
+            vecq_count_q        <= 4'd0;
+            for (int i = 0; i < 8; i++) vecq_q[i] <= '0;
+            vec_state_q         <= VEC_IDLE;
+            vec_elem_idx_q      <= 9'd0;
+            vec_rs1_q           <= 64'd0;
+            vec_rs2_q           <= 64'd0;
+            vec_va_q            <= 64'd0;
+            vec_v0_q            <= 256'd0;
+            vec_mask_buf_q      <= 256'd0;
+            vec_acc_q           <= 64'd0;
+            vec_w0_valid_q      <= 1'b0;
+            vec_w0_paddr_q      <= 6'd0;
+            vec_w0_bmask_q      <= 32'd0;
+            vec_w0_data_q       <= 256'd0;
+            vec_exc_q           <= 1'b0;
+            vec_cause_q         <= 5'd0;
+            vec_tval_q          <= 64'd0;
+            vec_fof_fault_valid <= 1'b0;
+            vec_fof_fault_elem  <= 64'd0;
+        end else begin
+            vec_w0_valid_q      <= 1'b0;
+            vec_fof_fault_valid <= 1'b0;
+            vec_fof_fault_elem  <= 64'd0;
+
+            // Queue pop / squash / push maintenance
+            begin : blk_vecq_mgmt
+                logic [3:0] surv_cnt;
+                logic [2:0] next_head;
+                logic [3:0] base_cnt;
+                logic [2:0] wr_ptr;
+
+                next_head = vec_pop ? (vecq_head_q + 3'd1) : vecq_head_q;
+                base_cnt  = vec_pop ? (vecq_count_q - 4'd1) : vecq_count_q;
+
+                if (int_recover_valid) begin
+                    surv_cnt = 4'd0;
+                    for (int k = 0; k < 8; k++) begin
+                        if (4'(k) < base_cnt) begin
+                            logic [2:0] idx;
+                            idx = next_head + 3'(k);
+                            if ((vec_rob_dist(vecq_q[idx].rob_idx, int_rob_head) <= vec_rob_dist(int_recover_rob_idx, int_rob_head)) &&
+                                (4'(k) == surv_cnt)) begin
+                                surv_cnt = surv_cnt + 4'd1;
+                            end
+                        end
+                    end
+                    base_cnt = surv_cnt;
+                end
+
+                wr_ptr = next_head + base_cnt[2:0];
+                if (vec_push0 && (base_cnt < 4'd8)) begin
+                    vecq_q[wr_ptr].sub_op         <= fe_uop0.sub_op;
+                    vecq_q[wr_ptr].imm            <= fe_uop0.imm;
+                    vecq_q[wr_ptr].use_imm        <= fe_uop0.use_imm;
+                    vecq_q[wr_ptr].rs1            <= fe_uop0.rs1;
+                    vecq_q[wr_ptr].rs2            <= fe_uop0.rs2;
+                    vecq_q[wr_ptr].vec_vm         <= fe_uop0.vec_vm;
+                    vecq_q[wr_ptr].vec_uses_rs1   <= fe_uop0.vec_uses_rs1;
+                    vecq_q[wr_ptr].vec_eew        <= fe_uop0.vec_eew[1:0];
+                    vecq_q[wr_ptr].vec_vd         <= fe_uop0.vec_vd;
+                    vecq_q[wr_ptr].vec_vs1        <= fe_uop0.vec_vs1;
+                    vecq_q[wr_ptr].vec_vs2        <= fe_uop0.vec_vs2;
+                    vecq_q[wr_ptr].rob_idx        <= sub_uop0_rob_idx;
+                    vecq_q[wr_ptr].rob_epoch      <= sub_uop0_rob_epoch;
+                    vecq_q[wr_ptr].exception      <= fe_uop0.exception;
+                    vecq_q[wr_ptr].exc_cause      <= fe_uop0.exc_cause;
+                    wr_ptr   = wr_ptr + 3'd1;
+                    base_cnt = base_cnt + 4'd1;
+                end
+                if (vec_push1 && (base_cnt < 4'd8)) begin
+                    vecq_q[wr_ptr].sub_op         <= fe_uop1.sub_op;
+                    vecq_q[wr_ptr].imm            <= fe_uop1.imm;
+                    vecq_q[wr_ptr].use_imm        <= fe_uop1.use_imm;
+                    vecq_q[wr_ptr].rs1            <= fe_uop1.rs1;
+                    vecq_q[wr_ptr].rs2            <= fe_uop1.rs2;
+                    vecq_q[wr_ptr].vec_vm         <= fe_uop1.vec_vm;
+                    vecq_q[wr_ptr].vec_uses_rs1   <= fe_uop1.vec_uses_rs1;
+                    vecq_q[wr_ptr].vec_eew        <= fe_uop1.vec_eew[1:0];
+                    vecq_q[wr_ptr].vec_vd         <= fe_uop1.vec_vd;
+                    vecq_q[wr_ptr].vec_vs1        <= fe_uop1.vec_vs1;
+                    vecq_q[wr_ptr].vec_vs2        <= fe_uop1.vec_vs2;
+                    vecq_q[wr_ptr].rob_idx        <= sub_uop1_rob_idx;
+                    vecq_q[wr_ptr].rob_epoch      <= sub_uop1_rob_epoch;
+                    vecq_q[wr_ptr].exception      <= fe_uop1.exception;
+                    vecq_q[wr_ptr].exc_cause      <= fe_uop1.exc_cause;
+                    base_cnt = base_cnt + 4'd1;
+                end
+
+                vecq_head_q  <= next_head;
+                vecq_count_q <= base_cnt;
+            end
+
+            // Non-Speculative Vector Execution FSM (active only at ROB head)
+            case (vec_state_q)
+                VEC_IDLE: begin
+                    if (vec_has_head && (vec_head_e.rob_idx == int_rob_head)) begin
+                        vec_state_q <= VEC_INIT;
+                    end
+                end
+
+                VEC_INIT: begin
+                    vec_rs1_q      <= vec_rs1_data;
+                    vec_rs2_q      <= vec_rs2_data;
+                    vec_va_q       <= vec_rs1_data;
+                    vec_v0_q       <= vec_vrf_rdata2;
+                    vec_mask_buf_q <= vec_vrf_rdata0;
+                    vec_acc_q      <= vec_get_elem(vec_vrf_rdata1, 5'd0, vec_exec_sew);
+                    vec_exc_q      <= 1'b0;
+                    vec_cause_q    <= 5'd0;
+                    vec_tval_q     <= 64'd0;
+
+                    if (vec_head_e.exception) begin
+                        vec_exc_q   <= 1'b1;
+                        vec_cause_q <= vec_head_e.exc_cause;
+                        vec_state_q <= VEC_DONE;
+                    end else if (vtype_o[63]) begin
+                        vec_exc_q   <= 1'b1;
+                        vec_cause_q <= 5'd2;
+                        vec_state_q <= VEC_DONE;
+                    end else if (vl_o == 64'd0) begin
+                        vec_state_q <= VEC_DONE;
+                    end else if (is_vec_mem_subop(vec_head_e.sub_op)) begin
+                        vec_elem_idx_q <= 9'd0;
+                        vec_state_q    <= VEC_MEM_STEP;
+                    end else if (vec_head_e.sub_op == VEC_VSLIDEUP || vec_head_e.sub_op == VEC_VSLIDE1UP) begin
+                        vec_elem_idx_q <= vl_o[8:0] - 9'd1;
+                        vec_state_q    <= VEC_EXEC;
+                    end else begin
+                        vec_elem_idx_q <= 9'd0;
+                        vec_state_q    <= VEC_EXEC;
+                    end
+                end
+
+                VEC_EXEC: begin
+                    if (is_vec_mask_dest_subop(vec_head_e.sub_op) && vec_elem_mask_en) begin
+                        vec_mask_buf_q[vec_elem_idx_q[7:0]] <= vec_cmp_res;
+                    end else if (vec_head_e.sub_op == VEC_VREDSUM && vec_elem_mask_en) begin
+                        vec_acc_q <= (vec_acc_q + vec_alu_op2) & vec_elem_mask(vec_exec_sew);
+                    end else if (!is_vec_mask_dest_subop(vec_head_e.sub_op) && (vec_head_e.sub_op != VEC_VREDSUM) &&
+                                 vec_elem_mask_en && !((vec_head_e.sub_op == VEC_VSLIDEUP) && vec_src_elem_oob)) begin
+                        vec_w0_valid_q <= 1'b1;
+                        vec_w0_paddr_q <= {1'b0, 5'(vec_head_e.vec_vd + vec_cur_reg_off)};
+                        vec_w0_bmask_q <= vec_elem_byte_mask(vec_cur_boff, vec_exec_sew);
+                        vec_w0_data_q  <= {192'd0, vec_alu_res} << {vec_cur_boff, 3'b000};
+                    end
+
+                    if (vec_head_e.sub_op == VEC_VSLIDEUP || vec_head_e.sub_op == VEC_VSLIDE1UP) begin
+                        if (vec_elem_idx_q == 9'd0) begin
+                            vec_state_q <= VEC_DONE;
+                        end else begin
+                            vec_elem_idx_q <= vec_elem_idx_q - 9'd1;
+                        end
+                    end else if ({55'd0, vec_elem_idx_q} + 64'd1 >= vl_o) begin
+                        if (is_vec_mask_dest_subop(vec_head_e.sub_op)) begin
+                            vec_w0_valid_q <= 1'b1;
+                            vec_w0_paddr_q <= {1'b0, vec_head_e.vec_vd};
+                            vec_w0_bmask_q <= 32'hFFFF_FFFF;
+                            // Build final mask word including current element's bit update
+                            vec_w0_data_q  <= vec_mask_buf_q;
+                            if (vec_elem_mask_en) begin
+                                vec_w0_data_q[vec_elem_idx_q[7:0]] <= vec_cmp_res;
+                            end
+                            vec_state_q <= VEC_MASK_WB;
+                        end else if (vec_head_e.sub_op == VEC_VREDSUM) begin
+                            vec_w0_valid_q <= 1'b1;
+                            vec_w0_paddr_q <= {1'b0, vec_head_e.vec_vd};
+                            vec_w0_bmask_q <= vec_elem_byte_mask(5'd0, vec_exec_sew);
+                            vec_w0_data_q  <= {192'd0, ((vec_elem_mask_en ? (vec_acc_q + vec_alu_op2) : vec_acc_q) & vec_elem_mask(vec_exec_sew))};
+                            vec_state_q    <= VEC_RED_WB;
+                        end else begin
+                            vec_state_q <= VEC_DONE;
+                        end
+                    end else begin
+                        vec_elem_idx_q <= vec_elem_idx_q + 9'd1;
+                    end
+                end
+
+                VEC_MASK_WB,
+                VEC_RED_WB: begin
+                    vec_state_q <= VEC_DONE;
+                end
+
+                VEC_MEM_STEP: begin : blk_vmem_step
+                    logic [63:0] step_stride;
+                    step_stride = (vec_head_e.sub_op == VEC_VLSE || vec_head_e.sub_op == VEC_VSSE)
+                                  ? vec_rs2_q
+                                  : (64'd1 << vec_exec_sew);
+                    if (!vec_elem_mask_en) begin
+                        vec_va_q <= vec_va_q + step_stride;
+                        if ({55'd0, vec_elem_idx_q} + 64'd1 >= vl_o) begin
+                            vec_state_q <= VEC_DONE;
+                        end else begin
+                            vec_elem_idx_q <= vec_elem_idx_q + 9'd1;
+                        end
+                    end else if (vec_mem_rsp_valid) begin
+                        if (vec_mem_rsp_exception) begin
+                            if ((vec_head_e.sub_op == VEC_VLEFF) && (vec_elem_idx_q > 9'd0)) begin
+                                vec_fof_fault_valid <= 1'b1;
+                                vec_fof_fault_elem  <= {55'd0, vec_elem_idx_q};
+                                vec_exc_q           <= 1'b0;
+                                vec_state_q         <= VEC_DONE;
+                            end else begin
+                                vec_exc_q   <= 1'b1;
+                                vec_cause_q <= vec_mem_rsp_cause;
+                                vec_tval_q  <= vec_va_q;
+                                vec_state_q <= VEC_DONE;
+                            end
+                        end else begin
+                            if (!vec_mem_req_is_store) begin
+                                vec_w0_valid_q <= 1'b1;
+                                vec_w0_paddr_q <= {1'b0, 5'(vec_head_e.vec_vd + vec_cur_reg_off)};
+                                vec_w0_bmask_q <= vec_elem_byte_mask(vec_cur_boff, vec_exec_sew);
+                                vec_w0_data_q  <= {192'd0, (vec_mem_rsp_rdata & vec_elem_mask(vec_exec_sew))} << {vec_cur_boff, 3'b000};
+                            end
+                            vec_va_q <= vec_va_q + step_stride;
+                            if ({55'd0, vec_elem_idx_q} + 64'd1 >= vl_o) begin
+                                vec_state_q <= VEC_DONE;
+                            end else begin
+                                vec_elem_idx_q <= vec_elem_idx_q + 9'd1;
+                            end
+                        end
+                    end
+                end
+
+                VEC_DONE: begin
+                    if (vec_w0_valid_q) begin
+                        // Hold 1 cycle until final registered VRF write commits into bank_q
+                        vec_state_q <= VEC_DONE;
+                    end else if (vec_head_retired) begin
+                        vec_state_q <= VEC_IDLE;
+                    end else begin
+                        vec_state_q <= VEC_WAIT_RETIRE;
+                    end
+                end
+
+                VEC_WAIT_RETIRE: begin
+                    if (vec_head_retired || !vec_has_head) begin
+                        vec_state_q <= VEC_IDLE;
+                    end
+                end
+
+                default: vec_state_q <= VEC_IDLE;
+            endcase
+        end
+    end
 
     // =========================================================================
     // 5. Milestone 8 Phase D Decoupled Vector Issue Queue (VIQ8)
@@ -1867,7 +2522,7 @@ module fursoy_s1_core
     wire ev_vec_uop_commit      = (retire_valid_o[0] && retire_is_vec_o[0]) || (retire_valid_o[1] && retire_is_vec_o[1]);
     wire ev_vec_mem_traffic     = bus_rd_req_valid_o && bus_rd_req_ready_i;
     wire ev_vec_viq_full        = viq_full_o;
-    wire ev_vec_fof_trunc       = test_fof_fault_valid_i && (test_fof_fault_elem_i > 0);
+    wire ev_vec_fof_trunc       = (vec_fof_fault_valid && (vec_fof_fault_elem > 64'd0)) || (test_fof_fault_valid_i && (test_fof_fault_elem_i > 64'd0));
 
     wire hpm_ev_fp_issue        = be_event_fp_issue        | test_ev_fp_issue_i;
     wire hpm_ev_fp_fma_busy     = be_event_fp_fma_busy     | test_ev_fp_fma_busy_i;

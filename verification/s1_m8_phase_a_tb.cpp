@@ -884,7 +884,8 @@ int main(int argc, char** argv) {
 
         GoldenFPModel golden;
         std::vector<InFlightUop> inflight;
-        uint8_t slot_epoch[48] = {0};
+        constexpr uint8_t TB_ROB_DEPTH = 128;
+        uint8_t slot_epoch[TB_ROB_DEPTH] = {0};
         uint64_t op_count = 0;
         uint64_t step_count = 0;
 
@@ -958,11 +959,14 @@ int main(int argc, char** argv) {
             uint8_t u0_prd = tb.dut->uop0_prd_fp_o;
             uint8_t u0_pold = tb.dut->uop0_pold_fp_o;
             uint8_t u0_rob = tb.dut->rob_tail_o;
+            assert(u0_rob < TB_ROB_DEPTH && "rob_tail_o exceeded ROB_DEPTH!");
+            assert(tb.dut->rob_head_o < TB_ROB_DEPTH && "rob_head_o exceeded ROB_DEPTH!");
             uint8_t u0_epoch = slot_epoch[u0_rob];
 
             uint8_t u1_prd = tb.dut->uop1_prd_fp_o;
             uint8_t u1_pold = tb.dut->uop1_pold_fp_o;
-            uint8_t u1_rob = (u0_rob + 1) % 48;
+            uint8_t u1_rob = (u0_rob + 1) % TB_ROB_DEPTH;
+            assert(u1_rob < TB_ROB_DEPTH && "u1_rob exceeded ROB_DEPTH!");
             uint8_t u1_epoch = slot_epoch[u1_rob];
 
             uint8_t ret_valid = tb.dut->retire_valid_o;

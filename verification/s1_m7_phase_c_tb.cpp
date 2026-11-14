@@ -65,7 +65,7 @@ constexpr uint8_t BR_BNE        = 34;
 
 inline uint8_t calc_rob_dist(uint8_t idx, uint8_t head) {
     if (idx >= head) return idx - head;
-    return (48 - head) + idx;
+    return (128 - head) + idx;
 }
 
 // -----------------------------------------------------------------------------
@@ -679,7 +679,7 @@ SeedTortureResult run_seed_torture(PhaseCTB& tb, uint32_t seed, uint64_t target_
               << " (target: " << target_ops << " disambiguated operations)..." << std::endl;
 
     while (accepted_ops < target_ops) {
-        if (rng() % 15 == 0) rob_head = (rob_head + 1) % 48;
+        if (rng() % 15 == 0) rob_head = (rob_head + 1) % 128;
 
         // 1. Randomly resolve older store physical addresses & data
         for (int s = 0; s < 16; s++) {
@@ -699,7 +699,7 @@ SeedTortureResult run_seed_torture(PhaseCTB& tb, uint32_t seed, uint64_t target_
                 bool cand_stall = false;
                 bool overlap_found = false;
                 int  youngest_s = -1;
-                uint8_t min_s_dist = 63;
+                uint8_t min_s_dist = 255;
 
                 for (int s = 0; s < 16; s++) {
                     if (sq[s].valid && sq[s].pa_valid) {
@@ -767,7 +767,7 @@ SeedTortureResult run_seed_torture(PhaseCTB& tb, uint32_t seed, uint64_t target_
                 else if (size == 2) sq[s].mask = 0x0F << ((rng() % 2) * 4);
                 else sq[s].mask = 0xFF;
                 sq[s].data    = rng();
-                sq[s].rob_idx = (rob_head + (rng() % 20)) % 48;
+                sq[s].rob_idx = (rob_head + (rng() % 20)) % 128;
             }
         }
         for (int l = 0; l < 16; l++) {
@@ -783,7 +783,7 @@ SeedTortureResult run_seed_torture(PhaseCTB& tb, uint32_t seed, uint64_t target_
                 else if (size == 2) lq[l].mask = 0x0F << ((rng() % 2) * 4);
                 else lq[l].mask = 0xFF;
                 lq[l].sign_ext    = (rng() % 2 == 0);
-                lq[l].rob_idx     = (rob_head + (rng() % 20)) % 48;
+                lq[l].rob_idx     = (rob_head + (rng() % 20)) % 128;
                 lq[l].fwd_success = false;
                 lq[l].fwd_stall   = false;
             }

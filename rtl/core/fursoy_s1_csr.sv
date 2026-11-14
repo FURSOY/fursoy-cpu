@@ -71,6 +71,7 @@ module fursoy_s1_csr
 
     // Milestone 8 Phase A Floating-Point Retirement Interface
     input  logic [1:0]        retire_fp_dest_valid_i,
+    input  logic [1:0]        retire_is_fp_i,
     input  logic [4:0]        retire_fflags_i      [1:0],
 
     // Milestone 8 Phase D Vector Retirement Interface
@@ -398,7 +399,7 @@ module fursoy_s1_csr
             end
 
             // M-mode CSRs
-            12'h300: old_csr_val = mstatus_q;
+            12'h300: old_csr_val = eff_mstatus;
             12'h301: old_csr_val = 64'd0;       // misa (WARL zero)
             12'h302: old_csr_val = medeleg_q;
             12'h303: old_csr_val = mideleg_q;
@@ -554,7 +555,6 @@ module fursoy_s1_csr
         end
     end
 
-    assign p0_sys_rdata_o   = old_csr_val;
     assign p0_sys_illegal_o = sys_illegal;
 
     // =========================================================================
@@ -636,26 +636,103 @@ module fursoy_s1_csr
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
-    logic [63:0] cfg_next_vtype;
-    logic [8:0]  cfg_next_vlmax;
-    logic        cfg_next_vill;
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic void eval_vset_cfg(
+        input  logic [63:0] in_vtype,
+        input  logic [63:0] in_avl,
+        input  logic        rs1_is_zero,
+        input  logic        rd_is_zero,
+        output logic [63:0] out_vtype,
+        output logic [63:0] out_vl,
+        output logic        out_vill
+    );
+        logic [63:0] cur_vtype_norm;
+        logic [8:0]  cur_vlmax;
+        logic        cur_vill;
+        logic [63:0] next_vtype_norm;
+        logic [8:0]  next_vlmax;
+        logic        next_vill;
+
+        eval_vtype_legal(vtype_q, cur_vtype_norm, cur_vlmax, cur_vill);
+        eval_vtype_legal(in_vtype, next_vtype_norm, next_vlmax, next_vill);
+
+        if (next_vill) begin
+            out_vill  = 1'b1;
+            out_vtype = 64'h8000_0000_0000_0000;
+            out_vl    = 64'd0;
+        end else if (rs1_is_zero && rd_is_zero) begin
+            // RVV 1.0 §6.2: rs1==x0 && rd==x0 keeps existing vl only when prior vtype
+            // is legal and the new vtype preserves VLMAX (ratio SEW/LMUL); otherwise vill=1, vl=0.
+            if (vtype_q[63] || cur_vill || (next_vlmax != cur_vlmax) || (vl_q > {55'd0, next_vlmax})) begin
+                out_vill  = 1'b1;
+                out_vtype = 64'h8000_0000_0000_0000;
+                out_vl    = 64'd0;
+            end else begin
+                out_vill  = 1'b0;
+                out_vtype = next_vtype_norm;
+                out_vl    = vl_q;
+            end
+        end else if (rs1_is_zero && !rd_is_zero) begin
+            out_vill  = 1'b0;
+            out_vtype = next_vtype_norm;
+            out_vl    = {55'd0, next_vlmax};
+        end else if (in_avl <= {55'd0, next_vlmax}) begin
+            out_vill  = 1'b0;
+            out_vtype = next_vtype_norm;
+            out_vl    = in_avl;
+        end else begin
+            out_vill  = 1'b0;
+            out_vtype = next_vtype_norm;
+            out_vl    = {55'd0, next_vlmax};
+        end
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
 
     always_comb begin
-        eval_vtype_legal(vec_cfg_vtype_i, cfg_next_vtype, cfg_next_vlmax, cfg_next_vill);
-        vec_cfg_new_vtype_o = cfg_next_vtype;
-        vec_cfg_illegal_o   = cfg_next_vill;
-        if (cfg_next_vill) begin
-            vec_cfg_new_vl_o = 64'd0;
-        end else if (vec_cfg_rs1_is_zero_i && !vec_cfg_rd_is_zero_i) begin
-            vec_cfg_new_vl_o = {55'd0, cfg_next_vlmax};
-        end else if (vec_cfg_rs1_is_zero_i && vec_cfg_rd_is_zero_i) begin
-            vec_cfg_new_vl_o = vl_q;
-        end else if (vec_cfg_avl_i <= {55'd0, cfg_next_vlmax}) begin
-            vec_cfg_new_vl_o = vec_cfg_avl_i;
-        end else begin
-            vec_cfg_new_vl_o = {55'd0, cfg_next_vlmax};
-        end
+        eval_vset_cfg(
+            vec_cfg_vtype_i,
+            vec_cfg_avl_i,
+            vec_cfg_rs1_is_zero_i,
+            vec_cfg_rd_is_zero_i,
+            vec_cfg_new_vtype_o,
+            vec_cfg_new_vl_o,
+            vec_cfg_illegal_o
+        );
     end
+
+    // Fetched vsetvli/vsetvl/vsetivli configuration calculation (Port 0 system path)
+    wire        p0_is_vset = (p0_sys_subop_i == VEC_VSETVLI) ||
+                             (p0_sys_subop_i == VEC_VSETVL)  ||
+                             (p0_sys_subop_i == VEC_VSETIVLI);
+    logic [63:0] p0_vcfg_new_vtype;
+    logic [63:0] p0_vcfg_new_vl;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic        p0_vcfg_vill;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    always_comb begin
+        logic [63:0] p0_vcfg_vtype_in;
+        logic [63:0] p0_vcfg_avl_in;
+        logic        p0_vcfg_rs1_zero;
+        logic        p0_vcfg_rd_zero;
+
+        p0_vcfg_vtype_in = (p0_sys_subop_i == VEC_VSETVL) ? p0_sys_rs2_val_i : {53'd0, p0_sys_csr_addr_i[10:0]};
+        p0_vcfg_avl_in   = (p0_sys_subop_i == VEC_VSETIVLI) ? {59'd0, p0_sys_rs1_field_i} : p0_sys_rs1_val_i;
+        p0_vcfg_rs1_zero = (p0_sys_subop_i != VEC_VSETIVLI) && (p0_sys_rs1_field_i == 5'd0);
+        p0_vcfg_rd_zero  = p0_sys_csr_addr_i[11];
+
+        eval_vset_cfg(
+            p0_vcfg_vtype_in,
+            p0_vcfg_avl_in,
+            p0_vcfg_rs1_zero,
+            p0_vcfg_rd_zero,
+            p0_vcfg_new_vtype,
+            p0_vcfg_new_vl,
+            p0_vcfg_vill
+        );
+    end
+
+    assign p0_sys_rdata_o = p0_is_vset ? p0_vcfg_new_vl : old_csr_val;
 
     // =========================================================================
     // 5. Sequential Architectural State & Retirement Handling
@@ -750,12 +827,12 @@ module fursoy_s1_csr
                 pending_sys_q.valid        <= 1'b1;
                 pending_sys_q.sub_op       <= p0_sys_subop_i;
                 pending_sys_q.csr_addr     <= p0_sys_csr_addr_i;
-                pending_sys_q.write_val    <= csr_write_val;
+                pending_sys_q.write_val    <= p0_is_vset ? p0_vcfg_new_vtype : csr_write_val;
                 pending_sys_q.write_intent <= csr_write_intent;
                 pending_sys_q.pc           <= p0_sys_pc_i;
                 pending_sys_q.rob_idx      <= p0_sys_rob_idx_i;
                 pending_sys_q.rs1_val      <= p0_sys_rs1_val_i;
-                pending_sys_q.rs2_val      <= p0_sys_rs2_val_i;
+                pending_sys_q.rs2_val      <= p0_is_vset ? p0_vcfg_new_vl : p0_sys_rs2_val_i;
             end
 
             // -----------------------------------------------------------------
@@ -766,16 +843,20 @@ module fursoy_s1_csr
             begin : fp_retire_block
                 logic [4:0] eff_retire_fflags;
                 eff_retire_fflags = 5'd0;
-                if (retire_valid_i[0] && retire_fp_dest_valid_i[0] && !retire_exception_i) begin
+                if (retire_valid_i[0] && (retire_fp_dest_valid_i[0] || retire_is_fp_i[0]) && !retire_exception_i) begin
                     eff_retire_fflags = eff_retire_fflags | retire_fflags_i[0];
-                    mstatus_q[14:13]  <= 2'b11;
+                    if (retire_fp_dest_valid_i[0] || (retire_fflags_i[0] != 5'd0)) begin
+                        mstatus_q[14:13] <= 2'b11;
+                    end
                 end
-                if (retire_valid_i[1] && retire_fp_dest_valid_i[1] && !retire_exception_i) begin
+                if (retire_valid_i[1] && (retire_fp_dest_valid_i[1] || retire_is_fp_i[1]) && !retire_exception_i) begin
                     eff_retire_fflags = eff_retire_fflags | retire_fflags_i[1];
-                    mstatus_q[14:13]  <= 2'b11;
+                    if (retire_fp_dest_valid_i[1] || (retire_fflags_i[1] != 5'd0)) begin
+                        mstatus_q[14:13] <= 2'b11;
+                    end
                 end
-                if ((retire_valid_i[0] && retire_fp_dest_valid_i[0] && !retire_exception_i) ||
-                    (retire_valid_i[1] && retire_fp_dest_valid_i[1] && !retire_exception_i)) begin
+                if ((retire_valid_i[0] && (retire_fp_dest_valid_i[0] || retire_is_fp_i[0]) && !retire_exception_i) ||
+                    (retire_valid_i[1] && (retire_fp_dest_valid_i[1] || retire_is_fp_i[1]) && !retire_exception_i)) begin
                     fflags_q <= fflags_q | eff_retire_fflags;
                 end
             end
@@ -828,9 +909,8 @@ module fursoy_s1_csr
                     priv_mode_q  <= 2'b01;        // privilege <= S
 
                     sys_redirect_valid_o  <= 1'b1;
-                    sys_redirect_target_o <= (stvec_q[1:0] == 2'b01)
-                                           ? ({stvec_q[63:2], 2'b00} + {57'd0, retire_exc_cause_i, 2'b00})
-                                           : {stvec_q[63:2], 2'b00};
+                    // RISC-V Privileged Spec: synchronous exceptions always vector to BASE regardless of xtvec.MODE
+                    sys_redirect_target_o <= {stvec_q[63:2], 2'b00};
                     sys_flush_valid_o     <= 1'b1;
                 end else begin
                     mepc_q   <= retire_exc_pc_i;
@@ -851,9 +931,8 @@ module fursoy_s1_csr
                     priv_mode_q      <= 2'b11;        // privilege <= M
 
                     sys_redirect_valid_o  <= 1'b1;
-                    sys_redirect_target_o <= (mtvec_q[1:0] == 2'b01)
-                                           ? ({mtvec_q[63:2], 2'b00} + {57'd0, retire_exc_cause_i, 2'b00})
-                                           : {mtvec_q[63:2], 2'b00};
+                    // RISC-V Privileged Spec: synchronous exceptions always vector to BASE regardless of xtvec.MODE
+                    sys_redirect_target_o <= {mtvec_q[63:2], 2'b00};
                     sys_flush_valid_o     <= 1'b1;
                 end
                 pending_sys_q.valid <= 1'b0;
@@ -872,7 +951,7 @@ module fursoy_s1_csr
 
                             sys_redirect_valid_o  <= 1'b1;
                             sys_redirect_target_o <= (stvec_q[1:0] == 2'b01)
-                                                   ? ({stvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                                   ? ({stvec_q[63:2], 2'b00} + {58'd0, irq_candidate_cause[3:0], 2'b00})
                                                    : {stvec_q[63:2], 2'b00};
                             sys_flush_valid_o     <= 1'b1;
                         end else begin
@@ -886,7 +965,7 @@ module fursoy_s1_csr
 
                             sys_redirect_valid_o  <= 1'b1;
                             sys_redirect_target_o <= (mtvec_q[1:0] == 2'b01)
-                                                   ? ({mtvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                                   ? ({mtvec_q[63:2], 2'b00} + {58'd0, irq_candidate_cause[3:0], 2'b00})
                                                    : {mtvec_q[63:2], 2'b00};
                             sys_flush_valid_o     <= 1'b1;
                         end
@@ -909,7 +988,7 @@ module fursoy_s1_csr
 
                     sys_redirect_valid_o  <= 1'b1;
                     sys_redirect_target_o <= (stvec_q[1:0] == 2'b01)
-                                           ? ({stvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                           ? ({stvec_q[63:2], 2'b00} + {58'd0, irq_candidate_cause[3:0], 2'b00})
                                            : {stvec_q[63:2], 2'b00};
                     sys_flush_valid_o     <= 1'b1;
                 end else begin
@@ -923,7 +1002,7 @@ module fursoy_s1_csr
 
                     sys_redirect_valid_o  <= 1'b1;
                     sys_redirect_target_o <= (mtvec_q[1:0] == 2'b01)
-                                           ? ({mtvec_q[63:2], 2'b00} + {57'd0, irq_candidate_cause[3:0], 2'b00})
+                                           ? ({mtvec_q[63:2], 2'b00} + {58'd0, irq_candidate_cause[3:0], 2'b00})
                                            : {mtvec_q[63:2], 2'b00};
                     sys_flush_valid_o     <= 1'b1;
                 end
@@ -995,11 +1074,17 @@ module fursoy_s1_csr
                                 12'h002: begin // frm
                                     frm_q <= pending_sys_q.write_val[2:0];
                                     mstatus_q[14:13] <= 2'b11; // Dirty
+                                    sys_redirect_valid_o  <= 1'b1;
+                                    sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                                    sys_flush_valid_o     <= 1'b1;
                                 end
                                 12'h003: begin // fcsr
                                     fflags_q <= pending_sys_q.write_val[4:0];
                                     frm_q    <= pending_sys_q.write_val[7:5];
                                     mstatus_q[14:13] <= 2'b11; // Dirty
+                                    sys_redirect_valid_o  <= 1'b1;
+                                    sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                                    sys_flush_valid_o     <= 1'b1;
                                 end
 
                                 // Milestone 8 Phase D Vector CSRs
@@ -1093,6 +1178,15 @@ module fursoy_s1_csr
                                 end
                             endcase
                         end
+                    end
+
+                    VEC_VSETVLI, VEC_VSETVL, VEC_VSETIVLI: begin
+                        vtype_q         <= pending_sys_q.write_val;
+                        vl_q            <= pending_sys_q.rs2_val;
+                        mstatus_q[10:9] <= 2'b11; // VS Dirty
+                        sys_redirect_valid_o  <= 1'b1;
+                        sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                        sys_flush_valid_o     <= 1'b1;
                     end
 
                     default: ;

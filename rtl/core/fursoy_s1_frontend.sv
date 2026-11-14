@@ -886,6 +886,8 @@ module fursoy_s1_frontend
 
     fursoy_s1_decode u_decode (
         .priv_mode_i              (priv_mode_i),
+        .mstatus_fs_i             (mstatus_i[14:13]),
+        .mstatus_vs_i             (mstatus_i[10:9]),
         .in0_valid_i              (fq_pop0_valid),
         .in0_entry_i              (fq_pop0_entry),
 

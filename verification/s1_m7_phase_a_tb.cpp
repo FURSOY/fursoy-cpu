@@ -61,7 +61,7 @@ constexpr uint8_t MEM_FENCE = 94;
 
 inline uint8_t calc_rob_dist(uint8_t idx, uint8_t head) {
     if (idx >= head) return idx - head;
-    return (48 - head) + idx;
+    return (128 - head) + idx;
 }
 
 inline uint8_t get_memiq_uop_class(const VlWide<6>& uop) {
@@ -112,7 +112,7 @@ inline GoldenDecision evaluate_golden_issue(
 
     // Cand0: oldest ready entry by rob_dist
     int c0 = -1;
-    uint8_t d0 = 63;
+    uint8_t d0 = 255;
     for (int i = 0; i < 16; i++) {
         if (ready[i]) {
             uint8_t d = calc_rob_dist(entries[i].rob_idx, rob_head);
@@ -125,7 +125,7 @@ inline GoldenDecision evaluate_golden_issue(
 
     // Cand1: second-oldest ready entry
     int c1 = -1;
-    uint8_t d1 = 63;
+    uint8_t d1 = 255;
     if (c0 != -1) {
         for (int i = 0; i < 16; i++) {
             if (i != c0 && ready[i]) {
@@ -827,7 +827,7 @@ SeedTortureResult run_seed_torture(PhaseATB& tb, uint32_t seed, uint64_t target_
 
     while (accepted_ops < target_ops) {
         // 1. Advance ROB head randomly
-        if (rng() % 15 == 0) rob_head = (rob_head + 1) % 48;
+        if (rng() % 15 == 0) rob_head = (rob_head + 1) % 128;
 
         // 2. Randomly wakeup operands (simulating WB0..WB3 writebacks)
         for (int i = 0; i < 16; i++) {
@@ -840,7 +840,7 @@ SeedTortureResult run_seed_torture(PhaseATB& tb, uint32_t seed, uint64_t target_
         bool port2_busy = (rng() % 10 < 2); // 20% busy
         bool port3_busy = (rng() % 10 < 2); // 20% busy
         bool do_recover = (rng() % 200 == 0);
-        uint8_t rec_idx = rng() % 48;
+        uint8_t rec_idx = rng() % 128;
 
         // 4. Evaluate golden decision
         GoldenDecision g_dec = evaluate_golden_issue(
@@ -868,7 +868,7 @@ SeedTortureResult run_seed_torture(PhaseATB& tb, uint32_t seed, uint64_t target_
                     else if (r < 93) golden[i].uop_class = UOP_AMO;
                     else golden[i].uop_class = UOP_FENCE;
 
-                    golden[i].rob_idx = (rob_head + (rng() % 30)) % 48;
+                    golden[i].rob_idx = (rob_head + (rng() % 30)) % 128;
                     golden[i].prs1_ready = (rng() % 2 == 0);
                 }
             }
