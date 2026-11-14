@@ -492,8 +492,8 @@ Following architectural review, the previous cycle recovery estimate of 1.25M–
 3. **Hardware Deallocation of False BTB Hits:**
    * In an in-order pipeline, a false BTB hit incurs a 1-cycle redirect penalty. Without deallocation, an aliased entry would mispredict on every execution of that non-control instruction.
    * Adding a single-bit deallocation strobe (`valid <= 0`) on `commit_fire` cleanly resolves the collision without requiring complex multi-tag structures.
-4. **Extensibility toward Future Out-of-Order Fursoy Core:**
+4. **Extensibility toward Out-of-Order Fursoy Core:**
    * The decoupled Stage-F lookup and Stage-E resolution interfaces establish a standardized **Branch Prediction Service Interface**.
-   * When Fursoy transitions to a deeper 4→8 core superscalar or out-of-order pipeline, the BPU can be replaced with an advanced decoupled TAGE / Perceptron engine without altering the pipeline control contracts, exception models, or memory interfaces.
+   * When transitioning to an out-of-order pipeline, the BPU can be replaced with an advanced decoupled TAGE / Perceptron engine without altering the pipeline control contracts, exception models, or memory interfaces.
 
 ---

@@ -4,7 +4,7 @@
     #address-cells = <2>;
     #size-cells = <2>;
     compatible = "fursoy,slice1-soc", "fursoy,fursoy-s1";
-    model = "Fursoy Slice-1 Out-of-Order Server SoC";
+    model = "Fursoy Slice-1 Out-of-Order RISC-V SoC";
 
     cpus {
         #address-cells = <1>;

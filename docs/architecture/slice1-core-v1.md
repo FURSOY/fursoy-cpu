@@ -9,7 +9,7 @@
 
 ## 1. Architectural Scope & Design Discipline
 
-Fursoy Slice-1 is a clean-slate 64-bit RISC-V out-of-order processor core designed as the foundational execution engine for a multi-core, Linux-capable server processor family.
+Fursoy Slice-1 is a clean-slate 64-bit single-core RISC-V out-of-order processor designed as a Linux-capable execution engine with an extensible external cache-coherence boundary.
 
 The Slice-1 microarchitecture addresses the empirical bottlenecks measured in Slice-0:
 1. **Severing the In-Order Single-Issue Ceiling**: Replaces the monolithic 2-stage (Fetch | Execute) pipeline with a decoupled, out-of-order execution core featuring 2-wide decode/rename/dispatch, 3 dedicated execution ports (maximum 3 uops/cycle issue), and 2-wide in-order retirement.
@@ -179,7 +179,7 @@ Port 1 contains variable-latency execution resources whose completion cycles may
 ### 2.7 Protocol-Neutral Coherent Cache Boundary
 The L1D cache interfaces to the external memory subsystem via a **protocol-neutral coherent caching-agent boundary**:
 - **Acquire Channel**: Core requests shared or exclusive cache line ownership from interconnect/L2.
-- **Probe Channel**: Interconnect queries and/or invalidates local cached lines to maintain multi-core coherency.
+- **Probe Channel**: Interconnect queries and/or invalidates local cached lines to maintain external cache coherency.
 - **Release Channel**: Core evicts dirty lines from WBB to L2/interconnect and acknowledges probe completion.
 - **Grant Channel**: Interconnect returns refill data and grants ownership to MSHR.
 - **Reservation Invalidation**: Coherent invalidations to a line holding an active LR/SC reservation clear the local reservation flag.

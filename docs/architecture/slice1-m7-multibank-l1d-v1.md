@@ -15,7 +15,7 @@
 - Milestone 6 Freeze Commit: `5b4640fb61d66166625894fe9160ade99c41d538`
 - Combined Frozen M1–M6 Production RTL Manifest SHA-256 (31 files):  
   `65874197b14e386f80023e9419650d4ec180134d7db02937a7e6ca7dba0d1e42`
-**Reference Documents:** `CPU_MASTER_PLAN.md`, `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`, `docs/architecture/slice1-m6-frontend-opt-v1.md`.
+**Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`, `docs/architecture/slice1-m6-frontend-opt-v1.md`.
 
 ---
 
@@ -34,7 +34,7 @@ Specifically, in the frozen Milestone 5/6 baseline:
 1. **Single-AGU Memory Bottleneck**: The backend features two integer ALUs (Port 0 and Port 1), but **only a single Address Generation Unit (AGU) on Port 2**. While the core can dispatch 2 instructions per cycle and issue up to 2 integer operations concurrently, it can issue at most **one memory operation (load or store) per cycle**.
 2. **Single-Port L1D Contention**: The 16 KiB 4-way L1 Data Cache possesses a **single 64-bit access port**. Demand loads issued from Port 2 AGU and committed stores draining from the Store Queue (SQ16) contend directly for the same cache tag and data arrays, forcing demand loads to stall behind draining stores or vice versa.
 3. **Memory Stall Exposure**: In memory-dense kernels (such as `pointer_chasing`, `stream_memcpy`, and `raw_stress`), memory-related stalls (`C_mem_stall`) and rename backpressure on MemIQ account for **14.5% to 17.2% of total execution cycles** `[MEASURED FURSOY RTL RESULT]`.
-4. **Lack of Coherent Multi-Core Interface**: The existing external bus interface consists of simple independent read (MSHR refill) and write (WBB eviction) channels without hardware coherence support (snooping, invalidation, or shared line management), preventing scaling to multi-core clusters.
+4. **Lack of Coherent Snoop Interface**: The existing external bus interface consists of simple independent read (MSHR refill) and write (WBB eviction) channels without hardware snoop/invalidation hooks.
 
 The objective of **Milestone 7 (M7)** is to deliver a **Multi-Banked L1D, Dual-AGU & Coherent Interconnect Integration Architecture**:
 - Introduce a second AGU (**Port 3 AGU1**, dedicated to loads) alongside **Port 2 AGU0** (loads, stores, atomics), enabling **2 memory operations to issue concurrently**.
@@ -447,7 +447,7 @@ The speculative execution safety invariant proven in Milestone 5 is strictly pre
 ## 8. Coherent Interconnect / Snoop Interface & Line Invalidation Protocol
 
 ### 8.1 Coherent Caching-Agent Boundary Specification
-To prepare the Fursoy core for multi-core scaling, Milestone 7 provides a protocol-neutral **Coherent Caching-Agent Interface** compatible with TileLink-C / AXI-ACE coherence hubs:
+Milestone 7 provides a protocol-neutral **Coherent Caching-Agent Interface** compatible with TileLink-C / AXI-ACE style snoop/invalidation buses:
 
 ```
 +===================================================================================================+
@@ -620,4 +620,4 @@ Milestone 7 implementation will be considered complete and eligible for freezing
 
 ## 12. Conclusion & Specification Sign-Off
 
-Milestone 7 architectural specification v1.1 delivers a mathematically sound, microarchitecturally complete blueprint for transitioning the Fursoy Slice-1 core from a single-AGU bottleneck to a dual-issue, 4-banked memory execution engine. By doubling memory issue bandwidth, interleaving cache data across 4 independent 64-bit banks with a 2-cycle multi-beat refill sequence, multi-porting load/store disambiguation CAMs, and providing a protocol-neutral coherent snoop interface, Milestone 7 directly addresses the primary execution stall source identified in Milestone 6 profiling while preparing the processor for multi-core scaling.
+Milestone 7 architectural specification v1.1 delivers the design blueprint for transitioning the Fursoy Slice-1 core from a single-AGU bottleneck to a dual-issue, banked memory execution engine. By doubling memory issue bandwidth, interleaving cache data across independent 64-bit banks with a 2-cycle multi-beat refill sequence, multi-porting load/store disambiguation CAMs, and providing a protocol-neutral coherent snoop interface, Milestone 7 directly addresses the primary execution stall source identified in Milestone 6 profiling.

@@ -36,7 +36,7 @@ The objective of the Store Refill Buffer (SRB) is to decouple off-core DRAM stor
 The initial SRB-v1 architecture proposal underwent independent architectural review and
 received 3 P0 and 4 P1 findings. Those findings were corrected; subsequent independent
 review accepted the implemented SRB-v1 milestone, which is now the frozen baseline
-recorded in `STATE.md`.
+recorded in `results/perf-srb-s0.json`.
 
 This document incorporates all mandatory architectural corrections:
 1. **P0-1 (Atomic Victim Invalidation)**: Selected victim way invalidated in L1D array at the exact capture edge; way is permanently unhittable from capture through install.

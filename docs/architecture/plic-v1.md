@@ -2,8 +2,7 @@
 
 Status: PLIC architecture + RTL independently reviewed — ACCEPT AND FREEZE.
 This contract defines the minimal, correctness-first PLIC specification for the single-core
-Fursoy RV64 platform (Slice-0), while establishing a clean, standard-compliant foundation
-for future multicore scaling (4 to 8 cores). The reviewed and frozen M/S/U Bare privilege
+Fursoy RV64 platform, using the standard RISC-V context layout. The reviewed and frozen M/S/U Bare privilege
 architecture (`s-mode-bare-v1.md`), Sv39 MMU architecture (`sv39-mmu-v1.md`), and PMP
 architecture (`pmp-v1.md`) serve as the compatibility baseline.
 
@@ -26,16 +25,15 @@ Throughout this specification, provisions are categorized as:
   where explicit implementation choices are permitted by the specification.
 - **Choice**: A project design decision for the Fursoy platform among architecturally legal
   options.
-- **Simplification**: A correctness-first restriction tailored for the single-hart Slice-0
-  baseline that must not compromise future multicore server expansion.
+- **Simplification**: A correctness-first restriction tailored for the single-hart baseline.
 
-### 1.2 Distinctions and roadmap
+### 1.2 Scope Distinctions
 
-| Feature Dimension | Standard RISC-V PLIC Baseline | Fursoy v1 Choice (Slice-0) | Deferred Multicore / Server Scaling |
+| Feature Dimension | Standard RISC-V PLIC Baseline | Fursoy v1 Choice | Extended Scope |
 |---|---|---|---|
-| **Max Interrupt Sources** | Up to 1023 sources (IDs 1..1023) | **31 sources** (IDs 1..31) | 63 or 127 sources for server peripherals |
+| **Max Interrupt Sources** | Up to 1023 sources (IDs 1..1023) | **31 sources** (IDs 1..31) | Additional external sources |
 | **Source Triggering** | Level or Edge | **Level-sensitive only** | Configurable Edge / Level gateways |
-| **Implemented Target Contexts** | Up to 15,872 contexts | **2 contexts** (Hart 0 M, Hart 0 S) | Hart $H$ M ($2H$) and S ($2H+1$) for 4→8 cores (platform convention) |
+| **Implemented Target Contexts** | Up to 15,872 contexts | **2 contexts** (Hart 0 M, Hart 0 S) | Standard $2H$ / $2H+1$ stride convention |
 | **Priority Width** | 1 to 32 bits (typically 3 or 7) | **3 bits** (priorities 0..7) | Preserved at 3 bits (8 priority levels) |
 | **Priority Threshold Width** | Matches priority width | **3 bits** (thresholds 0..7) | Preserved at 3 bits |
 | **MMIO Access Width** | 32-bit naturally aligned | **Strict 32-bit aligned only** | 32-bit aligned (64-bit optional on interconnect) |
@@ -107,13 +105,12 @@ Fursoy v1 implements **2 target contexts** for the single Slice-0 core (Hart 0):
 - **Context 0**: Hart 0 Machine-mode (M-mode) external interrupt context.
 - **Context 1**: Hart 0 Supervisor-mode (S-mode) external interrupt context.
 
-**Fursoy Platform Convention for Multicore Expansion**:
+**Fursoy Platform Context Stride Convention**:
 The RISC-V PLIC specification does not mandate a universal context numbering scheme across all
 implementations. For the Fursoy platform, the numbering convention is fixed as:
 $$\text{Context Index for Hart } H, \text{ Mode } M = \begin{cases} 2H & \text{for M-mode} \\ 2H + 1 & \text{for S-mode} \end{cases}$$
-This aligns with common RISC-V server platform convention (e.g., QEMU virt, SiFive FU540/FU740).
-When expanding to 4 cores (Harts 0..3), Contexts 0..7 are defined; for 8 cores (Harts 0..7),
-Contexts 0..15 are defined. Slice-0 physically instantiates Contexts 0 and 1 while preserving
+This aligns with standard RISC-V platform convention (e.g., QEMU `virt`).
+Slice-0 and Slice-1 physically instantiate Contexts 0 and 1 for Hart 0 while preserving
 the linear stride in the MMIO layout.
 
 ### 3.2 Relationship to core MEIP and SEIP

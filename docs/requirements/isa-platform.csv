@@ -33,4 +33,4 @@ SRV-001,ECC-memory,project,G5,cache+memory,Define ECC granules and covered fault
 SRV-002,RAS-reporting,project,G5,ras+privilege,Inject error bursts; verify address/syndrome and interrupt delivery; no silent corruption; define recovery boundaries,planned,
 SRV-003,scrubbing,project,G7,memory,Inject retained errors under background scrub and demand traffic; fairness and bandwidth checks,planned,
 SRV-004,DMA-isolation,project,G7,iommu+soc,Freeze DMA trust model; test unauthorized mappings and invalidation races; fault reporting,planned,
-SRV-005,sustained-server-load,project,G7,system,HTTP/PostgreSQL/build manifests; tail latency and errors under fixed offered load; energy/work and 4-to-8 scaling,planned,
+SRV-005,sustained-system-load,project,G7,system,HTTP/PostgreSQL/build workloads; tail latency and errors under fixed offered load; sustained energy/work efficiency,planned,

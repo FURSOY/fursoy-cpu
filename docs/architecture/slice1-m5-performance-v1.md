@@ -12,7 +12,7 @@
 - M4 RTL Freeze Commit: `6755e713a197d205eac6ffc2af369f9932e35a02`
 - Documentation Normalization Commit: `3bb17d2ffda8910a2c7748cdfa3af8a6e27b7abd`
 - M1+M2+M3+M4 Combined RTL Manifest SHA-256: `a8dedc02b7138aedd32fbe0f67eb6d4513140a345b229ccf9a630acb3a42b554`
-**Reference Documents:** `CPU_MASTER_PLAN.md`, `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m2-backend-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m4-frontend-v1.md`
+**Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m2-backend-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m4-frontend-v1.md`
 
 ---
 
@@ -761,10 +761,9 @@ Following the stabilization of Milestone 5, the Fursoy core roadmap projects the
   - Evaluation of TAGE-family branch predictors under equal area budgets.
   - Next-line branch prefetching and predecode bit caching.
   - Return Address Stack depth expansion and speculative call-stack hardening.
-- **Milestone 7 (Multi-Banked L1D, Dual AGU & Coherent Interconnect Integration)**:
-  - Transition to dual AGU on Port 2 and Port 3 with 4-banked synonym-safe L1D.
-  - Integration of TileLink-C / ACE coherent caching-agent boundary.
-  - Shared multi-core L2 cache and broadcast snoop filter.
+- **Milestone 7 (Multi-Banked L1D, Dual AGU & Coherent Interconnect Boundary)**:
+  - Transition to dual AGU on Port 2 and Port 3 with multi-banked synonym-safe L1D.
+  - Integration of a protocol-neutral coherent caching-agent boundary.
 - **Milestone 8 (Standard Floating-Point & Vector Execution Extensions)**:
   - RV64F/D pipelined FMA units and dedicated Floating-Point Register File (FPRF).
   - RVV 1.0 vector processing unit (VPU) with decoupled vector issue queues.

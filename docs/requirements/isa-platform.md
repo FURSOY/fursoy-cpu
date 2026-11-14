@@ -3,9 +3,7 @@
 Tarih: 6 Eylül 2026. W02 özelliğe göre ilk izlenebilir gereksinim dökümü.
 Bu belge bir uyumluluk veya uygulanmış özellik beyanı değildir.
 
-Ürün yönü: tek soketli 4→8 çekirdek Linux sunucusu. [ADR-001](../decisions/001-server-target.md)
-ECC/RAS, DMA izolasyonu ve sürekli yük hedeflerini tanımlar. Bunlar ISA profilinden
-ayrı proje gereksinimleridir; SRV-001…005 satırlarında izlenir.
+ECC/RAS, DMA izolasyonu ve sürekli yük hedefleri platform satırlarında (`SRV-001…005`) izlenir.
 
 ## Hedef ve kaynak önceliği
 

@@ -25,14 +25,13 @@ The normative authority for the platform boot and SBI architecture defined in th
 Provisions throughout this document are categorized as:
 * **Required**: Mandatory behavior per RISC-V SBI, Privileged ISA, or Linux ABI standards.
 * **Choice**: A specific design decision for the Fursoy platform among legal architectural options.
-* **Simplification**: A minimal, correctness-first restriction for Slice-0 single-hart boot that
-  preserves a clean path for future multicore server expansion.
+* **Simplification**: A minimal, correctness-first restriction for Slice-0 single-hart boot.
 
-### 1.2 Boundary and Roadmap
+### 1.2 Scope Boundary
 
-| Dimension | Standard RV64 Linux Platform | Fursoy v1 Choice (Slice-0) | Deferred Multicore / Server Scaling |
+| Dimension | Standard RV64 Linux Platform | Fursoy v1 Choice (Slice-0) | Extended Scope (Slice-1 / Beyond v1) |
 |---|---|---|---|
-| **Hart Count** | 1 to 128+ harts | **Single hart (Hart 0)** | 4 to 8 harts (ADR-001) |
+| **Hart Count** | 1 to 128+ harts | **Single hart (Hart 0)** | Single hart (`fursoy_s1_core`) |
 | **ISA Baseline** | RV64GC (or RVA20/RVA22) | **RV64IMA + Zicsr + Zifencei** | RV64GC / RVA23 profile |
 | **Firmware Medium** | SPI Flash / Mask ROM / DRAM | **Direct RAM execution at `0x8000_0000`** | Dedicated Mask ROM / SPI boot flash |
 | **SBI Standard** | SBI v2.0+ (OpenSBI full) | **Minimal SBI v2.0 subset (Base, TIME, SRST, DBCN)** | Full OpenSBI with HSM, IPI, PMU, SUSP |

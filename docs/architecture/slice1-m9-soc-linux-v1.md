@@ -3,8 +3,7 @@
 **Document ID:** `docs/architecture/slice1-m9-soc-linux-v1.md`  
 **Status:** CANONICAL ARCHITECTURAL SPECIFICATION v1.1 (Incorporating Independent Architecture Review Remediations — Ready for Freeze)  
 **Target Core:** Fursoy Slice-1 (`fursoy_s1_core`, Single-Hart 2-Wide OoO RV64IMAFDV_Zba_Zbb_Zicsr_Zifencei_Sv39)  
-**Target SoC:** Fursoy Slice-1 SoC (`fursoy_s1_soc`, Single-Hart Server Infrastructure Platform)  
-**Master Plan Gate:** Gate G5 Final Exit Gate ("Full Single-Core Linux-Bootable Processor")  
+**Target SoC:** Fursoy Slice-1 SoC (`fursoy_s1_soc`, Single-Hart RISC-V Linux SoC Platform)
 
 **Predecessor Substrates & Frozen Baselines:**
 - **Milestone 1** (Verified & Frozen): PRF80, ROB48, FreeList48, SRAT/ARAT, 8 Checkpoints, Recovery Substrate.
@@ -19,7 +18,7 @@
 **Predecessor Freeze Commit:** `11a64ede257e98155ab7769f7b94b754980dd630`  
 **Combined Frozen M1–M8 Production RTL Manifest SHA-256 (40 files):**  
 `4d6fc54a6efb0d0deb94d4416926bd769c0783871499075f5de434959206d7cb`  
-**Reference Documents:** `CPU_MASTER_PLAN.md` (Sections 1, 2, 4.5, 9 Gate G5), `docs/architecture/slice1-core-v1.md`, `docs/architecture/platform-sbi-v1.md`, `docs/architecture/sv39-mmu-v1.md`, `docs/architecture/plic-v1.md`, `docs/architecture/pmp-v1.md`, `docs/architecture/s-mode-bare-v1.md`.
+**Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/platform-sbi-v1.md`, `docs/architecture/sv39-mmu-v1.md`, `docs/architecture/plic-v1.md`, `docs/architecture/pmp-v1.md`, `docs/architecture/s-mode-bare-v1.md`.
 
 ---
 
@@ -92,8 +91,8 @@ To maintain rigorous architectural discipline and avoid scope creep, the followi
 - Booting uncompressed 64-bit Linux kernel Image (Linux 6.6.50) with integrated BusyBox 1.36.1 initramfs to `/bin/sh` in Verilator.
 
 #### Strictly Out-of-Scope:
-- **Multi-Core Clustering & Hardware Coherent Interconnect**: Milestone 9 is strictly a **single-hart (Hart 0)** system integration milestone. Multi-core scaling (2→4→8 cores) and coherent L2/L3 cache hierarchies are deferred to Gate G7.
-- **Physical PPA Convergence (Gate G6)**: Deep sub-micron standard cell placement, CTS, SPEF parasitic extraction, and full-chip timing closure are reserved for Gate G6.
+- **Multi-Hart Clustering & Hardware Coherent Interconnect**: Milestone 9 is strictly a **single-hart (Hart 0)** system integration milestone (no coherent multi-hart interconnect or shared L2/L3 cache hierarchy).
+- **Full-Chip Physical Place-and-Route**: Deep sub-micron standard-cell placement, CTS, SPEF parasitic extraction, and full-chip signoff are out of scope for RTL closeout (standalone critical blocks are synthesized separately).
 - **Hardware AIA (APLIC / IMSIC)**: The platform utilizes standard RISC-V PLIC and CLINT controllers. Advanced Interrupt Architecture (AIA) is not required for RV64 Linux boot.
 - **PCIe Root Complex, NVMe, and VirtIO**: Mass storage is provided via an embedded CPIO initramfs; complex bus controller IP is excluded from the initial SoC baseline.
 - **Dynamic Branch Predictor Restructuring**: TAGE-Lite, RAS, and BTB geometries are frozen from Milestone 6 and will not be altered.
@@ -363,7 +362,7 @@ The system boots using an architectural device tree compiled with `dtc -I dts -O
     #address-cells = <2>;
     #size-cells = <2>;
     compatible = "fursoy,slice1-soc", "fursoy,fursoy-s1";
-    model = "Fursoy Slice-1 Out-of-Order Server SoC";
+    model = "Fursoy Slice-1 Out-of-Order RISC-V SoC";
 
     cpus {
         #address-cells = <1>;

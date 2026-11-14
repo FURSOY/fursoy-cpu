@@ -28,15 +28,14 @@ Provisions throughout this specification are categorized as:
 - **Required**: Mandatory standard RISC-V RV64A behavior. RTL has no project freedom except
   where explicit implementation choices are permitted by the specification.
 - **Choice**: A project design decision for the Fursoy platform among architecturally legal options.
-- **Simplification**: A correctness-first restriction tailored for the single-hart Slice-0
-  baseline that must not compromise future multicore server expansion.
+- **Simplification**: A correctness-first restriction tailored for the single-hart Slice-0 baseline.
 
-### 1.2 Distinctions and roadmap
+### 1.2 Scope Distinctions
 
-| Feature Dimension | Standard RISC-V RV64A Baseline | Fursoy v1 Choice (Slice-0) | Deferred Multicore / Server Scaling |
+| Feature Dimension | Standard RISC-V RV64A Baseline | Fursoy v1 Choice (Slice-0) | Slice-1 Evolution |
 |---|---|---|---|
 | **Supported Instructions** | LR/SC and 9 AMOs in `.W` (32-bit) and `.D` (64-bit) | **Full RV64A: 22 instructions** | Preserved |
-| **Hart Count** | 1 or more harts | **Single Hart (Hart 0)** | 4 to 8 harts |
+| **Hart Count** | 1 or more harts | **Single Hart (Hart 0)** | Single Hart (`fursoy_s1_core`) |
 | **Memory System** | Weakly ordered (RVWMO) | **In-order, single-outstanding serialized bus** | Coherent L1/L2 caches with MESI/MOESI |
 | **AMO Execution** | Atomic bus transaction or coherent cache line locking | **Internal serialized Read-Modify-Write sequence** | Coherent cache line exclusivity or AXI5/TileLink atomic transactions |
 | **SC Success Matching** | Exact address and matching access size | **Exact physical address (`pa[55:0]`) and exact size (`res_size`)** | Preserved |
@@ -118,7 +117,7 @@ The encoding format is standard R-type with atomic ordering bits:
 **Rationale**:
 1. **Virtual Aliasing**: Multiple distinct virtual addresses ($VA_1 \neq VA_2$) may map to the same physical address ($PA$). Tracking PA guarantees that an intervening store through an alias address $VA_2$ correctly invalidates a reservation registered through $VA_1$.
 2. **Translation Context Modifications**: Virtual-to-physical mappings can change dynamically via page table updates or ASID/SATP switches. A VA-based reservation would become stale or dissociated from physical memory.
-3. **Future Multicore Scaling**: In multicore systems with coherent caches and snoop invalidation, coherence traffic operates entirely in physical address space. Using PA now establishes a forward-compatible reservation model.
+3. **Coherent Physical Address Space**: External snoop/invalidation buses operate in physical address space; tracking PA keeps the reservation model clean and alias-free.
 
 ### 3.2 Reservation state architecture: separation of matching and invalidation
 
@@ -423,9 +422,9 @@ The Slice-0 memory interface (`dmem_req_*`, `dmem_rsp_*`) remains a single-outst
 - **SC**: Checks alignment, translation, and PMP. Evaluates `reservation_matches`. If matched, issues a store and writes `0` to `rd`. If not matched, suppresses the store request and writes `1` to `rd`.
 - **AMO**: Executes as a serialized 2-phase sequence (`READ` followed by `WRITE`) managed by the internal LSU controller. Exclusivity is maintained because the core is the sole bus master on Slice-0.
 
-### 8.2 Multicore scaling requirements
+### 8.2 Coherent Cache / External Bus Considerations
 
-In future 4-to-8 core configurations:
+If extending to coherent cached or multi-hart topologies:
 1. **Coherent L1 D-Cache Line Locking**: AMOs will execute in L1 cache by acquiring exclusive line ownership (M state in MESI) and completing the read-modify-write atomically before releasing the line.
 2. **Interconnect Atomics**: For uncached MMIO regions, the bus interface will support atomic read-modify-write commands (e.g., AXI5 Atomic Transactions or TileLink Atomic operations).
 3. **Multi-Hart SNOOP Invalidation**: Stores from Hart $A$ will snoop and invalidate matching reservations held by Hart $B$.

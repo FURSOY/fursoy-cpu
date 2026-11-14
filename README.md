@@ -2,7 +2,7 @@
 
 **A 64-bit Out-of-Order Superscalar RISC-V Processor (`RV64IMAFDV + Zba + Zbb + Zicsr + Zifencei`) booting mainline Linux 6.6.50 and BusyBox userspace under Sv39 virtual memory.**
 
-Fursoy is a clean-slate SystemVerilog RISC-V processor project targeting a single-socket 4→8 core server SoC ([ADR-001](docs/decisions/001-server-target.md), [master plan](CPU_MASTER_PLAN.md)). **Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`)** delivers the verified single-core out-of-order superscalar processor with Sv39 demand paging, machine/supervisor/user privilege separation, cycle-exact hardware performance telemetry, and 500 MHz Nangate 45nm standard-cell synthesis closure across 8 core functional blocks.
+Fursoy Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`) is a clean-slate 64-bit out-of-order superscalar RISC-V processor implemented in SystemVerilog, featuring Sv39 demand paging, machine/supervisor/user privilege separation, cycle-exact hardware performance telemetry, and 500 MHz Nangate 45nm standard-cell synthesis closure across 8 core functional blocks.
 
 ---
 
@@ -48,11 +48,10 @@ Evaluated standalone across 8 core functional blocks using **Yosys 0.33** + **sv
 
 ## Linux 6.6.50 Boot & Single-Owner CPI Telemetry
 
-The Milestone 9 Gate G5 closeout (`tools/run_s1_m9_closeout.py`, saved in [`results/s1-m9-closeout.json`](results/s1-m9-closeout.json)) boots mainline **Linux 6.6.50** in Verilator with zero kernel panics, zero oopses, zero access faults, and **0** CPI conservation errors across **89,861,075** simulated cycles (`76,236,390` retired instructions, `2,227,761` U-mode commits, `2,255` demand page faults / `1,027` U-mode, `IPC = 0.84838`):
+The Milestone 9 closeout (`tools/run_s1_m9_closeout.py`, saved in [`results/s1-m9-closeout.json`](results/s1-m9-closeout.json)) boots mainline **Linux 6.6.50** in Verilator with zero kernel panics, zero oopses, zero access faults, and **0** CPI conservation errors across **89,861,075** simulated cycles (`76,236,390` retired instructions, `2,227,761` U-mode commits, `2,255` demand page faults / `1,027` U-mode, `IPC = 0.84838`):
 
 ```text
 [    0.000000] Linux version 6.6.50 ... (riscv64-linux-gnu-gcc 13.3.0)
-[    0.000000] Machine model: Fursoy Slice-1 Out-of-Order Server SoC
 [    0.000000] SBI specification v2.0 detected
 [    0.000000] SBI implementation ID=0xf00501 Version=0x1
 [    0.000000] earlycon: uart8250 at MMIO32 0x0000000010000000 (options '')

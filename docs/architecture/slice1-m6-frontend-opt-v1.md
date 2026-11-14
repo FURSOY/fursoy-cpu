@@ -13,7 +13,7 @@
 - Milestone 5 Freeze Commit: `b07e71ec168fb9073c1dff039578ae6ebcecf263`
 - Combined Frozen M1+M2+M3+M4+M5 Production RTL Manifest SHA-256 (31 files):  
   `e298467c8eb6476270a21dc2414c7b1afa87697036c37e99ca1c90f7372926fb`
-**Reference Documents:** `CPU_MASTER_PLAN.md`, `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m4-frontend-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`.
+**Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m4-frontend-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`.
 
 ---
 
@@ -260,7 +260,7 @@ The following candidate mechanisms were rigorously evaluated and **rejected or d
 3. **Decoded Op-Cache / Loop Stream Buffer (DEFERRED to Family C)**:
    - *Technical Rationale*: An Op-Cache requires complex multi-ported SRAM arrays, instruction boundary tagging, and dual-source rename multiplexing. M5 Phase B2 already expanded the Fetch Queue to 16 entries (FQ16), which provides up to 8 cycles of 2-wide decode buffering `[ANALYTICAL STRUCTURAL BOUND]`. An Op-Cache would destabilize the frozen frontend/rename interface.
 4. **Wider Frontend (3-Wide or 4-Wide Decode) (REJECTED)**:
-   - *Technical Rationale*: Core width is frozen at 2-wide decode / rename / dispatch / commit by project charter (`CPU_MASTER_PLAN.md`). Core widening causes an $O(W^2)$ explosion in rename dependency comparators and PRF read ports `[ANALYTICAL STRUCTURAL BOUND]`.
+   - *Technical Rationale*: Core width is frozen at 2-wide decode / rename / dispatch / commit. Core widening causes an $O(W^2)$ explosion in rename dependency comparators and PRF read ports `[ANALYTICAL STRUCTURAL BOUND]`.
 
 ---
 
@@ -673,10 +673,9 @@ Milestone 6 shall be declared **FROZEN** only when all of the following criteria
 ## 12. Roadmap to Milestones 7 & 8
 
 Following the stabilization and freeze of Milestone 6, the Fursoy core roadmap projects the following major architectural milestones:
-- **Milestone 7 (Multi-Banked L1D, Dual AGU & Coherent Interconnect Integration)**:
-  - Transition to dual AGU on Port 2 and Port 3 with 4-banked synonym-safe L1D.
-  - Integration of TileLink-C / ACE coherent caching-agent boundary.
-  - Shared multi-core L2 cache and broadcast snoop filter.
+- **Milestone 7 (Multi-Banked L1D, Dual AGU & Coherent Interconnect Boundary)**:
+  - Transition to dual AGU on Port 2 and Port 3 with multi-banked synonym-safe L1D.
+  - Integration of a protocol-neutral coherent caching-agent boundary.
 - **Milestone 8 (Standard Floating-Point & Vector Execution Extensions)**:
   - RV64F/D pipelined FMA units and dedicated Floating-Point Register File (FPRF).
   - RVV 1.0 vector processing unit (VPU) with decoupled vector issue queues.

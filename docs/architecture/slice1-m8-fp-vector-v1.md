@@ -16,7 +16,7 @@
 - Milestone 7 Freeze Commit: `8b288b4839d1ea347f451f6c0117f5e445160e83`
 - Combined Frozen M1–M7 Production RTL Manifest SHA-256 (31 files):  
   `30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003`
-**Reference Documents:** `CPU_MASTER_PLAN.md` (Sections 2, 4.4), `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`, `docs/architecture/slice1-m6-frontend-opt-v1.md`, `docs/architecture/slice1-m7-multibank-l1d-v1.md`.
+**Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`, `docs/architecture/slice1-m6-frontend-opt-v1.md`, `docs/architecture/slice1-m7-multibank-l1d-v1.md`.
 
 ---
 
@@ -86,7 +86,7 @@ To maintain high PPA quality, prevent unverified timing regressions, and adhere 
 
 #### Strictly Out-of-Scope:
 - **Core Dispatch / Retirement Width Expansion**: The core frontend and retirement remain strictly **2-wide**. No 3-wide or 4-wide dispatch/commit logic is introduced.
-- **Unified Int/FP Physical Register File**: Merging integer and floating-point registers into a single monolithic PRF is **strictly rejected** (per `CPU_MASTER_PLAN.md` §4.4) due to port multiplication and wire routing congestion.
+- **Unified Int/FP Physical Register File**: Merging integer and floating-point registers into a single monolithic PRF is **strictly rejected** due to port multiplication and wire routing congestion.
 - **Unpipelined FMA**: Multi-cycle iterative FMA is prohibited; the high-performance design requires fully pipelined 1-result/cycle FMA throughput.
 - **Flushing Subnormals to Zero (FTZ / DAZ)**: Non-compliant FTZ/DAZ modes are prohibited for standard RV64FD compliance. Full IEEE subnormal support is mandatory.
 - **Full RVV 1.0 RTL Implementation in M8 Phase A–C**: Phase A–C deliver production scalar RV64FD RTL. Phase D establishes the formal architectural and interface contract for RVV 1.0; vector physical execution RTL is staged following scalar freeze.
@@ -129,7 +129,7 @@ Milestone 8 directly interfaces with the frozen Milestone 1 through 7 production
 
 ## 3. Computational Workload & Floating-Point Bottleneck Audit
 
-In accordance with `CPU_MASTER_PLAN.md` §3 and §4.4, processor performance is evaluated across numerical, scientific, and enterprise server workloads:
+Processor floating-point and vector performance is evaluated across numerical, scientific, and mixed-compute workloads:
 
 | Workload Domain | Canonical Examples | Key Bottlenecks in M7 Baseline | M8 Architectural Remedy |
 |---|---|---|---|
