@@ -138,6 +138,11 @@ module fursoy_s1_itlb
 
     wire base_hit = |base_way_hit;
 
+    // Deferred PLRU hit-update state (see sequential block below).
+    logic       plru_upd_q;
+    logic [3:0] plru_set_q;
+    logic [1:0] plru_way_q;
+
     // =========================================================================
     // 2. Superpage Fully-Associative CAM (8 Entries: 2 MiB / 1 GiB)
     // =========================================================================
@@ -390,10 +395,26 @@ module fursoy_s1_itlb
                 end
             end
 
-            // Update Tree-PLRU on Base TLB Hit
-            if (trans_req_valid_i && satp_mode_sv39 && base_hit) begin
-                base_plru[base_set] <= plru_update(base_plru[base_set], base_hit_way);
+            // Deferred Tree-PLRU update from the previous cycle's Base TLB hit
+            // (PPA Stage 1: registered so the VA tag compare does not drive the
+            // PLRU state flops in the same cycle). Kept last so it retains the
+            // original priority over a same-cycle refill PLRU update.
+            if (plru_upd_q) begin
+                base_plru[plru_set_q] <= plru_update(base_plru[plru_set_q], plru_way_q);
             end
+        end
+    end
+
+    // Capture registers for the deferred PLRU hit update.
+    always_ff @(posedge clk_i) begin
+        if (rst_i) begin
+            plru_upd_q <= 1'b0;
+            plru_set_q <= '0;
+            plru_way_q <= '0;
+        end else begin
+            plru_upd_q <= trans_req_valid_i && satp_mode_sv39 && base_hit;
+            plru_set_q <= base_set;
+            plru_way_q <= base_hit_way;
         end
     end
 

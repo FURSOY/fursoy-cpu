@@ -42,6 +42,10 @@ ACCEPTED_RTL_MANIFEST_SHA256S = {
     "53741012bd63803978aca787b91780f4e3d3a3271ba3ecd808225575c1e0fa52",  # M9 Phase D (31-file manifest)
     "7c7b86ccfce14735c8bdf985cf7c07682b36b41cbdd5eabd15c1b9a795883167",  # M9 Closeout (40-file manifest)
     "ced10f73147edcafe442edf22406aa0a3eafd4dba013b6b8d45524d25c1acea3",  # M9 Closeout (31-file manifest)
+    "8297a6370982ee81b02177fdd88f060bae09f055034ed73aa414bcc99061f6d8",  # Stage 3 Pre-CSR-fix (40-file manifest)
+    "1487b2312db2996d3ef0fa384f304e610301641a315775460457ddcea86f5969",  # Stage 3 Pre-CSR-fix (34-file manifest)
+    "bf5e9b7bced04d4ad464144e959378a55166129cb0ab5986efc1d3ed58641291",  # Stage 3 Single-Core Closure Final (40-file manifest)
+    "a8c15faf4692d45393e06ddb3bcb12b68d4a04f326a71c1de242627175c99ed2",  # Stage 3 Single-Core Closure Final (34-file manifest)
 }
 SPEC_DOCUMENT = "docs/architecture/slice1-m6-frontend-opt-v1.md"
 SPEC_VERSION = "1.1"

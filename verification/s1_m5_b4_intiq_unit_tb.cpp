@@ -75,15 +75,15 @@ struct IntIQTestUop {
 
 inline uint8_t calc_rob_dist(uint8_t idx, uint8_t head) {
     if (idx >= head) return idx - head;
-    return (48 - head) + idx;
+    return (128 - head) + idx;
 }
 
-// Packed struct field accessors for VlWide<12> iq_entry_t (375 bits total with M8 fields)
+// Packed struct field accessors for VlWide<12> iq_entry_t (379 bits total with Stage 3 widths)
 inline uint8_t get_uop_rob_idx(const VlWide<12>& uop) {
-    return (uop[8] >> 12) & 0x3F;
+    return (uop[8] >> 12) & 0x7F;
 }
 inline uint8_t get_uop_pnew(const VlWide<12>& uop) {
-    return (uop[8] >> 18) & 0x7F;
+    return (uop[8] >> 19) & 0xFF;
 }
 inline bool get_uop_is_branch(const VlWide<12>& uop) {
     return (uop[4] >> 3) & 1;
@@ -525,19 +525,19 @@ int main(int argc, char** argv) {
     }
 
     // -------------------------------------------------------------------------
-    // Test 8: ROB circular wraparound across 47 -> 0 boundary
+    // Test 8: ROB circular wraparound across 127 -> 0 boundary
     // -------------------------------------------------------------------------
     {
         tb.reset();
-        tb.dut->rob_head_i = 44; // ROB head at 44
+        tb.dut->rob_head_i = 124; // ROB head at 124
 
         // Entries waiting on p50:
-        // rob 46 (dist 2)
-        // rob 47 (dist 3)
-        // rob 0  (dist 4 - wrapped!)
-        // rob 1  (dist 5 - wrapped!)
-        tb.set_uop0(make_uop(UOP_ALU_INT, 46, 50, false, 2, true, 3));
-        tb.set_uop1(make_uop(UOP_ALU_INT, 47, 50, false, 5, true, 4));
+        // rob 126 (dist 2)
+        // rob 127 (dist 3)
+        // rob 0   (dist 4 - wrapped!)
+        // rob 1   (dist 5 - wrapped!)
+        tb.set_uop0(make_uop(UOP_ALU_INT, 126, 50, false, 2, true, 3));
+        tb.set_uop1(make_uop(UOP_ALU_INT, 127, 50, false, 5, true, 4));
         tb.dut->rename_ack_i = 3;
         tb.step();
 
@@ -556,13 +556,13 @@ int main(int argc, char** argv) {
         tb.step();
         tb.dut->wb0_valid_i = 0;
 
-        // Cycle 1: Oldest are rob 46 (dist 2) and rob 47 (dist 3)
+        // Cycle 1: Oldest are rob 126 (dist 2) and rob 127 (dist 3)
         tb.dut->eval();
         assert(tb.dut->issue0_valid_o == 1);
-        assert(get_uop_rob_idx(tb.dut->issue0_uop_o) == 46);
+        assert(get_uop_rob_idx(tb.dut->issue0_uop_o) == 126);
         assert(tb.dut->issue1_valid_o == 1);
-        assert(get_uop_rob_idx(tb.dut->issue1_uop_o) == 47);
-        tb.step(); // Deallocate 46 and 47
+        assert(get_uop_rob_idx(tb.dut->issue1_uop_o) == 127);
+        tb.step(); // Deallocate 126 and 127
 
         // Cycle 2: Remaining oldest are rob 0 (dist 4) and rob 1 (dist 5)
         tb.dut->eval();
@@ -570,7 +570,7 @@ int main(int argc, char** argv) {
         assert(get_uop_rob_idx(tb.dut->issue0_uop_o) == 0);
         assert(tb.dut->issue1_valid_o == 1);
         assert(get_uop_rob_idx(tb.dut->issue1_uop_o) == 1);
-        std::cout << "  [PASS] Test 8: Wrap-safe age comparison across ROB circular wraparound (47->0) verified\n";
+        std::cout << "  [PASS] Test 8: Wrap-safe age comparison across ROB circular wraparound (127->0) verified\n";
     }
 
     // -------------------------------------------------------------------------
@@ -644,8 +644,8 @@ int main(int argc, char** argv) {
         tb.dut->eval();
 
         // Check diagnostic valid mask: rob 5 and rob 10 must survive; rob 15 must be squashed!
-        for (int i = 0; i < 16; i++) {
-            if (tb.dut->diag_valid_mask_o & (1 << i)) {
+        for (int i = 0; i < 32; i++) {
+            if (tb.dut->diag_valid_mask_o & (1U << i)) {
                 assert(tb.dut->diag_rob_idx_o[i] <= 10);
                 assert(tb.dut->diag_rob_idx_o[i] != 15);
             }
@@ -678,11 +678,11 @@ int main(int argc, char** argv) {
     }
 
     // -------------------------------------------------------------------------
-    // Test 12: Full queue capacity (16 entries) and dispatch backpressure
+    // Test 12: Full queue capacity (32 entries) and dispatch backpressure
     // -------------------------------------------------------------------------
     {
         tb.reset();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 16; i++) {
             assert(tb.dut->dispatch_ready_o == 3);
             tb.set_uop0(make_uop(UOP_ALU_INT, i * 2,     1, false, 2, true, 3));
             tb.set_uop1(make_uop(UOP_ALU_INT, i * 2 + 1, 4, false, 5, true, 6));
@@ -694,10 +694,10 @@ int main(int argc, char** argv) {
         tb.dut->rename_ack_i = 0;
         tb.dut->eval();
 
-        // Queue now full with 16 entries
-        assert(tb.dut->diag_valid_mask_o == 0xFFFF);
+        // Queue now full with 32 entries
+        assert(tb.dut->diag_valid_mask_o == 0xFFFFFFFFU);
         assert(tb.dut->dispatch_ready_o == 0); // Both slots stalled
-        std::cout << "  [PASS] Test 12: Full queue capacity (16 entries) asserts dispatch backpressure dispatch_ready_o=00\n";
+        std::cout << "  [PASS] Test 12: Full queue capacity (32 entries) asserts dispatch backpressure dispatch_ready_o=00\n";
     }
 
     // -------------------------------------------------------------------------
@@ -783,7 +783,7 @@ int main(int argc, char** argv) {
         stats.seed = seed;
         unit_tb.reset();
 
-        GoldenEntry golden[16];
+        GoldenEntry golden[32];
         uint8_t current_rob_head = 0;
         std::mt19937_64 rng(seed);
         const uint64_t watchdog_iteration_limit = 500000;
@@ -796,7 +796,7 @@ int main(int argc, char** argv) {
             }
 
             // Randomly advance rob_head
-            if (rng() % 20 == 0) current_rob_head = (current_rob_head + 1) % 48;
+            if (rng() % 20 == 0) current_rob_head = (current_rob_head + 1) % 128;
             unit_tb.dut->rob_head_i = current_rob_head;
 
             // Environmental port credits
@@ -809,8 +809,8 @@ int main(int argc, char** argv) {
             unit_tb.dut->can_issue_alu1_i = can_alu1;
 
             // Compute readiness in golden model
-            bool ready_p0[16]{}, ready_p1[16]{};
-            for (int i = 0; i < 16; i++) {
+            bool ready_p0[32]{}, ready_p1[32]{};
+            for (int i = 0; i < 32; i++) {
                 if (golden[i].valid) {
                     bool ops_ready = golden[i].prs1_ready && golden[i].prs2_ready;
                     ready_p0[i] = ops_ready && (golden[i].port_mask & 1);
@@ -827,9 +827,9 @@ int main(int argc, char** argv) {
             // Compute u0 (oldest ready) and u1 (second oldest ready)
             bool u0_valid = false, u1_valid = false;
             uint8_t u0_idx = 0, u1_idx = 0;
-            uint8_t u0_dist = 63, u1_dist = 63;
+            uint8_t u0_dist = 255, u1_dist = 255;
 
-            for (int i = 0; i < 16; i++) {
+            for (int i = 0; i < 32; i++) {
                 if (ready_p0[i] || ready_p1[i]) {
                     uint8_t d = calc_rob_dist(golden[i].rob_idx, current_rob_head);
                     if (!u0_valid || is_older_golden(d, golden[i].is_branch, i, u0_dist, golden[u0_idx].is_branch, u0_idx)) {
@@ -841,7 +841,7 @@ int main(int argc, char** argv) {
             }
 
             if (u0_valid) {
-                for (int i = 0; i < 16; i++) {
+                for (int i = 0; i < 32; i++) {
                     if ((i != u0_idx) && (ready_p0[i] || ready_p1[i])) {
                         uint8_t d = calc_rob_dist(golden[i].rob_idx, current_rob_head);
                         if (!u1_valid || is_older_golden(d, golden[i].is_branch, i, u1_dist, golden[u1_idx].is_branch, u1_idx)) {
@@ -864,8 +864,8 @@ int main(int argc, char** argv) {
                 if (is_p0_only_u0) {
                     exp_p0_valid = true;
                     exp_p0_idx   = u0_idx;
-                    uint8_t best_p1_d = 63;
-                    for (int i = 0; i < 16; i++) {
+                    uint8_t best_p1_d = 255;
+                    for (int i = 0; i < 32; i++) {
                         if ((i != u0_idx) && ready_p1[i]) {
                             uint8_t d = calc_rob_dist(golden[i].rob_idx, current_rob_head);
                             if (!exp_p1_valid || is_older_golden(d, false, i, best_p1_d, false, exp_p1_idx)) {
@@ -878,8 +878,8 @@ int main(int argc, char** argv) {
                 } else if (is_p1_only_u0) {
                     exp_p1_valid = true;
                     exp_p1_idx   = u0_idx;
-                    uint8_t best_p0_d = 63;
-                    for (int i = 0; i < 16; i++) {
+                    uint8_t best_p0_d = 255;
+                    for (int i = 0; i < 32; i++) {
                         if ((i != u0_idx) && ready_p0[i]) {
                             uint8_t d = calc_rob_dist(golden[i].rob_idx, current_rob_head);
                             if (!exp_p0_valid || is_older_golden(d, golden[i].is_branch, i, best_p0_d, golden[exp_p0_idx].is_branch, exp_p0_idx)) {
@@ -907,8 +907,8 @@ int main(int argc, char** argv) {
                             exp_p1_valid = true; exp_p1_idx = u1_idx;
                         } else {
                             exp_p0_valid = true; exp_p0_idx = u0_idx;
-                            uint8_t best_p1_d = 63;
-                            for (int i = 0; i < 16; i++) {
+                            uint8_t best_p1_d = 255;
+                            for (int i = 0; i < 32; i++) {
                                 if ((i != u0_idx) && ready_p1[i]) {
                                     uint8_t d = calc_rob_dist(golden[i].rob_idx, current_rob_head);
                                     if (!exp_p1_valid || is_older_golden(d, false, i, best_p1_d, false, exp_p1_idx)) {
@@ -927,7 +927,7 @@ int main(int argc, char** argv) {
 
             // Recovery setup
             bool do_recover = (rng() % 300 == 0);
-            uint8_t rec_rob_idx = rng() % 48;
+            uint8_t rec_rob_idx = rng() % 128;
             unit_tb.dut->recover_valid_i   = do_recover;
             unit_tb.dut->recover_rob_idx_i = rec_rob_idx;
 
@@ -973,7 +973,7 @@ int main(int argc, char** argv) {
             // Check dispatch availability
             int golden_free = 0;
             int g_slot0 = -1, g_slot1 = -1;
-            for (int i = 0; i < 16; i++) {
+            for (int i = 0; i < 32; i++) {
                 if (!golden[i].valid) {
                     golden_free++;
                     if (g_slot0 == -1) g_slot0 = i;
@@ -1003,7 +1003,7 @@ int main(int argc, char** argv) {
 
             if (try_alloc0 && (exp_dispatch_ready & 1)) {
                 uint8_t cls = gen_class();
-                u0 = make_uop(cls, rng() % 48, (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1);
+                u0 = make_uop(cls, rng() % 128, (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1);
                 unit_tb.set_uop0(u0);
                 ack |= 1;
             } else {
@@ -1012,7 +1012,7 @@ int main(int argc, char** argv) {
 
             if (try_alloc1 && (exp_dispatch_ready & 2)) {
                 uint8_t cls = gen_class();
-                u1 = make_uop(cls, rng() % 48, (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1);
+                u1 = make_uop(cls, rng() % 128, (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1, (rng() % 3 == 0), (rng() % 63) + 1);
                 unit_tb.set_uop1(u1);
                 ack |= 2;
             } else {
@@ -1029,7 +1029,7 @@ int main(int argc, char** argv) {
             // 2. Squash younger entries on recovery
             if (do_recover) {
                 uint8_t rec_dist = calc_rob_dist(rec_rob_idx, current_rob_head);
-                for (int i = 0; i < 16; i++) {
+                for (int i = 0; i < 32; i++) {
                     if (golden[i].valid && (calc_rob_dist(golden[i].rob_idx, current_rob_head) > rec_dist)) {
                         golden[i].valid = false;
                     }
@@ -1037,7 +1037,7 @@ int main(int argc, char** argv) {
             }
 
             // 3. Wakeup on surviving entries
-            for (int i = 0; i < 16; i++) {
+            for (int i = 0; i < 32; i++) {
                 if (golden[i].valid) {
                     if (wb0_v) {
                         if (golden[i].prs1 == wb0_p) golden[i].prs1_ready = true;

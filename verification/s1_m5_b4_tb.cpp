@@ -703,7 +703,7 @@ ProfileMetrics run_workload_raw_stress(B4TB& tb) {
 // Dedicated Integrated Core IntIQ Oldest-Ready Tests
 // -----------------------------------------------------------------------------
 
-// Scenario 1: Fill all 16 entries in core and verify full backpressure EV_STALL_INTIQ_FULL (0x15)
+// Scenario 1: Fill all 32 entries in core and verify full backpressure EV_STALL_INTIQ_FULL (0x15)
 void test_core_intiq_fill_and_backpressure(B4TB& tb) {
     tb.reset();
     tb.mem.clear();
@@ -714,24 +714,24 @@ void test_core_intiq_fill_and_backpressure(B4TB& tb) {
     tb.write_mem_word(base + 4, rv_addi(12, 0, 7));
     tb.write_mem_word(base + 8, rv_div(2, 11, 12)); // slow divide produces x2
 
-    // 18 ALU ops waiting for x2: they enter IntIQ but CANNOT issue until divide completes!
-    for (int i = 0; i < 18; i++) {
+    // 40 ALU ops waiting for x2: they fill the 32-entry IntIQ and stall until divide completes!
+    for (int i = 0; i < 40; i++) {
         tb.write_mem_word(base + 12 + i * 4, rv_addi(13 + (i % 10), 2, i + 1));
     }
-    tb.write_mem_word(base + 12 + 18 * 4, rv_addi(30, 0, 88));
+    tb.write_mem_word(base + 12 + 40 * 4, rv_addi(30, 0, 88));
 
     uint64_t stall_intiq_before = tb.raw_event_accum[0x15];
 
-    // Run until all retire: 3 setup + 18 dependent + 1 final = 22 ops
-    tb.wait_until_retired(22, 2000);
+    // Run until all retire: 3 setup + 40 dependent + 1 final = 44 ops
+    tb.wait_until_retired(44, 2500);
 
     uint64_t stall_intiq = tb.raw_event_accum[0x15] - stall_intiq_before;
 
-    // With 18 ALUs and IntIQ depth = 16, Rename MUST have stalled due to IntIQ full!
+    // With 40 ALUs and IntIQ depth = 32, Rename MUST have stalled due to IntIQ full!
     assert(stall_intiq >= 1);
-    assert(tb.total_retired_ops >= 22);
+    assert(tb.total_retired_ops >= 44);
     std::cout << "  [PASS] Core Scenario 1: IntIQ filled to capacity in core pipeline (EV_STALL_INTIQ_FULL asserted "
-              << stall_intiq << " cycles, all 22 ops retired)\n";
+              << stall_intiq << " cycles, all 44 ops retired)\n";
 }
 
 // Scenario 2: Branch misprediction recovery squashes younger integer ops in IntIQ

@@ -409,8 +409,8 @@ module fursoy_s1_substrate
     wire uop1_needs_fpreg = uop1_valid_i && uop1_fp_dest_valid_i;
 
     // Speculative candidate Pnew assignments from Free List peek ports
-    assign uop0_pnew_cand = !uop0_needs_preg ? 7'd0 : fl_alloc_preg[0];
-    assign uop1_pnew_cand = !uop1_needs_preg ? 7'd0 :
+    assign uop0_pnew_cand = !uop0_needs_preg ? preg_t'(0) : fl_alloc_preg[0];
+    assign uop1_pnew_cand = !uop1_needs_preg ? preg_t'(0) :
                             (uop0_needs_preg ? fl_alloc_preg[1] : fl_alloc_preg[0]);
 
     // Resource availability checks
@@ -555,8 +555,8 @@ module fursoy_s1_substrate
 
     // Free List retirement push qualification (rd=x0 or pold=p0 never freed)
     logic [1:0] fl_retire_push_valid;
-    assign fl_retire_push_valid[0] = rob_retire_valid[0] && (!rob_retire_fp_dest_valid[0]) && (rob_retire_rd[0] != 5'd0) && (rob_retire_pold[0] != 7'd0);
-    assign fl_retire_push_valid[1] = rob_retire_valid[1] && (!rob_retire_fp_dest_valid[1]) && (rob_retire_rd[1] != 5'd0) && (rob_retire_pold[1] != 7'd0);
+    assign fl_retire_push_valid[0] = rob_retire_valid[0] && (!rob_retire_fp_dest_valid[0]) && (rob_retire_rd[0] != 5'd0) && (rob_retire_pold[0] != preg_t'(0));
+    assign fl_retire_push_valid[1] = rob_retire_valid[1] && (!rob_retire_fp_dest_valid[1]) && (rob_retire_rd[1] != 5'd0) && (rob_retire_pold[1] != preg_t'(0));
 
     // Gated retirement rd for Integer RAT (FP instructions writing FP dest do not update integer ARAT)
     logic [4:0] rat_retire_rd [1:0];
@@ -925,10 +925,10 @@ module fursoy_s1_substrate
         if (!rst_i && !flush_valid_i && !fl_reconstructing && !fl_fp_reconstructing_internal &&
             !rob_recovering && !recover_valid_i) begin
             // 1. p0 hardwired invariant (Integer only)
-            if (arat_internal[0] != 7'd0) begin
+            if (arat_internal[0] != preg_t'(0)) begin
                 $fatal(1, "[SUBSTRATE ASSERTION FAILED] ARAT[0] != p0 (p%0d)", arat_internal[0]);
             end
-            if (srat_internal[0] != 7'd0) begin
+            if (srat_internal[0] != preg_t'(0)) begin
                 $fatal(1, "[SUBSTRATE ASSERTION FAILED] SRAT[0] != p0 (p%0d)", srat_internal[0]);
             end
             if (prf_ready_internal[0] != 1'b1) begin
@@ -939,12 +939,10 @@ module fursoy_s1_substrate
             for (int unsigned r = 1; r < AREG_NUM; r++) begin
                 preg_t comm_p;
                 comm_p = arat_internal[r];
-                for (int unsigned f = 0; f < 48; f++) begin
+                for (int unsigned f = 0; f < FL_DEPTH; f++) begin
                     if (f < fl_count) begin
-                        logic [5:0] fl_peek_idx;
-                        fl_peek_idx = (u_freelist.head_q + f[5:0] >= 6'd48) ?
-                                      (u_freelist.head_q + f[5:0] - 6'd48) :
-                                      (u_freelist.head_q + f[5:0]);
+                        logic [6:0] fl_peek_idx;
+                        fl_peek_idx = u_freelist.head_q + f[6:0];
                         if (u_freelist.mem_q[fl_peek_idx] == comm_p) begin
                             $fatal(1, "[SUBSTRATE ASSERTION FAILED] Committed ARAT register p%0d (x%0d) found in Free List!",
                                    comm_p, r);
@@ -958,12 +956,10 @@ module fursoy_s1_substrate
                 if (u_rob.entries_q[i].valid && (!u_rob.entries_q[i].fp_dest_valid) && (u_rob.entries_q[i].rd != 5'd0)) begin
                     preg_t rob_pnew;
                     rob_pnew = u_rob.entries_q[i].pnew;
-                    for (int unsigned f = 0; f < 48; f++) begin
+                    for (int unsigned f = 0; f < FL_DEPTH; f++) begin
                         if (f < fl_count) begin
-                            logic [5:0] fl_peek_idx;
-                            fl_peek_idx = (u_freelist.head_q + f[5:0] >= 6'd48) ?
-                                          (u_freelist.head_q + f[5:0] - 6'd48) :
-                                          (u_freelist.head_q + f[5:0]);
+                            logic [6:0] fl_peek_idx;
+                            fl_peek_idx = u_freelist.head_q + f[6:0];
                             if (u_freelist.mem_q[fl_peek_idx] == rob_pnew) begin
                                 $fatal(1, "[SUBSTRATE ASSERTION FAILED] Live ROB entry %0d Pnew p%0d found in Free List!",
                                        i, rob_pnew);
@@ -993,12 +989,10 @@ module fursoy_s1_substrate
                     for (int unsigned r = 1; r < AREG_NUM; r++) begin
                         preg_t chk_p;
                         chk_p = u_rat.chkpt_srat_q[k][r];
-                        for (int unsigned f = 0; f < 48; f++) begin
+                        for (int unsigned f = 0; f < FL_DEPTH; f++) begin
                             if (f < fl_count) begin
-                                logic [5:0] fl_peek_idx;
-                                fl_peek_idx = (u_freelist.head_q + f[5:0] >= 6'd48) ?
-                                              (u_freelist.head_q + f[5:0] - 6'd48) :
-                                              (u_freelist.head_q + f[5:0]);
+                                logic [6:0] fl_peek_idx;
+                                fl_peek_idx = u_freelist.head_q + f[6:0];
                                 if (u_freelist.mem_q[fl_peek_idx] == chk_p) begin
                                     $fatal(1, "[SUBSTRATE ASSERTION FAILED] Live Checkpoint %0d map x%0d -> p%0d found in Free List!",
                                            k, r, chk_p);
@@ -1013,12 +1007,10 @@ module fursoy_s1_substrate
             for (int unsigned r = 1; r < AREG_NUM; r++) begin
                 preg_t srat_p;
                 srat_p = srat_internal[r];
-                for (int unsigned f = 0; f < 48; f++) begin
+                for (int unsigned f = 0; f < FL_DEPTH; f++) begin
                     if (f < fl_count) begin
-                        logic [5:0] fl_peek_idx;
-                        fl_peek_idx = (u_freelist.head_q + f[5:0] >= 6'd48) ?
-                                      (u_freelist.head_q + f[5:0] - 6'd48) :
-                                      (u_freelist.head_q + f[5:0]);
+                        logic [6:0] fl_peek_idx;
+                        fl_peek_idx = u_freelist.head_q + f[6:0];
                         if (u_freelist.mem_q[fl_peek_idx] == srat_p) begin
                             $fatal(1, "[SUBSTRATE ASSERTION FAILED] Active SRAT map x%0d -> p%0d found in Free List!",
                                    r, srat_p);
@@ -1028,11 +1020,11 @@ module fursoy_s1_substrate
             end
 
             // 6. Count limits
-            if (fl_count > 7'd48) begin
-                $fatal(1, "[SUBSTRATE ASSERTION FAILED] Free List count %0d exceeds 48!", fl_count);
+            if (fl_count > FL_CNT_W'(FL_DEPTH)) begin
+                $fatal(1, "[SUBSTRATE ASSERTION FAILED] Free List count %0d exceeds %0d!", fl_count, FL_DEPTH);
             end
-            if (rob_count > 7'd48) begin
-                $fatal(1, "[SUBSTRATE ASSERTION FAILED] ROB count %0d exceeds 48!", rob_count);
+            if (rob_count > ROB_CNT_W'(ROB_NUM)) begin
+                $fatal(1, "[SUBSTRATE ASSERTION FAILED] ROB count %0d exceeds %0d!", rob_count, ROB_NUM);
             end
             if (fl_fp_count_internal > 6'd32) begin
                 $fatal(1, "[SUBSTRATE ASSERTION FAILED] FL_FP count %0d exceeds 32!", fl_fp_count_internal);

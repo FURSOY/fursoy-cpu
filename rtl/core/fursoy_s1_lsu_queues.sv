@@ -644,7 +644,7 @@ module fursoy_s1_lsu_queues
     logic        same_word_s;
     logic        has_overlap_s;
     logic        l_squashed_l;
-    logic [5:0]  l_dist_head;
+    rob_dist_t   l_dist_head;
     logic [63:0] raw_fwd_val;
 
     always_comb begin
@@ -774,16 +774,16 @@ module fursoy_s1_lsu_queues
     // Dual Load Selection: Scan for Oldest Ready (cand_slot0) and Second Oldest Ready (cand_slot1)
     logic       has_cand0, has_cand1;
     logic [3:0] cand_slot0, cand_slot1;
-    logic [5:0] dist_cand0, dist_cand1;
+    rob_dist_t  dist_cand0, dist_cand1;
 
     always_comb begin
         has_cand0   = 1'b0;
         has_cand1   = 1'b0;
         cand_slot0  = 4'd0;
         cand_slot1  = 4'd0;
-        dist_cand0  = 6'd63;
-        dist_cand1  = 6'd63;
-        l_dist_head = 6'd0;
+        dist_cand0  = rob_dist_t'(ROB_DEPTH - 1);
+        dist_cand1  = rob_dist_t'(ROB_DEPTH - 1);
+        l_dist_head = '0;
 
         for (int l = 0; l < LQ_DEPTH; l++) begin
             if (lq_entry_ready[l]) begin
@@ -1113,8 +1113,8 @@ module fursoy_s1_lsu_queues
     // Scan for two oldest ready loads by rob_dist
     logic       has_l0, has_l1;
     lq_idx_t    cand_l0, cand_l1;
-    logic [5:0] dist_l0, dist_l1;
-    logic [5:0] comp_l_dist;
+    rob_dist_t  dist_l0, dist_l1;
+    rob_dist_t  comp_l_dist;
 
     always_comb begin
         has_l0      = 1'b0;
@@ -1147,13 +1147,13 @@ module fursoy_s1_lsu_queues
     // Scan for oldest ready store by rob_dist (Path 1 exceptional or Path 5 normal)
     logic        has_store;
     sq_idx_t     cand_store;
-    logic [5:0]  dist_store;
+    rob_dist_t   dist_store;
     logic        store_is_exc;
     logic [4:0]  store_exc_cause;
     preg_t       store_preg;
     logic [63:0] store_data;
     logic        store_sc_ok;
-    logic [5:0]  comp_s_dist;
+    rob_dist_t   comp_s_dist;
     logic        sc_ok_val;
 
     always_comb begin
@@ -1162,7 +1162,7 @@ module fursoy_s1_lsu_queues
         dist_store      = '1;
         store_is_exc    = 1'b0;
         store_exc_cause = 5'd0;
-        store_preg      = 7'd0;
+        store_preg      = preg_t'(0);
         store_data      = 64'd0;
         store_sc_ok     = 1'b0;
         comp_s_dist     = '0;
@@ -1178,7 +1178,7 @@ module fursoy_s1_lsu_queues
                         dist_store      = comp_s_dist;
                         store_is_exc    = 1'b1;
                         store_exc_cause = sq_q[s].exc_cause;
-                        store_preg      = 7'd0;
+                        store_preg      = preg_t'(0);
                         store_data      = 64'd0;
                         store_sc_ok     = 1'b0;
                     end
@@ -1208,7 +1208,7 @@ module fursoy_s1_lsu_queues
                             store_preg = sq_q[s].pnew;
                             store_data = amo_old_val_q;
                         end else begin
-                            store_preg = 7'd0;
+                            store_preg = preg_t'(0);
                             store_data = 64'd0;
                         end
                     end
@@ -1352,7 +1352,7 @@ module fursoy_s1_lsu_queues
         p2_comp_valid     = 1'b0;
         p2_comp_rob_idx   = '0;
         p2_comp_epoch     = '0;
-        p2_comp_preg      = 7'd0;
+        p2_comp_preg      = preg_t'(0);
         p2_comp_exception = 1'b0;
         p2_comp_cause     = 5'd0;
         p2_comp_data      = 64'd0;
@@ -1365,7 +1365,7 @@ module fursoy_s1_lsu_queues
         p3_comp_valid     = 1'b0;
         p3_comp_rob_idx   = '0;
         p3_comp_epoch     = '0;
-        p3_comp_preg      = 7'd0;
+        p3_comp_preg      = preg_t'(0);
         p3_comp_exception = 1'b0;
         p3_comp_cause     = 5'd0;
         p3_comp_data      = 64'd0;
@@ -1580,14 +1580,14 @@ module fursoy_s1_lsu_queues
     end
 
     logic [3:0] oldest_viol_lq;
-    logic [5:0] min_viol_dist;
+    rob_dist_t  min_viol_dist;
     logic       viol_found;
-    logic [5:0] v_dist;
+    rob_dist_t  v_dist;
     always_comb begin
         oldest_viol_lq = 4'd0;
-        min_viol_dist  = 6'd63;
+        min_viol_dist  = rob_dist_t'(ROB_DEPTH - 1);
         viol_found     = 1'b0;
-        v_dist         = 6'd0;
+        v_dist         = '0;
         for (int l = 0; l < LQ_DEPTH; l++) begin
             if (cam_match[l]) begin
                 v_dist = rob_dist(lq_q[l].rob_idx, rob_head_i);
@@ -1671,16 +1671,16 @@ module fursoy_s1_lsu_queues
                         end
                     end else begin
                         // Match against active writebacks
-                        if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == sq_q[s].prs2) && (wb0_pnew_i != 7'd0)) begin
+                        if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == sq_q[s].prs2) && (wb0_pnew_i != preg_t'(0))) begin
                             sq_q[s].data       <= wb0_data_i;
                             sq_q[s].data_valid <= 1'b1;
-                        end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == sq_q[s].prs2) && (wb1_pnew_i != 7'd0)) begin
+                        end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == sq_q[s].prs2) && (wb1_pnew_i != preg_t'(0))) begin
                             sq_q[s].data       <= wb1_data_i;
                             sq_q[s].data_valid <= 1'b1;
-                        end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == sq_q[s].prs2) && (wb2_pnew_i != 7'd0)) begin
+                        end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == sq_q[s].prs2) && (wb2_pnew_i != preg_t'(0))) begin
                             sq_q[s].data       <= wb2_data_i;
                             sq_q[s].data_valid <= 1'b1;
-                        end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == sq_q[s].prs2) && (wb3_pnew_i != 7'd0)) begin
+                        end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == sq_q[s].prs2) && (wb3_pnew_i != preg_t'(0))) begin
                             sq_q[s].data       <= wb3_data_i;
                             sq_q[s].data_valid <= 1'b1;
                         end
@@ -2198,16 +2198,16 @@ module fursoy_s1_lsu_queues
                     if (uop0_prs2_ready_i) begin
                         sq_q[sq_slot0].data       <= prf_r5_data_i;
                         sq_q[sq_slot0].data_valid <= 1'b1;
-                    end else if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == uop0_prs2_i) && (wb0_pnew_i != 7'd0)) begin
+                    end else if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == uop0_prs2_i) && (wb0_pnew_i != preg_t'(0))) begin
                         sq_q[sq_slot0].data       <= wb0_data_i;
                         sq_q[sq_slot0].data_valid <= 1'b1;
-                    end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == uop0_prs2_i) && (wb1_pnew_i != 7'd0)) begin
+                    end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == uop0_prs2_i) && (wb1_pnew_i != preg_t'(0))) begin
                         sq_q[sq_slot0].data       <= wb1_data_i;
                         sq_q[sq_slot0].data_valid <= 1'b1;
-                    end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == uop0_prs2_i) && (wb2_pnew_i != 7'd0)) begin
+                    end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == uop0_prs2_i) && (wb2_pnew_i != preg_t'(0))) begin
                         sq_q[sq_slot0].data       <= wb2_data_i;
                         sq_q[sq_slot0].data_valid <= 1'b1;
-                    end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == uop0_prs2_i) && (wb3_pnew_i != 7'd0)) begin
+                    end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == uop0_prs2_i) && (wb3_pnew_i != preg_t'(0))) begin
                         sq_q[sq_slot0].data       <= wb3_data_i;
                         sq_q[sq_slot0].data_valid <= 1'b1;
                     end else begin
@@ -2275,16 +2275,16 @@ module fursoy_s1_lsu_queues
                     if (uop1_prs2_ready_i) begin
                         sq_q[sq_target_slot1].data       <= prf_r5_data_i;
                         sq_q[sq_target_slot1].data_valid <= 1'b1;
-                    end else if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == uop1_prs2_i) && (wb0_pnew_i != 7'd0)) begin
+                    end else if (wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i == uop1_prs2_i) && (wb0_pnew_i != preg_t'(0))) begin
                         sq_q[sq_target_slot1].data       <= wb0_data_i;
                         sq_q[sq_target_slot1].data_valid <= 1'b1;
-                    end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == uop1_prs2_i) && (wb1_pnew_i != 7'd0)) begin
+                    end else if (wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i == uop1_prs2_i) && (wb1_pnew_i != preg_t'(0))) begin
                         sq_q[sq_target_slot1].data       <= wb1_data_i;
                         sq_q[sq_target_slot1].data_valid <= 1'b1;
-                    end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == uop1_prs2_i) && (wb2_pnew_i != 7'd0)) begin
+                    end else if (wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i == uop1_prs2_i) && (wb2_pnew_i != preg_t'(0))) begin
                         sq_q[sq_target_slot1].data       <= wb2_data_i;
                         sq_q[sq_target_slot1].data_valid <= 1'b1;
-                    end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == uop1_prs2_i) && (wb3_pnew_i != 7'd0)) begin
+                    end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == uop1_prs2_i) && (wb3_pnew_i != preg_t'(0))) begin
                         sq_q[sq_target_slot1].data       <= wb3_data_i;
                         sq_q[sq_target_slot1].data_valid <= 1'b1;
                     end else begin

@@ -151,10 +151,8 @@ module fursoy_s1_frat
     // -------------------------------------------------------------------------
     // Circular ROB Age Helper Function
     // -------------------------------------------------------------------------
-    function automatic logic [5:0] rob_age(input [5:0] idx, input [5:0] head);
-        logic [6:0] diff;
-        diff = {1'b0, idx} + 7'd48 - {1'b0, head};
-        return (diff >= 7'd48) ? (diff[5:0] - 6'd48) : diff[5:0];
+    function automatic rob_dist_t rob_age(input rob_idx_t idx, input rob_idx_t head);
+        return rob_dist(idx, head);
     endfunction
 
     // -------------------------------------------------------------------------

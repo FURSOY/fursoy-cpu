@@ -137,8 +137,11 @@ module fursoy_s1_int_iq
     end
 
     // -------------------------------------------------------------------------
-    // 16 Issue Queue Entries
+    // Issue Queue Entries & Dimensions
     // -------------------------------------------------------------------------
+    localparam int unsigned IQ_CNT_W = INT_IQ_IDX_W + 1;
+    typedef logic [INT_IQ_IDX_W-1:0] iq_idx_t;
+
     iq_entry_t entries_q [INT_IQ_DEPTH];
 
     // -------------------------------------------------------------------------
@@ -167,34 +170,34 @@ module fursoy_s1_int_iq
     wire uop1_for_intiq = !uop1_is_mem && !uop1_is_fpiq;
 
     // Count free entries
-    logic [4:0] free_count;
+    logic [IQ_CNT_W-1:0] free_count;
     always_comb begin
-        free_count = 5'd0;
+        free_count = '0;
         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-            if (!entries_q[i].valid) free_count = free_count + 5'd1;
+            if (!entries_q[i].valid) free_count = free_count + IQ_CNT_W'(1);
         end
     end
 
-    assign dispatch_ready_o[0] = (free_count >= 5'd1) && !flush_valid_i;
-    assign dispatch_ready_o[1] = (free_count >= 5'd2) && !flush_valid_i;
+    assign dispatch_ready_o[0] = (free_count >= IQ_CNT_W'(1)) && !flush_valid_i;
+    assign dispatch_ready_o[1] = (free_count >= IQ_CNT_W'(2)) && !flush_valid_i;
 
     // Find two free slots for allocation
-    logic [3:0] alloc_slot0, alloc_slot1;
-    logic       slot0_found, slot1_found;
+    iq_idx_t alloc_slot0, alloc_slot1;
+    logic    slot0_found, slot1_found;
 
     always_comb begin
-        alloc_slot0 = 4'd0;
-        alloc_slot1 = 4'd0;
+        alloc_slot0 = '0;
+        alloc_slot1 = '0;
         slot0_found = 1'b0;
         slot1_found = 1'b0;
 
         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
             if (!entries_q[i].valid) begin
                 if (!slot0_found) begin
-                    alloc_slot0 = 4'(i);
+                    alloc_slot0 = iq_idx_t'(i);
                     slot0_found = 1'b1;
                 end else if (!slot1_found) begin
-                    alloc_slot1 = 4'(i);
+                    alloc_slot1 = iq_idx_t'(i);
                     slot1_found = 1'b1;
                 end
             end
@@ -203,8 +206,9 @@ module fursoy_s1_int_iq
 
     wire uop0_v_intiq = uop0_valid_i && uop0_for_intiq;
 
-    wire [3:0] alloc_slot1_eff = uop0_v_intiq ? alloc_slot1 : alloc_slot0;
-    wire       slot1_found_eff = uop0_v_intiq ? slot1_found : slot0_found;
+    iq_idx_t alloc_slot1_eff;
+    assign alloc_slot1_eff     = uop0_v_intiq ? alloc_slot1 : alloc_slot0;
+    wire   slot1_found_eff     = uop0_v_intiq ? slot1_found : slot0_found;
 
     wire alloc0_fire = uop0_v_intiq && rename_ack_i[0] && !flush_valid_i && slot0_found;
     wire alloc1_fire = uop1_valid_i && uop1_for_intiq && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
@@ -222,10 +226,10 @@ module fursoy_s1_int_iq
     // -------------------------------------------------------------------------
     // Wakeup Detection
     // -------------------------------------------------------------------------
-    wire wb0_wake = wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i != 7'd0);
-    wire wb1_wake = wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i != 7'd0);
-    wire wb2_wake = wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i != 7'd0);
-    wire wb3_wake = wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i != 7'd0);
+    wire wb0_wake = wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i != preg_t'(0));
+    wire wb1_wake = wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i != preg_t'(0));
+    wire wb2_wake = wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i != preg_t'(0));
+    wire wb3_wake = wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i != preg_t'(0));
 
     // -------------------------------------------------------------------------
     // Readiness Evaluation for Each Queue Entry (Frozen loop-free timing:
@@ -245,10 +249,10 @@ module fursoy_s1_int_iq
             logic is_sys;
             logic sys_ready;
 
-            prs1_r = entries_q[i].prs1_ready || (entries_q[i].prs1 == 7'd0);
+            prs1_r = entries_q[i].prs1_ready || (entries_q[i].prs1 == preg_t'(0));
 
             prs2_r = (entries_q[i].use_imm && (entries_q[i].uop_class != UOP_BRANCH)) ||
-                     entries_q[i].prs2_ready || (entries_q[i].prs2 == 7'd0);
+                     entries_q[i].prs2_ready || (entries_q[i].prs2 == preg_t'(0));
 
             ops_ready = entries_q[i].valid && prs1_r && prs2_r;
 
@@ -282,22 +286,22 @@ module fursoy_s1_int_iq
     // Wrap-Safe Age Comparison & Port-Aware Bipartite Arbiter (Phase B4)
     // Reference: docs/architecture/slice1-m5-performance-v1.md Section 7.4
     // -------------------------------------------------------------------------
-    logic [3:0] sel_p0_idx;
-    logic [3:0] sel_p1_idx;
-    logic       sel_p0_valid;
-    logic       sel_p1_valid;
+    iq_idx_t sel_p0_idx;
+    iq_idx_t sel_p1_idx;
+    logic    sel_p0_valid;
+    logic    sel_p1_valid;
 
     // Strict oldest-ready-first priority with Section 7.4 tie-breaking:
     // 1. Primary rule: wrap-safe circular ROB age (strictly smaller rob_dist).
     // 2. Equal age tie-break: branch priority (branch uop takes precedence over non-branch).
     // 3. Both branches or neither branch: lower slot index (Slot 0 precedence).
     function automatic logic is_older_or_tiebreak(
-        input logic [5:0] cand_dist,
-        input logic       cand_is_br,
-        input logic [3:0] cand_idx,
-        input logic [5:0] curr_dist,
-        input logic       curr_is_br,
-        input logic [3:0] curr_idx
+        input rob_dist_t cand_dist,
+        input logic      cand_is_br,
+        input iq_idx_t   cand_idx,
+        input rob_dist_t curr_dist,
+        input logic      curr_is_br,
+        input iq_idx_t   curr_idx
     );
         if (cand_dist < curr_dist) begin
             return 1'b1;
@@ -316,43 +320,43 @@ module fursoy_s1_int_iq
 
     always_comb begin
         // Find oldest ready uop across all categories (u0)
-        logic [3:0] u0_idx;
-        logic       u0_valid;
-        logic [5:0] u0_dist;
+        iq_idx_t   u0_idx;
+        logic      u0_valid;
+        rob_dist_t u0_dist;
 
         // Find second-oldest ready uop across all categories (u1)
-        logic [3:0] u1_idx;
-        logic       u1_valid;
-        logic [5:0] u1_dist;
+        iq_idx_t   u1_idx;
+        logic      u1_valid;
+        rob_dist_t u1_dist;
 
-        logic [5:0] best_p1_dist;
-        logic [5:0] best_p0_dist;
-        logic [5:0] d;
+        rob_dist_t best_p1_dist;
+        rob_dist_t best_p0_dist;
+        rob_dist_t d;
 
-        sel_p0_idx   = 4'd0;
-        sel_p1_idx   = 4'd0;
+        sel_p0_idx   = '0;
+        sel_p1_idx   = '0;
         sel_p0_valid = 1'b0;
         sel_p1_valid = 1'b0;
 
-        u0_idx   = 4'd0;
+        u0_idx   = '0;
         u0_valid = 1'b0;
-        u0_dist  = 6'd63;
+        u0_dist  = rob_dist_t'(ROB_DEPTH - 1);
 
-        u1_idx   = 4'd0;
+        u1_idx   = '0;
         u1_valid = 1'b0;
-        u1_dist  = 6'd63;
+        u1_dist  = rob_dist_t'(ROB_DEPTH - 1);
 
-        best_p1_dist = 6'd63;
-        best_p0_dist = 6'd63;
-        d            = 6'd0;
+        best_p1_dist = rob_dist_t'(ROB_DEPTH - 1);
+        best_p0_dist = rob_dist_t'(ROB_DEPTH - 1);
+        d            = '0;
 
         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
             if (ready_p0[i] || ready_p1[i]) begin
                 d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                if (!u0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), 4'(i),
+                if (!u0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), iq_idx_t'(i),
                                                       u0_dist, entries_q[u0_idx].is_branch || (entries_q[u0_idx].uop_class == UOP_BRANCH), u0_idx)) begin
                     u0_dist  = d;
-                    u0_idx   = 4'(i);
+                    u0_idx   = iq_idx_t'(i);
                     u0_valid = 1'b1;
                 end
             end
@@ -360,12 +364,12 @@ module fursoy_s1_int_iq
 
         if (u0_valid) begin
             for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                if ((4'(i) != u0_idx) && (ready_p0[i] || ready_p1[i])) begin
+                if ((iq_idx_t'(i) != u0_idx) && (ready_p0[i] || ready_p1[i])) begin
                     d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                    if (!u1_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), 4'(i),
+                    if (!u1_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), iq_idx_t'(i),
                                                           u1_dist, entries_q[u1_idx].is_branch || (entries_q[u1_idx].uop_class == UOP_BRANCH), u1_idx)) begin
                         u1_dist  = d;
-                        u1_idx   = 4'(i);
+                        u1_idx   = iq_idx_t'(i);
                         u1_valid = 1'b1;
                     end
                 end
@@ -380,14 +384,14 @@ module fursoy_s1_int_iq
                 sel_p0_idx   = u0_idx;
 
                 // Port 1 picks oldest ready in P1-only or Flex
-                best_p1_dist = 6'd63;
+                best_p1_dist = rob_dist_t'(ROB_DEPTH - 1);
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                    if ((4'(i) != u0_idx) && ready_p1[i]) begin
+                    if ((iq_idx_t'(i) != u0_idx) && ready_p1[i]) begin
                         d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                        if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, 4'(i),
+                        if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, iq_idx_t'(i),
                                                                   best_p1_dist, 1'b0, sel_p1_idx)) begin
                             best_p1_dist = d;
-                            sel_p1_idx   = 4'(i);
+                            sel_p1_idx   = iq_idx_t'(i);
                             sel_p1_valid = 1'b1;
                         end
                     end
@@ -398,14 +402,14 @@ module fursoy_s1_int_iq
                 sel_p1_idx   = u0_idx;
 
                 // Port 0 picks oldest ready in P0-only or Flex
-                best_p0_dist = 6'd63;
+                best_p0_dist = rob_dist_t'(ROB_DEPTH - 1);
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                    if ((4'(i) != u0_idx) && ready_p0[i]) begin
+                    if ((iq_idx_t'(i) != u0_idx) && ready_p0[i]) begin
                         d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                        if (!sel_p0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), 4'(i),
+                        if (!sel_p0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), iq_idx_t'(i),
                                                                   best_p0_dist, entries_q[sel_p0_idx].is_branch || (entries_q[sel_p0_idx].uop_class == UOP_BRANCH), sel_p0_idx)) begin
                             best_p0_dist = d;
-                            sel_p0_idx   = 4'(i);
+                            sel_p0_idx   = iq_idx_t'(i);
                             sel_p0_valid = 1'b1;
                         end
                     end
@@ -440,14 +444,14 @@ module fursoy_s1_int_iq
                         sel_p0_valid = 1'b1;
                         sel_p0_idx   = u0_idx;
                         // See if any other uop can issue to Port 1
-                        best_p1_dist = 6'd63;
+                        best_p1_dist = rob_dist_t'(ROB_DEPTH - 1);
                         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                            if ((4'(i) != u0_idx) && ready_p1[i]) begin
+                            if ((iq_idx_t'(i) != u0_idx) && ready_p1[i]) begin
                                 d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                                if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, 4'(i),
+                                if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, iq_idx_t'(i),
                                                                           best_p1_dist, 1'b0, sel_p1_idx)) begin
                                     best_p1_dist = d;
-                                    sel_p1_idx   = 4'(i);
+                                    sel_p1_idx   = iq_idx_t'(i);
                                     sel_p1_valid = 1'b1;
                                 end
                             end
@@ -499,7 +503,7 @@ module fursoy_s1_int_iq
 
             // 3. Wakeup update on surviving entries
             for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                if (entries_q[i].valid && !(sel_p0_valid && (4'(i) == sel_p0_idx)) && !(sel_p1_valid && (4'(i) == sel_p1_idx))) begin
+                if (entries_q[i].valid && !(sel_p0_valid && (iq_idx_t'(i) == sel_p0_idx)) && !(sel_p1_valid && (iq_idx_t'(i) == sel_p1_idx))) begin
                     if (wb0_wake) begin
                         if (entries_q[i].prs1 == wb0_pnew_i) entries_q[i].prs1_ready <= 1'b1;
                         if ((!entries_q[i].use_imm || (entries_q[i].uop_class == UOP_BRANCH)) && (entries_q[i].prs2 == wb0_pnew_i)) entries_q[i].prs2_ready <= 1'b1;
@@ -528,13 +532,13 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot0].imm         <= uop0_imm_i;
                     entries_q[alloc_slot0].use_imm     <= uop0_use_imm_i;
                     entries_q[alloc_slot0].prs1        <= uop0_prs1_i;
-                    entries_q[alloc_slot0].prs1_ready  <= uop0_prs1_ready_i || (uop0_prs1_i == 7'd0) ||
+                    entries_q[alloc_slot0].prs1_ready  <= uop0_prs1_ready_i || (uop0_prs1_i == preg_t'(0)) ||
                                                           (wb0_wake && (uop0_prs1_i == wb0_pnew_i)) ||
                                                           (wb1_wake && (uop0_prs1_i == wb1_pnew_i)) ||
                                                           (wb2_wake && (uop0_prs1_i == wb2_pnew_i)) ||
                                                           (wb3_wake && (uop0_prs1_i == wb3_pnew_i));
                     entries_q[alloc_slot0].prs2        <= uop0_prs2_i;
-                    entries_q[alloc_slot0].prs2_ready  <= (uop0_use_imm_i && (uop0_class_i != UOP_BRANCH)) || uop0_prs2_ready_i || (uop0_prs2_i == 7'd0) ||
+                    entries_q[alloc_slot0].prs2_ready  <= (uop0_use_imm_i && (uop0_class_i != UOP_BRANCH)) || uop0_prs2_ready_i || (uop0_prs2_i == preg_t'(0)) ||
                                                           (wb0_wake && (uop0_prs2_i == wb0_pnew_i)) ||
                                                           (wb1_wake && (uop0_prs2_i == wb1_pnew_i)) ||
                                                           (wb2_wake && (uop0_prs2_i == wb2_pnew_i)) ||
@@ -568,13 +572,13 @@ module fursoy_s1_int_iq
                     entries_q[alloc_slot1_eff].imm         <= uop1_imm_i;
                     entries_q[alloc_slot1_eff].use_imm     <= uop1_use_imm_i;
                     entries_q[alloc_slot1_eff].prs1        <= uop1_prs1_i;
-                    entries_q[alloc_slot1_eff].prs1_ready  <= uop1_prs1_ready_i || (uop1_prs1_i == 7'd0) ||
+                    entries_q[alloc_slot1_eff].prs1_ready  <= uop1_prs1_ready_i || (uop1_prs1_i == preg_t'(0)) ||
                                                           (wb0_wake && (uop1_prs1_i == wb0_pnew_i)) ||
                                                           (wb1_wake && (uop1_prs1_i == wb1_pnew_i)) ||
                                                           (wb2_wake && (uop1_prs1_i == wb2_pnew_i)) ||
                                                           (wb3_wake && (uop1_prs1_i == wb3_pnew_i));
                     entries_q[alloc_slot1_eff].prs2        <= uop1_prs2_i;
-                    entries_q[alloc_slot1_eff].prs2_ready  <= (uop1_use_imm_i && (uop1_class_i != UOP_BRANCH)) || uop1_prs2_ready_i || (uop1_prs2_i == 7'd0) ||
+                    entries_q[alloc_slot1_eff].prs2_ready  <= (uop1_use_imm_i && (uop1_class_i != UOP_BRANCH)) || uop1_prs2_ready_i || (uop1_prs2_i == preg_t'(0)) ||
                                                           (wb0_wake && (uop1_prs2_i == wb0_pnew_i)) ||
                                                           (wb1_wake && (uop1_prs2_i == wb1_pnew_i)) ||
                                                           (wb2_wake && (uop1_prs2_i == wb2_pnew_i)) ||
@@ -606,11 +610,11 @@ module fursoy_s1_int_iq
     // Simulation Assertions
     // -------------------------------------------------------------------------
 `ifndef SYNTHESIS
-    logic [4:0] occ_cnt;
+    logic [IQ_CNT_W-1:0] occ_cnt;
     always_comb begin
-        occ_cnt = 5'd0;
+        occ_cnt = '0;
         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-            if (entries_q[i].valid) occ_cnt = occ_cnt + 5'd1;
+            if (entries_q[i].valid) occ_cnt = occ_cnt + IQ_CNT_W'(1);
         end
     end
 
@@ -625,9 +629,9 @@ module fursoy_s1_int_iq
             rec_idx_q    <= recover_rob_idx_i;
             rec_head_q   <= rob_head_i;
 
-            // 1. IQ occupancy <= 16
-            if (occ_cnt > 5'd16) begin
-                $fatal(1, "[INT_IQ ASSERTION FAILED] IQ occupancy exceeds 16!");
+            // 1. IQ occupancy <= INT_IQ_DEPTH
+            if (occ_cnt > IQ_CNT_W'(INT_IQ_DEPTH)) begin
+                $fatal(1, "[INT_IQ ASSERTION FAILED] IQ occupancy exceeds %0d!", INT_IQ_DEPTH);
             end
 
             // 2. Recovery must not leave younger IQ entries
@@ -644,10 +648,10 @@ module fursoy_s1_int_iq
                 if (!ready_p0[sel_p0_idx]) begin
                     $fatal(1, "[INT_IQ ASSERTION FAILED] Port 0 issued an unready uop (slot %0d)!", sel_p0_idx);
                 end
-                if (entries_q[sel_p0_idx].prs1 != 7'd0 && !entries_q[sel_p0_idx].prs1_ready) begin
+                if (entries_q[sel_p0_idx].prs1 != preg_t'(0) && !entries_q[sel_p0_idx].prs1_ready) begin
                     $fatal(1, "[INT_IQ ASSERTION FAILED] Port 0 issued with unready prs1!");
                 end
-                if (entries_q[sel_p0_idx].prs2 != 7'd0 && (!entries_q[sel_p0_idx].use_imm || (entries_q[sel_p0_idx].uop_class == UOP_BRANCH)) && !entries_q[sel_p0_idx].prs2_ready) begin
+                if (entries_q[sel_p0_idx].prs2 != preg_t'(0) && (!entries_q[sel_p0_idx].use_imm || (entries_q[sel_p0_idx].uop_class == UOP_BRANCH)) && !entries_q[sel_p0_idx].prs2_ready) begin
                     $fatal(1, "[INT_IQ ASSERTION FAILED] Port 0 issued with unready prs2!");
                 end
             end
@@ -655,10 +659,10 @@ module fursoy_s1_int_iq
                 if (!ready_p1[sel_p1_idx]) begin
                     $fatal(1, "[INT_IQ ASSERTION FAILED] Port 1 issued an unready uop (slot %0d)!", sel_p1_idx);
                 end
-                if (entries_q[sel_p1_idx].prs1 != 7'd0 && !entries_q[sel_p1_idx].prs1_ready) begin
+                if (entries_q[sel_p1_idx].prs1 != preg_t'(0) && !entries_q[sel_p1_idx].prs1_ready) begin
                     $fatal(1, "[INT_IQ ASSERTION FAILED] Port 1 issued with unready prs1!");
                 end
-                if (entries_q[sel_p1_idx].prs2 != 7'd0 && (!entries_q[sel_p1_idx].use_imm || (entries_q[sel_p1_idx].uop_class == UOP_BRANCH)) && !entries_q[sel_p1_idx].prs2_ready) begin
+                if (entries_q[sel_p1_idx].prs2 != preg_t'(0) && (!entries_q[sel_p1_idx].use_imm || (entries_q[sel_p1_idx].uop_class == UOP_BRANCH)) && !entries_q[sel_p1_idx].prs2_ready) begin
                     $fatal(1, "[INT_IQ ASSERTION FAILED] Port 1 issued with unready prs2!");
                 end
             end
@@ -672,10 +676,10 @@ module fursoy_s1_int_iq
             // 4a. Younger branch uop NEVER bypasses older ready ALU uop
             if (sel_p0_valid && (entries_q[sel_p0_idx].uop_class == UOP_BRANCH || entries_q[sel_p0_idx].is_branch)) begin
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                    if (entries_q[i].valid && (4'(i) != sel_p0_idx) && ready_p0[i] &&
+                    if (entries_q[i].valid && (iq_idx_t'(i) != sel_p0_idx) && ready_p0[i] &&
                         !(entries_q[i].uop_class == UOP_BRANCH || entries_q[i].is_branch) &&
                         (rob_dist(entries_q[i].rob_idx, rob_head_i) < rob_dist(entries_q[sel_p0_idx].rob_idx, rob_head_i))) begin
-                        assert (sel_p1_valid && (sel_p1_idx == 4'(i)))
+                        assert (sel_p1_valid && (sel_p1_idx == iq_idx_t'(i)))
                             else $fatal(1, "[INT_IQ ASSERTION FAILED] Younger branch (slot %0d, rob %0d) bypassed older ready ALU (slot %0d, rob %0d)!",
                                         sel_p0_idx, entries_q[sel_p0_idx].rob_idx, i, entries_q[i].rob_idx);
                     end
@@ -685,12 +689,12 @@ module fursoy_s1_int_iq
             // 4b. Port 0 strictly selects oldest/highest-priority ready uop unless issued to Port 1
             if (sel_p0_valid) begin
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                    if (entries_q[i].valid && (4'(i) != sel_p0_idx) && ready_p0[i] &&
-                        !(sel_p1_valid && (sel_p1_idx == 4'(i)))) begin
+                    if (entries_q[i].valid && (iq_idx_t'(i) != sel_p0_idx) && ready_p0[i] &&
+                        !(sel_p1_valid && (sel_p1_idx == iq_idx_t'(i)))) begin
                         assert (!is_older_or_tiebreak(
                             rob_dist(entries_q[i].rob_idx, rob_head_i),
                             entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH),
-                            4'(i),
+                            iq_idx_t'(i),
                             rob_dist(entries_q[sel_p0_idx].rob_idx, rob_head_i),
                             entries_q[sel_p0_idx].is_branch || (entries_q[sel_p0_idx].uop_class == UOP_BRANCH),
                             sel_p0_idx))
@@ -701,7 +705,7 @@ module fursoy_s1_int_iq
             end
 
             // 5. Stale completion cannot wake operands
-            if (wb0_valid_i && !wb0_comp_ack_i && (wb0_pnew_i != 7'd0)) begin
+            if (wb0_valid_i && !wb0_comp_ack_i && (wb0_pnew_i != preg_t'(0))) begin
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                     if (entries_q[i].valid && !entries_q[i].prs1_ready && (entries_q[i].prs1 == wb0_pnew_i)) begin
                         if (!wb1_wake || (wb1_pnew_i != entries_q[i].prs1)) begin
@@ -715,7 +719,7 @@ module fursoy_s1_int_iq
                     end
                 end
             end
-            if (wb1_valid_i && !wb1_comp_ack_i && (wb1_pnew_i != 7'd0)) begin
+            if (wb1_valid_i && !wb1_comp_ack_i && (wb1_pnew_i != preg_t'(0))) begin
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                     if (entries_q[i].valid && !entries_q[i].prs1_ready && (entries_q[i].prs1 == wb1_pnew_i)) begin
                         if (!wb0_wake || (wb0_pnew_i != entries_q[i].prs1)) begin

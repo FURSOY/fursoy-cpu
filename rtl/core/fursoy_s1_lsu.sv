@@ -495,6 +495,41 @@ module fursoy_s1_dtlb
     end
     wire [2:0] super_install_idx = refill_super_dup_hit ? refill_super_dup_idx : super_round_robin;
 
+    // -------------------------------------------------------------------------
+    // Deferred Tree-PLRU hit update (PPA Stage 1 timing decoupling)
+    // -------------------------------------------------------------------------
+    // The lookup tag-compare / hit-way result is registered here and applied
+    // to base_plru one cycle later, so the timing-critical VA tag comparison
+    // never feeds the PLRU state flops in the same cycle. PLRU is a
+    // replacement hint only; translation results are unaffected.
+    wire p0_plru_upd_d = !sfence_vma_valid_i && !(refill_valid_i && satp_mode_sv39) &&
+                         p0_req_valid_i && satp_mode_sv39 && p0_canonical && p0_base_hit;
+    wire p1_plru_upd_d = !sfence_vma_valid_i && !(refill_valid_i && satp_mode_sv39) &&
+                         p1_req_valid_i && satp_mode_sv39 && p1_canonical && p1_base_hit &&
+                         !(p0_req_valid_i && (p0_base_set == p1_base_set));
+
+    logic       p0_plru_upd_q, p1_plru_upd_q;
+    logic [3:0] p0_plru_set_q, p1_plru_set_q;
+    logic [1:0] p0_plru_way_q, p1_plru_way_q;
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i) begin
+            p0_plru_upd_q <= 1'b0;
+            p1_plru_upd_q <= 1'b0;
+            p0_plru_set_q <= '0;
+            p1_plru_set_q <= '0;
+            p0_plru_way_q <= '0;
+            p1_plru_way_q <= '0;
+        end else begin
+            p0_plru_upd_q <= p0_plru_upd_d;
+            p1_plru_upd_q <= p1_plru_upd_d;
+            p0_plru_set_q <= p0_base_set;
+            p1_plru_set_q <= p1_base_set;
+            p0_plru_way_q <= p0_base_hit_way;
+            p1_plru_way_q <= p1_base_hit_way;
+        end
+    end
+
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
             for (int s = 0; s < BASE_SETS; s++) begin
@@ -508,6 +543,18 @@ module fursoy_s1_dtlb
             end
             super_round_robin <= 3'd0;
         end else begin
+            // -----------------------------------------------------------------
+            // C. Deferred PLRU Updates from the previous cycle's lookup hits.
+            //    Issued first so a same-cycle refill PLRU update (below) to the
+            //    same set takes priority. p0/p1 sets are distinct by capture.
+            // -----------------------------------------------------------------
+            if (p0_plru_upd_q) begin
+                base_plru[p0_plru_set_q] <= plru_update(base_plru[p0_plru_set_q], p0_plru_way_q);
+            end
+            if (p1_plru_upd_q) begin
+                base_plru[p1_plru_set_q] <= plru_update(base_plru[p1_plru_set_q], p1_plru_way_q);
+            end
+
             // -----------------------------------------------------------------
             // A. SFENCE.VMA Invalidation
             // -----------------------------------------------------------------
@@ -581,18 +628,8 @@ module fursoy_s1_dtlb
                     end
                 end
             end
-            // -----------------------------------------------------------------
-            // C. PLRU Updates on Lookup Hits
-            // -----------------------------------------------------------------
-            else begin
-                if (p0_req_valid_i && satp_mode_sv39 && p0_canonical && p0_base_hit) begin
-                    base_plru[p0_base_set] <= plru_update(base_plru[p0_base_set], p0_base_hit_way);
-                end
-                if (p1_req_valid_i && satp_mode_sv39 && p1_canonical && p1_base_hit &&
-                    !(p0_req_valid_i && (p0_base_set == p1_base_set))) begin
-                    base_plru[p1_base_set] <= plru_update(base_plru[p1_base_set], p1_base_hit_way);
-                end
-            end
+            // Lookup-hit PLRU updates are captured into p*_plru_upd_q above and
+            // applied in section C of the following cycle.
         end
     end
 
@@ -1036,7 +1073,7 @@ module fursoy_s1_lsu
     // Read Operand Forwarding for Port 2 Base Address
     logic [63:0] agu0_base_operand;
     always_comb begin
-        if (memiq_issue0_uop.prs1 == 7'd0) begin
+        if (memiq_issue0_uop.prs1 == preg_t'(0)) begin
             agu0_base_operand = 64'd0;
         end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == memiq_issue0_uop.prs1)) begin
             agu0_base_operand = wb3_data_i;
@@ -1054,7 +1091,7 @@ module fursoy_s1_lsu
     // Read Operand Forwarding for Port 3 Base Address
     logic [63:0] agu1_base_operand;
     always_comb begin
-        if (memiq_issue1_uop.prs1 == 7'd0) begin
+        if (memiq_issue1_uop.prs1 == preg_t'(0)) begin
             agu1_base_operand = 64'd0;
         end else if (wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i == memiq_issue1_uop.prs1)) begin
             agu1_base_operand = wb3_data_i;

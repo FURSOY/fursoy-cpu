@@ -149,12 +149,12 @@ module fursoy_s1_backend
     output logic [63:0]       probe_pdata_o,
 
     // Diagnostics
-    output logic [15:0]       diag_valid_mask_o,
-    output logic [15:0]       diag_ready_p0_o,
-    output logic [15:0]       diag_ready_p1_o,
-    output logic [15:0]       diag_prs1_rdy_o,
-    output logic [15:0]       diag_prs2_rdy_o,
-    output rob_idx_t          diag_rob_idx_o [16],
+    output logic [INT_IQ_DEPTH-1:0] diag_valid_mask_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_ready_p0_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_ready_p1_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_prs1_rdy_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_prs2_rdy_o,
+    output rob_idx_t                diag_rob_idx_o [INT_IQ_DEPTH],
 
     input  logic              test_inject_valid_i,
     input  logic [63:0]       test_inject_data_i,
@@ -879,7 +879,7 @@ module fursoy_s1_backend
         input preg_t       wb3_p,
         input logic [63:0] wb3_d
     );
-        if (prs == 7'd0) begin
+        if (prs == preg_t'(0)) begin
             return 64'd0;
         end else if (wb3_v && wb3_ack && !wb3_exc && (wb3_p == prs)) begin
             return wb3_d;
@@ -998,7 +998,7 @@ module fursoy_s1_backend
         if (rst_i || flush_valid_i) begin
             p0_wb_valid        <= 1'b0;
             p0_wb_data         <= 64'd0;
-            p0_wb_pnew         <= 7'd0;
+            p0_wb_pnew         <= preg_t'(0);
             p0_wb_rob_idx      <= '0;
             p0_wb_rob_epoch    <= '0;
             p0_wb_chkpt_id     <= '0;
@@ -1095,7 +1095,7 @@ module fursoy_s1_backend
         if (rst_i || flush_valid_i) begin
             alu1_done_valid_q <= 1'b0;
             alu1_done_data_q  <= 64'd0;
-            alu1_done_pnew_q  <= 7'd0;
+            alu1_done_pnew_q  <= preg_t'(0);
             alu1_done_rob_idx_q <= '0;
             alu1_done_rob_epoch_q <= '0;
         end else begin
@@ -1457,7 +1457,7 @@ module fursoy_s1_backend
     assign event_issue_port1_alu_o = is1_valid && !is1_squashed && !is1_is_mul && !is1_is_div;
     assign event_issue_port2_agu_o = u_lsu.memiq_issue0_valid;
 
-    assign event_intiq_empty_o     = (diag_ready_p0_o == 16'd0) && (diag_ready_p1_o == 16'd0);
+    assign event_intiq_empty_o     = (diag_ready_p0_o == '0) && (diag_ready_p1_o == '0);
     assign event_memiq_empty_o     = (memiq_diag_ready == '0);
     assign int_dispatch_ready_o    = int_dispatch_ready;
 
@@ -1677,7 +1677,7 @@ module fursoy_s1_backend
         end else begin
             p0_eff_wb_valid        = 1'b0;
             p0_eff_wb_data         = 64'd0;
-            p0_eff_wb_pnew         = 7'd0;
+            p0_eff_wb_pnew         = preg_t'(0);
             p0_eff_wb_rob_idx      = '0;
             p0_eff_wb_rob_epoch    = '0;
             p0_eff_wb_mispredict   = 1'b0;
@@ -1760,7 +1760,7 @@ module fursoy_s1_backend
     assign comp_valid_o[2]          = p2_comp_valid && !flush_valid_i;
     assign comp_rob_idx_o[2]        = p2_comp_rob_idx;
     assign comp_epoch_o[2]          = p2_comp_epoch;
-    assign comp_preg_o[2]           = p2_comp_is_fp ? 7'd0 : p2_comp_preg;
+    assign comp_preg_o[2]           = p2_comp_is_fp ? preg_t'(0) : p2_comp_preg;
     assign comp_branch_mispred_o[2] = 1'b0;
     assign comp_exception_o[2]      = p2_comp_exception;
     assign comp_cause_o[2]          = p2_comp_cause;
@@ -1771,7 +1771,7 @@ module fursoy_s1_backend
     assign comp_valid_o[3]          = p3_comp_valid && !flush_valid_i;
     assign comp_rob_idx_o[3]        = p3_comp_rob_idx;
     assign comp_epoch_o[3]          = p3_comp_epoch;
-    assign comp_preg_o[3]           = p3_comp_is_fp ? 7'd0 : p3_comp_preg;
+    assign comp_preg_o[3]           = p3_comp_is_fp ? preg_t'(0) : p3_comp_preg;
     assign comp_branch_mispred_o[3] = 1'b0;
     assign comp_exception_o[3]      = p3_comp_exception;
     assign comp_cause_o[3]          = p3_comp_cause;
@@ -1782,7 +1782,7 @@ module fursoy_s1_backend
     assign comp_valid_o[4]          = p4_fprf_wb_valid && !flush_valid_i && !w0_fp_valid_i;
     assign comp_rob_idx_o[4]        = p4_fprf_wb_rob_idx;
     assign comp_epoch_o[4]          = p4_fprf_wb_rob_epoch;
-    assign comp_preg_o[4]           = 7'd0;
+    assign comp_preg_o[4]           = preg_t'(0);
     assign comp_branch_mispred_o[4] = 1'b0;
     assign comp_exception_o[4]      = 1'b0;
     assign comp_cause_o[4]          = 5'd0;
@@ -1846,9 +1846,9 @@ module fursoy_s1_backend
     // Simulation Assertions
     // -------------------------------------------------------------------------
 `ifndef SYNTHESIS
-    wire prf_w0_we = p0_eff_wb_valid && comp_ack_i[0] && (p0_eff_wb_pnew != 7'd0);
-    wire prf_w1_we = p1_wb_valid && comp_ack_i[1] && (p1_wb_pnew != 7'd0);
-    wire prf_w2_we = p2_comp_valid && comp_ack_i[2] && !p2_comp_exception && (p2_comp_preg != 7'd0) && !p2_comp_is_fp;
+    wire prf_w0_we = p0_eff_wb_valid && comp_ack_i[0] && (p0_eff_wb_pnew != preg_t'(0));
+    wire prf_w1_we = p1_wb_valid && comp_ack_i[1] && (p1_wb_pnew != preg_t'(0));
+    wire prf_w2_we = p2_comp_valid && comp_ack_i[2] && !p2_comp_exception && (p2_comp_preg != preg_t'(0)) && !p2_comp_is_fp;
     logic flush_check_q;
     logic [63:0] dbg_be_cycle;
 
@@ -1877,16 +1877,16 @@ module fursoy_s1_backend
                 if (prf_w2_we && !comp_ack_i[2]) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write on Port 2 without accepted completion!");
                 end
-                if (prf_w0_we && (p0_eff_wb_pnew == 7'd0)) begin
+                if (prf_w0_we && (p0_eff_wb_pnew == preg_t'(0))) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write to p0 on Port 0!");
                 end
-                if (prf_w1_we && (p1_wb_pnew == 7'd0)) begin
+                if (prf_w1_we && (p1_wb_pnew == preg_t'(0))) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write to p0 on Port 1!");
                 end
-                if (prf_w2_we && (p2_comp_preg == 7'd0)) begin
+                if (prf_w2_we && (p2_comp_preg == preg_t'(0))) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] PRF write to p0 on Port 2!");
                 end
-                if (p2_comp_exception && comp_ack_i[2] && (p2_comp_preg != 7'd0) && prf_w2_we) begin
+                if (p2_comp_exception && comp_ack_i[2] && (p2_comp_preg != preg_t'(0)) && prf_w2_we) begin
                     $fatal(1, "[BACKEND ASSERTION FAILED] Faulting load wrote PRF!");
                 end
 
@@ -1904,7 +1904,7 @@ module fursoy_s1_backend
                 if (flush_check_q) begin
                     if (rf0_valid_q || rf1_valid_q || p0_wb_valid || p1_wb_valid ||
                         (mul_in_flight != 2'd0) || divider_busy || alu1_in_flight ||
-                        (diag_valid_mask_o != 16'd0)) begin
+                        (diag_valid_mask_o != '0)) begin
                         $fatal(1, "[BACKEND ASSERTION FAILED] Full flush did not clear speculative backend state!");
                     end
                 end

@@ -72,16 +72,16 @@ module fursoy_s1_prf_status
     // -------------------------------------------------------------------------
     // Combinational Source Readiness Lookups
     // -------------------------------------------------------------------------
-    assign uop0_rs1_ready_o = (uop0_rs1_preg_i == 7'd0) || ready_q[uop0_rs1_preg_i];
-    assign uop0_rs2_ready_o = (uop0_rs2_preg_i == 7'd0) || ready_q[uop0_rs2_preg_i];
+    assign uop0_rs1_ready_o = (uop0_rs1_preg_i == preg_t'(0)) || ready_q[uop0_rs1_preg_i];
+    assign uop0_rs2_ready_o = (uop0_rs2_preg_i == preg_t'(0)) || ready_q[uop0_rs2_preg_i];
 
     // uop1: if intra-group RAW from uop0, uop0 was just allocated this cycle
     // and cannot be completed, so readiness is strictly 0!
     assign uop1_rs1_ready_o = uop1_rs1_raw_uop0_i ? 1'b0 :
-                              (uop1_rs1_preg_i == 7'd0) || ready_q[uop1_rs1_preg_i];
+                              (uop1_rs1_preg_i == preg_t'(0)) || ready_q[uop1_rs1_preg_i];
 
     assign uop1_rs2_ready_o = uop1_rs2_raw_uop0_i ? 1'b0 :
-                              (uop1_rs2_preg_i == 7'd0) || ready_q[uop1_rs2_preg_i];
+                              (uop1_rs2_preg_i == preg_t'(0)) || ready_q[uop1_rs2_preg_i];
 
     assign prf_ready_o      = ready_q;
 
@@ -96,25 +96,25 @@ module fursoy_s1_prf_status
             ready_q <= '1;
         end else begin
             // 1. Reclaimed registers marked ready
-            if (reclaim_valid_i[0] && (reclaim_preg_i[0] != 7'd0)) begin
+            if (reclaim_valid_i[0] && (reclaim_preg_i[0] != preg_t'(0))) begin
                 ready_q[reclaim_preg_i[0]] <= 1'b1;
             end
-            if (reclaim_valid_i[1] && (reclaim_preg_i[1] != 7'd0)) begin
+            if (reclaim_valid_i[1] && (reclaim_preg_i[1] != preg_t'(0))) begin
                 ready_q[reclaim_preg_i[1]] <= 1'b1;
             end
 
             // 2. Execution writeback completion sets ready
             for (int unsigned w = 0; w < 5; w++) begin
-                if (wb_valid_i[w] && (wb_preg_i[w] != 7'd0)) begin
+                if (wb_valid_i[w] && (wb_preg_i[w] != preg_t'(0))) begin
                     ready_q[wb_preg_i[w]] <= 1'b1;
                 end
             end
 
             // 3. New allocations clear ready bit
-            if (alloc_valid_i[0] && (alloc_preg_i[0] != 7'd0)) begin
+            if (alloc_valid_i[0] && (alloc_preg_i[0] != preg_t'(0))) begin
                 ready_q[alloc_preg_i[0]] <= 1'b0;
             end
-            if (alloc_valid_i[1] && (alloc_preg_i[1] != 7'd0)) begin
+            if (alloc_valid_i[1] && (alloc_preg_i[1] != preg_t'(0))) begin
                 ready_q[alloc_preg_i[1]] <= 1'b0;
             end
 

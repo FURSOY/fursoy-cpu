@@ -169,14 +169,14 @@ module fursoy_s1_vec_iq
     // -------------------------------------------------------------------------
     logic [2:0] sel_slot;
     logic       sel_valid;
-    logic [5:0] oldest_dist;
+    rob_dist_t  oldest_dist;
 
     always_comb begin
-        logic [5:0] d;
+        rob_dist_t d;
         sel_slot    = 3'd0;
         sel_valid   = 1'b0;
-        oldest_dist = 6'd63;
-        d           = 6'd0;
+        oldest_dist = rob_dist_t'(ROB_DEPTH - 1);
+        d           = '0;
 
         for (int i = 0; i < VIQ_DEPTH; i++) begin
             if (entries_q[i].valid &&

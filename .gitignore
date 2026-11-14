@@ -4,6 +4,11 @@
 # Rebuildable compilation and simulation outputs
 build/
 obj_dir/
+tools/synth/bin/
+tools/synth/lib/*.lib
+
+# Logs
+*.log
 
 # Intermediate object and binary artifacts outside build/
 *.o

@@ -11,6 +11,7 @@ import sys
 import os
 import re
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from collections import Counter, defaultdict
@@ -122,17 +123,14 @@ def analyze_instruction(mnemonic, operands):
         "has_rd": has_rd
     }
 
-def to_wsl_path(p):
-    p_str = str(p.resolve()).replace("\\", "/")
-    if len(p_str) > 1 and p_str[1] == ":":
-        drive = p_str[0].lower()
-        return f"/mnt/{drive}{p_str[2:]}"
-    return p_str
-
 def disassemble_and_collect(elf_path, max_insns=100000):
-    """Disassemble an ELF binary using riscv64-linux-gnu-objdump and parse instructions."""
-    wsl_p = to_wsl_path(elf_path)
-    cmd = ["wsl", "bash", "-c", f"riscv64-linux-gnu-objdump -d {wsl_p}"]
+    """Disassemble an ELF binary using native RISC-V objdump and parse instructions."""
+    objdump_bin = (
+        shutil.which("riscv64-linux-gnu-objdump")
+        or shutil.which("riscv64-unknown-elf-objdump")
+        or "riscv64-linux-gnu-objdump"
+    )
+    cmd = [objdump_bin, "-d", str(elf_path.resolve())]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         
     insns = []

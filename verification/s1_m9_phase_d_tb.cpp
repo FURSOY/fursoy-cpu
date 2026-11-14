@@ -213,10 +213,8 @@ int main(int argc, char **argv) {
         if (dut.rootp->fursoy_s1_soc__DOT__u_core__DOT__u_backend__DOT__u_lsu__DOT__u_l1d__DOT__valid_array[set][w] &&
             (dut.rootp->fursoy_s1_soc__DOT__u_core__DOT__u_backend__DOT__u_lsu__DOT__u_l1d__DOT__tag_array[set][w] == tag)) {
           int byte_in_line = addr & 0x3f;
-          int dw_idx = (byte_in_line >> 3) & 7;
-          int bank = dw_idx & 3;
-          int sub_dw = (dw_idx >> 2) & 1;
-          uint64_t dword = dut.rootp->fursoy_s1_soc__DOT__u_core__DOT__u_backend__DOT__u_lsu__DOT__u_l1d__DOT__bank_data[bank][set][w][sub_dw];
+          int bank = (byte_in_line >> 3) & 7;
+          uint64_t dword = dut.rootp->fursoy_s1_soc__DOT__u_core__DOT__u_backend__DOT__u_lsu__DOT__u_l1d__DOT__bank_data[bank][set][w];
           unsigned shift = (addr & 7) * 8;
           unsigned bytes = 1 << size;
           uint64_t mask = (bytes == 8) ? ~0ULL : ((1ULL << (bytes * 8)) - 1ULL);

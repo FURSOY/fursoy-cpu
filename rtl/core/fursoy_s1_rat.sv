@@ -118,18 +118,16 @@ module fursoy_s1_rat
     // -------------------------------------------------------------------------
     // Circular Age Helper Function
     // -------------------------------------------------------------------------
-    function automatic logic [5:0] rob_age(input [5:0] idx, input [5:0] head);
-        logic [6:0] diff;
-        diff = {1'b0, idx} + 7'd48 - {1'b0, head};
-        return (diff >= 7'd48) ? (diff[5:0] - 6'd48) : diff[5:0];
+    function automatic rob_dist_t rob_age(input rob_idx_t idx, input rob_idx_t head);
+        return rob_dist(idx, head);
     endfunction
 
     // -------------------------------------------------------------------------
     // Rename Source Lookup & Intra-group RAW Dependency Logic
     // -------------------------------------------------------------------------
     // uop0 sources directly read SRAT
-    assign uop0_rs1_preg_o = (uop0_i.rs1 == 5'd0) ? 7'd0 : srat_q[uop0_i.rs1];
-    assign uop0_rs2_preg_o = (uop0_i.rs2 == 5'd0) ? 7'd0 : srat_q[uop0_i.rs2];
+    assign uop0_rs1_preg_o = (uop0_i.rs1 == 5'd0) ? preg_t'(0) : srat_q[uop0_i.rs1];
+    assign uop0_rs2_preg_o = (uop0_i.rs2 == 5'd0) ? preg_t'(0) : srat_q[uop0_i.rs2];
 
     // uop0/uop1 produce a destination register?
     wire uop0_produces_rd = uop0_i.valid && (!uop0_i.fp_dest_valid) && (uop0_i.rd != 5'd0);
@@ -140,11 +138,11 @@ module fursoy_s1_rat
     assign uop1_rs2_raw_uop0_o = uop0_produces_rd && (uop1_i.rs2 == uop0_i.rd);
 
     // uop1 source resolution
-    assign uop1_rs1_preg_o = (uop1_i.rs1 == 5'd0)        ? 7'd0 :
+    assign uop1_rs1_preg_o = (uop1_i.rs1 == 5'd0)        ? preg_t'(0) :
                              uop1_rs1_raw_uop0_o         ? uop0_pnew_i :
                                                            srat_q[uop1_i.rs1];
 
-    assign uop1_rs2_preg_o = (uop1_i.rs2 == 5'd0)        ? 7'd0 :
+    assign uop1_rs2_preg_o = (uop1_i.rs2 == 5'd0)        ? preg_t'(0) :
                              uop1_rs2_raw_uop0_o         ? uop0_pnew_i :
                                                            srat_q[uop1_i.rs2];
 
@@ -152,13 +150,13 @@ module fursoy_s1_rat
     // Destination Pold Resolution & Intra-group WAW Handling
     // -------------------------------------------------------------------------
     // uop0 displaced Pold
-    assign uop0_pold_o = ((uop0_i.rd == 5'd0) || uop0_i.fp_dest_valid) ? 7'd0 : srat_q[uop0_i.rd];
+    assign uop0_pold_o = ((uop0_i.rd == 5'd0) || uop0_i.fp_dest_valid) ? preg_t'(0) : srat_q[uop0_i.rd];
 
     // Intra-group WAW detection for uop1
     wire uop1_waw_uop0 = uop0_produces_rd && (uop1_i.rd == uop0_i.rd);
 
     // uop1 displaced Pold: if intra-group WAW, uop1's Pold is uop0's Pnew!
-    assign uop1_pold_o = ((uop1_i.rd == 5'd0) || uop1_i.fp_dest_valid) ? 7'd0 :
+    assign uop1_pold_o = ((uop1_i.rd == 5'd0) || uop1_i.fp_dest_valid) ? preg_t'(0) :
                          uop1_waw_uop0       ? uop0_pnew_i :
                                                srat_q[uop1_i.rd];
 
@@ -269,7 +267,7 @@ module fursoy_s1_rat
                 arat_q[retire_rd_i[1]] <= retire_pnew_i[1];
             end
             // Ensure p0 is hardwired to 0
-            arat_q[0] <= 7'd0;
+            arat_q[0] <= preg_t'(0);
 
             // Checkpoint release on branch retirement
             if (retire_valid_i[0] && retire_is_branch_i[0]) begin
@@ -327,7 +325,7 @@ module fursoy_s1_rat
                     srat_q[uop1_i.rd] <= uop1_pnew_i;
                 end
                 // Permanent p0 invariant
-                srat_q[0] <= 7'd0;
+                srat_q[0] <= preg_t'(0);
             end
         end
     end
@@ -340,19 +338,19 @@ module fursoy_s1_rat
     always_ff @(posedge clk_i) begin
         if (!rst_i) begin
             // x0 permanently mapped to p0
-            if (arat_q[0] != 7'd0) begin
+            if (arat_q[0] != preg_t'(0)) begin
                 $fatal(1, "[RAT ASSERTION FAILED] ARAT[0] != p0! (p%0d)", arat_q[0]);
             end
-            if (srat_q[0] != 7'd0) begin
+            if (srat_q[0] != preg_t'(0)) begin
                 $fatal(1, "[RAT ASSERTION FAILED] SRAT[0] != p0! (p%0d)", srat_q[0]);
             end
 
-            // All ARAT and SRAT mappings must be valid physical registers (< 80)
+            // All ARAT and SRAT mappings must be valid physical registers (< PRF_SIZE)
             for (int unsigned r = 0; r < AREG_COUNT; r++) begin
-                if (arat_q[r] >= PRF_SIZE[6:0]) begin
+                if (arat_q[r] >= PRF_SIZE[PRF_IDX_W-1:0]) begin
                     $fatal(1, "[RAT ASSERTION FAILED] ARAT[%0d] = %0d >= PRF_SIZE", r, arat_q[r]);
                 end
-                if (srat_q[r] >= PRF_SIZE[6:0]) begin
+                if (srat_q[r] >= PRF_SIZE[PRF_IDX_W-1:0]) begin
                     $fatal(1, "[RAT ASSERTION FAILED] SRAT[%0d] = %0d >= PRF_SIZE", r, srat_q[r]);
                 end
             end

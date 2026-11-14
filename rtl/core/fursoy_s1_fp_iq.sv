@@ -244,12 +244,12 @@ module fursoy_s1_fp_iq
     logic       sel_valid;
 
     always_comb begin
-        logic [5:0] best_dist;
-        logic [5:0] d;
+        rob_dist_t best_dist;
+        rob_dist_t d;
         sel_idx   = 4'd0;
         sel_valid = 1'b0;
-        best_dist = 6'd63;
-        d         = 6'd0;
+        best_dist = rob_dist_t'(ROB_DEPTH - 1);
+        d         = '0;
 
         for (int i = 0; i < FPIQ_DEPTH; i++) begin
             if (ready_mask[i]) begin

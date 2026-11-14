@@ -90,10 +90,10 @@ module fursoy_s1_prf
 
     // Gated Write Enables: Strictly lifetime-gated by M1 comp_ack.
     // Faulting loads (w2_comp_exception_i / w3_comp_exception_i == 1) MUST NOT write PRF data (Section 3.2).
-    wire w0_we = w0_valid_i && w0_comp_ack_i && (w0_paddr_i != 7'd0) && (w0_paddr_i < PRF_SIZE[6:0]);
-    wire w1_we = w1_valid_i && w1_comp_ack_i && (w1_paddr_i != 7'd0) && (w1_paddr_i < PRF_SIZE[6:0]);
-    wire w2_we = w2_valid_i && w2_comp_ack_i && !w2_comp_exception_i && (w2_paddr_i != 7'd0) && (w2_paddr_i < PRF_SIZE[6:0]);
-    wire w3_we = w3_valid_i && w3_comp_ack_i && !w3_comp_exception_i && (w3_paddr_i != 7'd0) && (w3_paddr_i < PRF_SIZE[6:0]);
+    wire w0_we = w0_valid_i && w0_comp_ack_i && (w0_paddr_i != preg_t'(0)) && (w0_paddr_i < PRF_SIZE[PRF_IDX_W-1:0]);
+    wire w1_we = w1_valid_i && w1_comp_ack_i && (w1_paddr_i != preg_t'(0)) && (w1_paddr_i < PRF_SIZE[PRF_IDX_W-1:0]);
+    wire w2_we = w2_valid_i && w2_comp_ack_i && !w2_comp_exception_i && (w2_paddr_i != preg_t'(0)) && (w2_paddr_i < PRF_SIZE[PRF_IDX_W-1:0]);
+    wire w3_we = w3_valid_i && w3_comp_ack_i && !w3_comp_exception_i && (w3_paddr_i != preg_t'(0)) && (w3_paddr_i < PRF_SIZE[PRF_IDX_W-1:0]);
 
     // -------------------------------------------------------------------------
     // Synchronous Array Write
@@ -145,7 +145,7 @@ module fursoy_s1_prf
         input preg_t       waddr3,
         input logic [63:0] wdata3
     );
-        if (raddr == 7'd0) begin
+        if (raddr == preg_t'(0)) begin
             return 64'd0;
         end else if (we3 && (waddr3 == raddr)) begin
             return wdata3;
@@ -179,25 +179,25 @@ module fursoy_s1_prf
             if (mem_q[0] != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] mem_q[0] != 0! (%016h)", mem_q[0]);
             end
-            if (r0_paddr_i == 7'd0 && r0_data_o != 64'd0) begin
+            if (r0_paddr_i == preg_t'(0) && r0_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 0 returned non-zero for p0: %016h", r0_data_o);
             end
-            if (r1_paddr_i == 7'd0 && r1_data_o != 64'd0) begin
+            if (r1_paddr_i == preg_t'(0) && r1_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 1 returned non-zero for p0: %016h", r1_data_o);
             end
-            if (r2_paddr_i == 7'd0 && r2_data_o != 64'd0) begin
+            if (r2_paddr_i == preg_t'(0) && r2_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 2 returned non-zero for p0: %016h", r2_data_o);
             end
-            if (r3_paddr_i == 7'd0 && r3_data_o != 64'd0) begin
+            if (r3_paddr_i == preg_t'(0) && r3_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 3 returned non-zero for p0: %016h", r3_data_o);
             end
-            if (r4_paddr_i == 7'd0 && r4_data_o != 64'd0) begin
+            if (r4_paddr_i == preg_t'(0) && r4_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 4 returned non-zero for p0: %016h", r4_data_o);
             end
-            if (r5_paddr_i == 7'd0 && r5_data_o != 64'd0) begin
+            if (r5_paddr_i == preg_t'(0) && r5_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 5 returned non-zero for p0: %016h", r5_data_o);
             end
-            if (r6_paddr_i == 7'd0 && r6_data_o != 64'd0) begin
+            if (r6_paddr_i == preg_t'(0) && r6_data_o != 64'd0) begin
                 $fatal(1, "[PRF ASSERTION FAILED] Read Port 6 returned non-zero for p0: %016h", r6_data_o);
             end
 

@@ -1,96 +1,147 @@
-# Fursoy CPU
+# Fursoy Slice-1
 
-Original CPU project targeting a single-socket, 4→8 core Linux server.
-Architectural goals and transition gates: [master plan](CPU_MASTER_PLAN.md).
-Server decision and ECC/RAS priorities: [ADR-001](docs/decisions/001-server-target.md).
+**A 64-bit Out-of-Order Superscalar RISC-V Processor (`RV64IMAFDV + Zba + Zbb + Zicsr + Zifencei`) booting mainline Linux 6.6.50 and BusyBox userspace under Sv39 virtual memory.**
 
-## Current Status
+Fursoy is a clean-slate SystemVerilog RISC-V processor project targeting a single-socket 4→8 core server SoC ([ADR-001](docs/decisions/001-server-target.md), [master plan](CPU_MASTER_PLAN.md)). **Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`)** delivers the verified single-core out-of-order superscalar processor with Sv39 demand paging, machine/supervisor/user privilege separation, cycle-exact hardware performance telemetry, and 500 MHz Nangate 45nm standard-cell synthesis closure across 8 core functional blocks.
 
-The project is at the functional and verified in-order **Slice-0** core stage:
+---
 
-- **Core architecture:** In-order `fursoy_s0_core` providing RV64I integer instruction set, Zicsr, and FENCE.I support.
-- **Privilege and CSR:** Reviewed and frozen M-mode substrate; explicit M/S/U privilege state machine, CSR address privilege check (`csr_addr[9:8] <= priv_mode`), read-only CSR protection, WARL fields, and side-effect suppression on trap/fault.
-- **Initial S-mode Bare RTL package:** Passed independent review and frozen (ACCEPT AND FREEZE). Includes S-mode trap register bank (`stvec`, `sscratch`, `sepc`, `scause`, `stval`), `sstatus` masked alias, synchronous exception delegation via `medeleg`, `mret`/`sret` rules, `wfi`, Bare `sfence.vma`, and counter access control (`mcounteren`/`scounteren`).
-- **Interrupts and SoC integration:** Single-hart CLINT (MTIP/MSIP) and external interrupt (MEIP) support; SoC memory map and MMIO bus integration (`fursoy_s0_soc`).
-- **Verification and reference:** 11 bare-metal ELF tests execute on both the Spike reference simulator and Verilator DUT simulation, passing signature comparisons (`tools/run_core_baremetal_s0.py`). S-mode trap and privilege scenarios are verified with focused integration tests (57 CSR unit checks, 9 end-to-end scenarios).
+## Microarchitecture Highlights
 
-Key components not yet implemented and missing:
-- Supervisor interrupt delegation (`mideleg`, `sie`, `sip`, SSIP/STIP/SEIP).
-- Sv39 paging / MMU / PTW / TLB.
-- PMP (Physical Memory Protection).
-- PLIC (Platform-Level Interrupt Controller).
-- Caches (L1I/L1D and L2/L3 cache structures).
-- Multi-core / multi-hart support.
-- Linux boot.
-- Physical PPA (area, frequency, power) results.
+- **2-Wide Superscalar OoO Core (`fursoy_s1_core`)**:
+  - 2-wide fetch, decode, register rename, and in-order retirement (`M/S/U` privilege modes, `medeleg`/`mideleg`, `WFI`, `MRET`/`SRET`).
+  - **128-entry Reorder Buffer** (`ROB_DEPTH = 128`) with 4-bit wrap-safe epoch tags and precise exception/interrupt flush recovery.
+  - **160-entry Physical Integer Register File** (`PRF_SIZE = 160`, `128` speculative free-list entries) plus **8 branch checkpoints** (`NUM_CHECKPOINTS = 8`) for single-cycle speculative RAT rollback.
+  - Dedicated issue queues: **32-entry Integer IQ** (`INT_IQ_DEPTH = 32`), **32-entry Memory IQ** (`MEM_IQ_DEPTH = 32`), **FP IQ** (`FPRF_SIZE = 64`), and decoupled **8-entry Vector IQ** (`VLEN = 256`, `ELEN = 64`, `48` vector physical registers).
+  - Parallel-prefix **64-bit Kogge-Stone `fursoy_s1_alu`** and `fursoy_s1_branch_unit` (single-cycle execution + carry-free target equality), 3-stage pipelined multiplier, and hardware divider.
+- **Sv39 Virtual Memory & Non-Blocking Caches**:
+  - **Dual-port Sv39 DTLB**: `64`-entry 4-way set-associative base TLB (`16` sets, Tree-PLRU) + `8`-entry 2 MiB / 1 GiB superpage CAM with `32`-entry Translation Request Table (`TRT_DEPTH = 32`).
+  - **Sv39 ITLB**: `64`-entry 4-way set-associative base TLB + `8`-entry superpage CAM.
+  - **Shared Hardware PTW (`fursoy_s1_ptw`)**: Walks Sv39 page tables with **non-destructive L1D dirty snoop coherency** so page-table writes sitting dirty in L1D are observed directly without eviction, paired with `SFENCE.VMA` store-queue drain and D-cache clean synchronization.
+  - **L1I Cache (`fursoy_s1_l1i`)**: `16 KiB`, 4-way set-associative (`64` sets × `64 B`), VIPT-safe with conservative next-line prefetcher and `2` I-MSHRs.
+  - **L1D Cache (`fursoy_s1_l1d`)**: `16 KiB`, 4-way set-associative (`64` sets × `64 B`), **8-bank** (`PA[5:3]`) non-blocking data cache with `16`-entry Load Queue, `16`-entry Store Queue, `4` MSHRs, and `2`-entry Writeback Buffer.
+- **SoC & Peripherals (`fursoy_s1_soc`)**:
+  - **5-to-1 Priority Crossbar**: Core MMIO > PTW walks > L1I refills > L1D refills > L1D dirty writebacks, with anti-starvation fairness and unmapped-aperture bus error trapping.
+  - **Platform Devices**: `256 MiB` DRAM interface (`0x8000_0000`), `CLINT` (`0x0200_0000`), `PLIC` (`0x0C00_0000`, `31` external sources), `16550 UART` (`0x1000_0000`), and custom minimal **SBI v2.0** M-mode firmware (`Base`, `TIME`, `SRST`, `DBCN`).
 
-## Environment Check
+---
 
-Inside Ubuntu WSL, from the repository root:
+## Physical Synthesis & STA (Nangate 45nm @ 500 MHz)
 
-```bash
-python3 tools/check_environment.py --require bootstrap --output results/environment-wsl.json
-python3 -m unittest discover -s verification -v
+Evaluated standalone across 8 core functional blocks using **Yosys 0.33** + **sv2v v0.0.13** + **OpenSTA 3.1.0** on **NangateOpenCellLibrary (45nm Typical, 1.10V, 25C)** targeting **500 MHz (`2.000 ns` clock period)** (`tools/run_s1_synth.py --run-synth`, full report in `build/synth/s1_synth_report.json`):
+
+| Module | Type | Cells | DFFs | Area (kGE) | Baseline Arrival / WNS | Optimized Arrival | Opt WNS @ 500 MHz |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `fursoy_s1_branch_unit` | Comb | 3,285 | 0 | 4.49 | 3.712 ns (`-1.712 ns`) | **0.629 ns** | **+1.371 ns (MET)** |
+| `fursoy_s1_csr` | Seq | 13,438 | 1,688 | 25.81 | 22.776 ns (`-21.120 ns`) | **1.828 ns** | **+0.133 ns (MET)** |
+| `fursoy_s1_dtlb` | Seq | 50,417 | 6,515 | 99.83 | 11.011 ns (`-9.211 ns`) | **1.249 ns** | **+0.551 ns (MET)** |
+| `fursoy_s1_itlb` | Seq | 36,238 | 6,304 | 77.12 | 4.057 ns (`-2.102 ns`) | **1.198 ns** | **+0.602 ns (MET)** |
+| `fursoy_s1_agu` | Comb | 321 | 0 | 0.66 | 2.301 ns (`-0.301 ns`) | **1.901 ns** | **+0.099 ns (MET)** |
+| `fursoy_s1_ptw` | Seq | 1,765 | 329 | 3.67 | 1.956 ns (`+0.005 ns`) | **0.948 ns** | **+1.013 ns (MET)** |
+| `fursoy_s1_decode` | Comb | 1,489 | 0 | 1.92 | 0.875 ns (`+1.125 ns`) | **0.663 ns** | **+1.337 ns (MET)** |
+| `fursoy_s1_alu` | Comb | 4,066 | 0 | 5.93 | 3.823 ns (`-1.823 ns`) | **0.994 ns** | **+1.006 ns (MET)** |
+| **Total (8 Core Blocks)** | — | **111,019** | **14,836** | **219.43** | — | **8 / 8 MET** | **TNS = 0.00 ns** |
+
+> *Note: Total standard-cell area across these 8 standalone blocks is `175,106.74 um^2` (`NAND2_X1 = 0.798 um^2`). Full-SoC place-and-route and SRAM macro compilation are not yet executed.*
+
+---
+
+## Linux 6.6.50 Boot & Single-Owner CPI Telemetry
+
+The Milestone 9 Gate G5 closeout (`tools/run_s1_m9_closeout.py`, saved in [`results/s1-m9-closeout.json`](results/s1-m9-closeout.json)) boots mainline **Linux 6.6.50** in Verilator with zero kernel panics, zero oopses, zero access faults, and **0** CPI conservation errors across **89,861,075** simulated cycles (`76,236,390` retired instructions, `2,227,761` U-mode commits, `2,255` demand page faults / `1,027` U-mode, `IPC = 0.84838`):
+
+```text
+[    0.000000] Linux version 6.6.50 ... (riscv64-linux-gnu-gcc 13.3.0)
+[    0.000000] Machine model: Fursoy Slice-1 Out-of-Order Server SoC
+[    0.000000] SBI specification v2.0 detected
+[    0.000000] SBI implementation ID=0xf00501 Version=0x1
+[    0.000000] earlycon: uart8250 at MMIO32 0x0000000010000000 (options '')
+...
+[    6.809584] Run /init as init process
+[INIT] Fursoy Slice-0 Linux BusyBox Userspace active!
+FURSOY_USERSPACE_BEGIN
+[TEST 01] uname ... Linux (none) 6.6.50 riscv64 GNU/Linux
+...
+[TEST 20] repeated process creation/exit
+[TEST 21] userspace memory stress
+[MEM_STRESS_START] Running stack and heap multi-width memory validation...
+[MEM_STRESS_PASS] All stack, heap, multi-width, and strided tests passed.
+FURSOY_USERSPACE_PASS
 ```
 
-The script does not install tools. It executes version/help commands for discovered tools.
-A profile showing `ready` indicates only that these invocations succeeded;
-it does not indicate interoperability, hardware simulation viability, or production readiness.
-The JSON is an observational record, not a locked toolchain.
+### Cycle-Exact 8-Category CPI Conservation Breakdown
 
-For example, `--require rtl` returns a non-zero exit code if hardware simulation tools are missing or broken. Multiple `--require` flags can be specified.
-Without `--require`, it only collects inventory; missing items still appear in the report.
+Every cycle is mutually exclusively owned by one architectural bucket asserted continuously in hardware (`sum(C_k) == mcycle = 89,861,075`, `cpi_conservation_errors = 0`):
 
-## Real RTL Simulation
+| CPI Category | Cycles | Share | Description |
+| :--- | ---: | ---: | :--- |
+| `C_productive` | 43,079,458 | 47.94% | Active useful graduation / commit cycles |
+| `C_br_recover` | 15,024,530 | 16.72% | Branch misprediction & exception flush recovery |
+| `C_idle_other` | 14,806,625 | 16.48% | WFI idle, non-stalled pipeline drain & other bubbles |
+| `C_be_rename` | 5,709,439 | 6.35% | Rename stalls (ROB / Free List / checkpoint capacity) |
+| `C_mem_stall` | 5,549,273 | 6.18% | L1D miss / bank conflict / DTLB-PTW memory stalls |
+| `C_be_sched` | 2,736,785 | 3.05% | Issue queue scheduling / execution operand stalls |
+| `C_serialize` | 2,450,147 | 2.73% | CSR / `SFENCE.VMA` / `FENCE.I` / trap serialization |
+| `C_fe_starve` | 504,818 | 0.56% | Frontend fetch queue empty (L1I miss / ITLB miss) |
+| **Total (`mcycle`)** | **89,861,075** | **100.00%** | **76,236,390 commits (IPC = 0.84838)** |
 
-Inside Ubuntu from the repository root:
+---
 
-```bash
-python3 tools/run_fifo.py
-```
+## Quickstart (Prerequisites & Verification)
 
-Requires Verilator and G++. The script compiles four FIFO configurations and one mutated/broken RTL copy; build parallelism is limited to 2. Source RTL is not modified.
-The first failure produces a non-zero exit code. Results and source SHA-256 hashes are stored in `results/fifo.json`; build/run logs are kept under `build/fifo/`.
-This is an RTL toolchain and FIFO functional check; it is not formal or PPA verification.
-
-Interface and scope: [FIFO contract](docs/architecture/fifo.md).
-Evidence and limits: [RTL pilot report](docs/progress/002-rtl-pilot.md).
-
-## Next Steps
-
-1. Supervisor interrupt delegation package (`mideleg`, `sie`, `sip`, SSIP/STIP/SEIP).
-2. Sv39 / MMU architectural contract and hardware design.
-3. PMP, PLIC, and cache integration.
-
-Existing hardware, gaps, and verification evidence:
-[initial environment record](docs/progress/001-environment.md).
-
-ISA/platform scope: [contract](docs/requirements/isa-platform.md),
-[requirements table](docs/requirements/isa-platform.csv).
-Table verification: `python3 tools/check_requirements.py`.
-
-## Bare-Metal Compilation and DUT Execution
-
-Inside Ubuntu, run `python3 tools/build_baremetal.py`. Requires RISC-V GCC/binutils.
-ELFs and detailed logs are generated under `build/baremetal/`; persistent summaries and source hashes are recorded under `results/baremetal-build.json`.
-Compiled ELFs are executed on Spike via `python3 tools/run_spike.py` and on the Verilator DUT via `python3 tools/run_core_baremetal_s0.py` to verify signatures.
-Test contract: [bare-metal v1](docs/architecture/baremetal-v1.md).
-Instruction, CSR, and trap sub-contract: [slice-0](docs/requirements/slice-0.md).
-
-## Spike Reference Preparation
-
-The official source commit is pinned in `tools/spike-lock.json`. Source and build
-artifacts reside under `build/` inside the project; the system PATH is not modified.
-Ubuntu dependencies: `device-tree-compiler libboost-regex-dev libboost-system-dev`.
-Once installed, execute sequentially in Ubuntu:
+### Prerequisites (Ubuntu 24.04 / WSL2)
 
 ```bash
-python3 tools/setup_spike.py
-python3 tools/build_baremetal.py
-python3 tools/run_spike.py
+sudo apt-get update
+sudo apt-get install -y \
+  verilator g++ python3 device-tree-compiler \
+  gcc-riscv64-unknown-elf gcc-riscv64-linux-gnu
 ```
 
-Setup compilation logs are maintained under `build/spike-build/`; uses 4 build jobs.
-In addition to genuine success, the runner checks unexpected trap, corrupted signature, and timeout
-scenarios. Spike reference execution and golden signature generation infrastructure
-are verified and used in regressions (`results/spike.json`).
+*(Optional, for physical synthesis & STA: `yosys`, `sv2v`, OpenSTA `sta`, and Nangate45 `.lib` via `FURSOY_LIBERTY` or `tools/synth/lib/NangateOpenCellLibrary_typical.lib`.)*
+
+### Running Verification
+
+From the repository root:
+
+```bash
+# 1. Production RTL lint (Verilator --lint-only, expects 0 warnings/errors)
+python3 tools/run_s1_lint.py
+
+# 2. Fast Slice-1 verification regressions (runtime ~3-6 min total)
+python3 tools/run_s1_m9_phase_a.py   # Interrupts, mideleg, WFI, precise trap boundaries
+python3 tools/run_s1_m9_phase_b.py   # CLINT, PLIC, UART 16550 platform peripherals
+python3 tools/run_s1_m9_phase_c.py   # 5-master crossbar, DTB, unmapped faults
+python3 tools/run_s1_m9_phase_d.py   # SBI v2.0 firmware + mixed-privilege stress
+python3 tools/run_s1_m8_closeout.py  # RV64FD + RVV 1.0 FP/Vector backend
+python3 tools/run_s1_m7_closeout.py  # Multi-bank non-blocking L1D + coherency
+python3 tools/run_s1_m6_closeout.py  # Frontend BPU / ITLB / L1I NLP
+
+# 3. Nangate 45nm @ 500 MHz synthesis & OpenSTA check
+python3 tools/run_s1_synth.py --run-synth
+
+# 4. Full Linux 6.6.50 + BusyBox boot closeout (~1.5-2 hours wall time)
+# Requires a built RISC-V Image at build/linux-6.6.50/arch/riscv/boot/Image
+# (kernel config/patches in software/linux/, initramfs helper in tools/build_initramfs.py).
+python3 tools/run_s1_m9_closeout.py
+```
+
+---
+
+## Repository Layout
+
+| Directory | Contents |
+| :--- | :--- |
+| [`rtl/core/`](rtl/core/) | Slice-1 64-bit OoO core SystemVerilog modules (`fursoy_s1_core`, ROB, rename, IQs, ALU/Branch/Mul/Div, FP/Vec, DTLB/ITLB/PTW, L1I/L1D) |
+| [`rtl/platform/`](rtl/platform/) | Slice-1/Slice-0 SoC integration (`fursoy_s1_soc`), 5-master crossbar, CLINT, PLIC, 16550 UART |
+| [`software/`](software/) | Minimal SBI v2.0 M-mode firmware, Fursoy Slice-1 Device Tree (`fursoy_s1.dts`), Linux 6.6.50 defconfig/patches, BusyBox `/init` & `mem_stress` |
+| [`verification/`](verification/) | Verilator C++ self-checking testbenches (`s1_m9_closeout_tb.cpp`, M5–M9 phase/closeout benches, unit checks) |
+| [`tools/`](tools/) | Python lint, regression, Linux closeout, synthesis (`run_s1_synth.py`), and analysis runners |
+| [`docs/architecture/`](docs/architecture/) | Normative microarchitecture, MMU, cache, and SoC specification documents |
+| [`results/`](results/) | Verified milestone JSON evidence reports (including `results/s1-m9-closeout.json`) |
+
+---
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

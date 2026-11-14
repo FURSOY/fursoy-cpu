@@ -104,12 +104,15 @@ module fursoy_s1_mem_iq
     // Diagnostics
     output logic [MEM_IQ_DEPTH-1:0] diag_valid_mask_o,
     output logic [MEM_IQ_DEPTH-1:0] diag_ready_mask_o,
-    output logic [4:0]              free_count_o,
-    output logic [4:0]              count_o
+    output logic [MEM_IQ_IDX_W:0]   free_count_o,
+    output logic [MEM_IQ_IDX_W:0]   count_o
 );
 
+    localparam int unsigned MEM_IQ_CNT_W = MEM_IQ_IDX_W + 1;
+    typedef logic [MEM_IQ_IDX_W-1:0] memiq_slot_t;
+
     // -------------------------------------------------------------------------
-    // Storage Array (16 entries — Milestone 5 Phase B3)
+    // Storage Array (MEM_IQ_DEPTH entries)
     // -------------------------------------------------------------------------
     memiq_entry_t entries_q [MEM_IQ_DEPTH];
 
@@ -135,20 +138,20 @@ module fursoy_s1_mem_iq
     // Oldest-Ready Arbiter via wrap-safe rob_dist & Dual-Issue Selection Matrix
     // Reference: docs/architecture/slice1-m7-multibank-l1d-v1.md Section 5.2
     // -------------------------------------------------------------------------
-    logic [3:0] cand0_slot, cand1_slot;
-    logic       cand0_valid, cand1_valid;
-    logic [5:0] cand0_dist, cand1_dist;
-    logic [5:0] d;
+    memiq_slot_t cand0_slot, cand1_slot;
+    logic        cand0_valid, cand1_valid;
+    rob_dist_t   cand0_dist, cand1_dist;
+    rob_dist_t   d;
 
     always_comb begin
-        cand0_slot  = 4'd0;
+        cand0_slot  = '0;
         cand0_valid = 1'b0;
-        cand0_dist  = 6'd63;
+        cand0_dist  = rob_dist_t'(ROB_DEPTH - 1);
 
-        cand1_slot  = 4'd0;
+        cand1_slot  = '0;
         cand1_valid = 1'b0;
-        cand1_dist  = 6'd63;
-        d           = 6'd0;
+        cand1_dist  = rob_dist_t'(ROB_DEPTH - 1);
+        d           = '0;
 
         // Step 1: Scan for oldest ready entry (cand0)
         for (int i = 0; i < MEM_IQ_DEPTH; i++) begin
@@ -156,7 +159,7 @@ module fursoy_s1_mem_iq
                 d = rob_dist(entries_q[i].rob_idx, rob_head_i);
                 if (!cand0_valid || (d < cand0_dist)) begin
                     cand0_dist  = d;
-                    cand0_slot  = 4'(i);
+                    cand0_slot  = memiq_slot_t'(i);
                     cand0_valid = 1'b1;
                 end
             end
@@ -165,11 +168,11 @@ module fursoy_s1_mem_iq
         // Step 2: Scan for second-oldest ready entry (cand1)
         if (cand0_valid) begin
             for (int i = 0; i < MEM_IQ_DEPTH; i++) begin
-                if ((4'(i) != cand0_slot) && can_issue[i]) begin
+                if ((memiq_slot_t'(i) != cand0_slot) && can_issue[i]) begin
                     d = rob_dist(entries_q[i].rob_idx, rob_head_i);
                     if (!cand1_valid || (d < cand1_dist)) begin
                         cand1_dist  = d;
-                        cand1_slot  = 4'(i);
+                        cand1_slot  = memiq_slot_t'(i);
                         cand1_valid = 1'b1;
                     end
                 end
@@ -178,16 +181,16 @@ module fursoy_s1_mem_iq
     end
 
     // Step 3: Port Assignment following Section 5.2 & Table 5.2
-    logic       sel_p2_valid, sel_p3_valid;
-    logic [3:0] sel_p2_slot,  sel_p3_slot;
-    logic       cand0_is_load, cand0_is_store, cand0_is_ser;
-    logic       cand1_is_load, cand1_is_store, cand1_is_ser;
+    logic        sel_p2_valid, sel_p3_valid;
+    memiq_slot_t sel_p2_slot,  sel_p3_slot;
+    logic        cand0_is_load, cand0_is_store, cand0_is_ser;
+    logic        cand1_is_load, cand1_is_store, cand1_is_ser;
 
     always_comb begin
         sel_p2_valid   = 1'b0;
-        sel_p2_slot    = 4'd0;
+        sel_p2_slot    = '0;
         sel_p3_valid   = 1'b0;
-        sel_p3_slot    = 4'd0;
+        sel_p3_slot    = '0;
         cand0_is_load  = 1'b0;
         cand0_is_store = 1'b0;
         cand0_is_ser   = 1'b0;
@@ -276,32 +279,32 @@ module fursoy_s1_mem_iq
     // -------------------------------------------------------------------------
     // Occupancy, Capacity & Allocation Slots Finder (Accounting for Same-Cycle Deallocation)
     // -------------------------------------------------------------------------
-    logic [4:0] free_count;
-    logic [4:0] count;
-    logic [3:0] alloc_slot0, alloc_slot1;
-    logic       slot0_found, slot1_found;
+    logic [MEM_IQ_CNT_W-1:0] free_count;
+    logic [MEM_IQ_CNT_W-1:0] count;
+    memiq_slot_t             alloc_slot0, alloc_slot1;
+    logic                    slot0_found, slot1_found;
     logic [MEM_IQ_DEPTH-1:0] slot_free;
 
     always_comb begin
-        free_count  = 5'd0;
-        count       = 5'd0;
-        alloc_slot0 = 4'd0;
-        alloc_slot1 = 4'd0;
+        free_count  = '0;
+        count       = '0;
+        alloc_slot0 = '0;
+        alloc_slot1 = '0;
         slot0_found = 1'b0;
         slot1_found = 1'b0;
 
         for (int i = 0; i < MEM_IQ_DEPTH; i++) begin
-            if (entries_q[i].valid) count = count + 5'd1;
+            if (entries_q[i].valid) count = count + MEM_IQ_CNT_W'(1);
             slot_free[i] = !entries_q[i].valid ||
-                           (issue0_fire && (4'(i) == sel_p2_slot)) ||
-                           (issue1_fire && (4'(i) == sel_p3_slot));
+                           (issue0_fire && (memiq_slot_t'(i) == sel_p2_slot)) ||
+                           (issue1_fire && (memiq_slot_t'(i) == sel_p3_slot));
             if (slot_free[i]) begin
-                free_count = free_count + 5'd1;
+                free_count = free_count + MEM_IQ_CNT_W'(1);
                 if (!slot0_found) begin
-                    alloc_slot0 = 4'(i);
+                    alloc_slot0 = memiq_slot_t'(i);
                     slot0_found = 1'b1;
                 end else if (!slot1_found) begin
-                    alloc_slot1 = 4'(i);
+                    alloc_slot1 = memiq_slot_t'(i);
                     slot1_found = 1'b1;
                 end
             end
@@ -310,8 +313,8 @@ module fursoy_s1_mem_iq
 
     assign count_o        = count;
     assign free_count_o   = free_count;
-    assign mem_ready_o[0] = (free_count >= 5'd1) && !flush_valid_i;
-    assign mem_ready_o[1] = (free_count >= 5'd2) && !flush_valid_i;
+    assign mem_ready_o[0] = (free_count >= MEM_IQ_CNT_W'(1)) && !flush_valid_i;
+    assign mem_ready_o[1] = (free_count >= MEM_IQ_CNT_W'(2)) && !flush_valid_i;
 
     // Allocation Fires
     wire uop0_is_mem = (uop0_class_i == UOP_LOAD) || (uop0_class_i == UOP_STORE) ||
@@ -321,8 +324,9 @@ module fursoy_s1_mem_iq
 
     wire uop0_v_mem  = uop0_valid_i && uop0_is_mem;
 
-    wire [3:0] alloc_slot1_eff = uop0_v_mem ? alloc_slot1 : alloc_slot0;
-    wire       slot1_found_eff = uop0_v_mem ? slot1_found : slot0_found;
+    memiq_slot_t alloc_slot1_eff;
+    assign alloc_slot1_eff = uop0_v_mem ? alloc_slot1 : alloc_slot0;
+    wire   slot1_found_eff = uop0_v_mem ? slot1_found : slot0_found;
 
     wire alloc0_fire = uop0_v_mem && rename_ack_i[0] && !flush_valid_i && slot0_found;
     wire alloc1_fire = uop1_valid_i && uop1_is_mem && rename_ack_i[1] && !flush_valid_i && slot1_found_eff;
@@ -338,11 +342,11 @@ module fursoy_s1_mem_iq
     // -------------------------------------------------------------------------
     // Sequential State Update & Tag Wakeup Snooping
     // -------------------------------------------------------------------------
-    wire wb0_match = wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i != 7'd0);
-    wire wb1_match = wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i != 7'd0);
+    wire wb0_match = wb0_valid_i && wb0_comp_ack_i && (wb0_pnew_i != preg_t'(0));
+    wire wb1_match = wb1_valid_i && wb1_comp_ack_i && (wb1_pnew_i != preg_t'(0));
     // Faulting loads do NOT wake dependent uops (Section 3.2, 17.3)
-    wire wb2_match = wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i != 7'd0);
-    wire wb3_match = wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i != 7'd0);
+    wire wb2_match = wb2_valid_i && wb2_comp_ack_i && !wb2_comp_exception_i && (wb2_pnew_i != preg_t'(0));
+    wire wb3_match = wb3_valid_i && wb3_comp_ack_i && !wb3_comp_exception_i && (wb3_pnew_i != preg_t'(0));
 
     always_ff @(posedge clk_i) begin
         if (rst_i || flush_valid_i) begin
@@ -404,13 +408,13 @@ module fursoy_s1_mem_iq
                 entries_q[alloc_slot0].imm          <= uop0_imm_i;
                 entries_q[alloc_slot0].prs1         <= uop0_prs1_i;
                 // Check if already ready or waking up in same cycle
-                entries_q[alloc_slot0].prs1_ready   <= uop0_prs1_ready_i || (uop0_prs1_i == 7'd0) ||
+                entries_q[alloc_slot0].prs1_ready   <= uop0_prs1_ready_i || (uop0_prs1_i == preg_t'(0)) ||
                     (wb0_match && (wb0_pnew_i == uop0_prs1_i)) ||
                     (wb1_match && (wb1_pnew_i == uop0_prs1_i)) ||
                     (wb2_match && (wb2_pnew_i == uop0_prs1_i)) ||
                     (wb3_match && (wb3_pnew_i == uop0_prs1_i));
                 entries_q[alloc_slot0].prs2         <= uop0_prs2_i;
-                entries_q[alloc_slot0].prs2_ready   <= uop0_prs2_ready_i || (uop0_prs2_i == 7'd0) ||
+                entries_q[alloc_slot0].prs2_ready   <= uop0_prs2_ready_i || (uop0_prs2_i == preg_t'(0)) ||
                     (wb0_match && (wb0_pnew_i == uop0_prs2_i)) ||
                     (wb1_match && (wb1_pnew_i == uop0_prs2_i)) ||
                     (wb2_match && (wb2_pnew_i == uop0_prs2_i)) ||
@@ -433,13 +437,13 @@ module fursoy_s1_mem_iq
                 entries_q[alloc_slot1_eff].sign_ext     <= uop1_sign_ext_i;
                 entries_q[alloc_slot1_eff].imm          <= uop1_imm_i;
                 entries_q[alloc_slot1_eff].prs1         <= uop1_prs1_i;
-                entries_q[alloc_slot1_eff].prs1_ready   <= uop1_prs1_ready_i || (uop1_prs1_i == 7'd0) ||
+                entries_q[alloc_slot1_eff].prs1_ready   <= uop1_prs1_ready_i || (uop1_prs1_i == preg_t'(0)) ||
                     (wb0_match && (wb0_pnew_i == uop1_prs1_i)) ||
                     (wb1_match && (wb1_pnew_i == uop1_prs1_i)) ||
                     (wb2_match && (wb2_pnew_i == uop1_prs1_i)) ||
                     (wb3_match && (wb3_pnew_i == uop1_prs1_i));
                 entries_q[alloc_slot1_eff].prs2         <= uop1_prs2_i;
-                entries_q[alloc_slot1_eff].prs2_ready   <= uop1_prs2_ready_i || (uop1_prs2_i == 7'd0) ||
+                entries_q[alloc_slot1_eff].prs2_ready   <= uop1_prs2_ready_i || (uop1_prs2_i == preg_t'(0)) ||
                     (wb0_match && (wb0_pnew_i == uop1_prs2_i)) ||
                     (wb1_match && (wb1_pnew_i == uop1_prs2_i)) ||
                     (wb2_match && (wb2_pnew_i == uop1_prs2_i)) ||
@@ -460,9 +464,9 @@ module fursoy_s1_mem_iq
     // Verification Invariant Assertions
     always_ff @(posedge clk_i) begin
         if (!rst_i && !flush_valid_i) begin
-            assert (count <= 5'd16)
-                else $fatal(1, "[MEMIQ_ASSERTION_FAILED] MemIQ occupancy count exceeded 16: %0d", count);
-            if (count == 5'd16 && !issue0_fire && !issue1_fire) begin
+            assert (count <= MEM_IQ_CNT_W'(MEM_IQ_DEPTH))
+                else $fatal(1, "[MEMIQ_ASSERTION_FAILED] MemIQ occupancy count exceeded %0d: %0d", MEM_IQ_DEPTH, count);
+            if (count == MEM_IQ_CNT_W'(MEM_IQ_DEPTH) && !issue0_fire && !issue1_fire) begin
                 assert (!alloc0_fire && !alloc1_fire)
                     else $fatal(1, "[MEMIQ_ASSERTION_FAILED] Allocation accepted into full MemIQ without issue deallocation!");
             end

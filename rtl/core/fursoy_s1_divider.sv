@@ -185,7 +185,7 @@ module fursoy_s1_divider
             divisor_q       <= 64'd0;
             iter_count_q    <= 6'd0;
             final_result_q  <= 64'd0;
-            cur_pnew_q      <= 7'd0;
+            cur_pnew_q      <= preg_t'(0);
             cur_rob_idx_q   <= '0;
             cur_rob_epoch_q <= '0;
             neg_quot_q      <= 1'b0;

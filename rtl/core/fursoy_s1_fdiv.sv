@@ -73,10 +73,6 @@ module fursoy_s1_fdiv
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
-    function automatic logic [5:0] rob_dist(input rob_idx_t idx, input rob_idx_t head);
-        return (idx >= head) ? 6'(idx - head) : 6'(6'(ROB_DEPTH) + idx - head);
-    endfunction
-
     // Latency parameters:
     // FDIV.S = 12 cycles, FDIV.D = 21 cycles, FSQRT.S = 15 cycles, FSQRT.D = 28 cycles
     function automatic logic [5:0] get_latency(input uop_subop_t op);

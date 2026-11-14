@@ -107,7 +107,7 @@ module fursoy_s1_port1_buffers
     always_comb begin
         wb_valid_o     = 1'b0;
         wb_data_o      = 64'd0;
-        wb_pnew_o      = 7'd0;
+        wb_pnew_o      = preg_t'(0);
         wb_rob_idx_o   = '0;
         wb_rob_epoch_o = '0;
         div_pop        = 1'b0;

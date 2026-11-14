@@ -14,25 +14,27 @@ package fursoy_s1_pkg;
     // -------------------------------------------------------------------------
     // Architectural & Microarchitectural Dimensions
     // -------------------------------------------------------------------------
-    localparam int unsigned AREG_COUNT       = 32; // Architectural integer registers x0..x31
-    localparam int unsigned PRF_SIZE         = 80; // Unified physical integer registers p0..p79
-    localparam int unsigned ROB_DEPTH        = 48; // Reorder buffer entries
-    localparam int unsigned FL_DEPTH         = 48; // Free List depth = PRF_SIZE - AREG_COUNT = 48
-    localparam int unsigned NUM_CHECKPOINTS  = 8;  // Parameterized branch checkpoints (baseline 8)
+    localparam int unsigned AREG_COUNT       = 32;  // Architectural integer registers x0..x31
+    localparam int unsigned PRF_SIZE         = 160; // Unified physical integer registers p0..p159 (Stage 2 PPA/IPC: 128 -> 160)
+    localparam int unsigned ROB_DEPTH        = 128; // Reorder buffer entries (Stage 3 PPA/IPC: 48 -> 128)
+    localparam int unsigned FL_DEPTH         = 128; // Free List depth = PRF_SIZE - AREG_COUNT = 128
+    localparam int unsigned NUM_CHECKPOINTS  = 8;   // Parameterized branch checkpoints (baseline 8)
 
     // Bit widths
     localparam int unsigned AREG_IDX_W       = 5;  // $clog2(32)
-    localparam int unsigned PRF_IDX_W        = 7;  // $clog2(80) <= 7 (0..79)
-    localparam int unsigned ROB_IDX_W        = 6;  // $clog2(48) <= 6 (0..47)
+    localparam int unsigned PRF_IDX_W        = 8;  // $clog2(160) = 8 (0..159)
+    localparam int unsigned ROB_IDX_W        = 7;  // $clog2(128) = 7 (0..127)
     localparam int unsigned CHKPT_IDX_W      = 3;  // $clog2(8) = 3 (0..7)
     localparam int unsigned ROB_EPOCH_W      = 4;  // 4-bit generation tag (16 lifetimes/slot)
-    localparam int unsigned ROB_CNT_W        = 7;  // 0..48
-    localparam int unsigned FL_CNT_W         = 7;  // 0..48
+    localparam int unsigned ROB_CNT_W        = 8;  // 0..128
+    localparam int unsigned FL_CNT_W         = 8;  // 0..128
 
     // Type aliases
     typedef logic [AREG_IDX_W-1:0]  areg_t;
     typedef logic [PRF_IDX_W-1:0]   preg_t;
+    typedef preg_t                  prf_id_t;
     typedef logic [ROB_IDX_W-1:0]   rob_idx_t;
+    typedef logic [ROB_IDX_W-1:0]   rob_dist_t;
     typedef logic [CHKPT_IDX_W-1:0] chkpt_idx_t;
     typedef logic [ROB_EPOCH_W-1:0] rob_epoch_t;
 
@@ -253,8 +255,8 @@ package fursoy_s1_pkg;
     // -------------------------------------------------------------------------
     // Milestone 2 Backend Microarchitectural Dimensions
     // -------------------------------------------------------------------------
-    localparam int unsigned INT_IQ_DEPTH     = 16; // Integer issue queue depth
-    localparam int unsigned INT_IQ_IDX_W     = 4;  // $clog2(16)
+    localparam int unsigned INT_IQ_DEPTH     = 32; // Integer issue queue depth (Stage 3 PPA/IPC: 16 -> 32)
+    localparam int unsigned INT_IQ_IDX_W     = 5;  // $clog2(32)
     localparam int unsigned MUL_STAGES       = 3;  // Multiplier pipeline depth K=3 (provisional baseline)
     localparam int unsigned ALU1_FIFO_DEPTH  = 3;  // ALU1 completion buffer depth A=3 (A >= 2)
     localparam int unsigned DIV_BUF_DEPTH    = 1;  // Single-occupancy divider completion buffer
@@ -262,8 +264,8 @@ package fursoy_s1_pkg;
     // -------------------------------------------------------------------------
     // Milestone 3 Memory Subsystem Microarchitectural Dimensions
     // -------------------------------------------------------------------------
-    localparam int unsigned MEM_IQ_DEPTH     = 16; // Memory issue queue depth (Milestone 5 Phase B3)
-    localparam int unsigned MEM_IQ_IDX_W     = 4;  // $clog2(16) = 4 (0..15)
+    localparam int unsigned MEM_IQ_DEPTH     = 32; // Memory issue queue depth (Stage 3 PPA/IPC: 16 -> 32)
+    localparam int unsigned MEM_IQ_IDX_W     = 5;  // $clog2(32) = 5 (0..31)
     localparam int unsigned LQ_DEPTH         = 16; // Load queue depth (provisional parameter)
     localparam int unsigned LQ_IDX_W         = 4;  // $clog2(16) = 4 (0..15)
     localparam int unsigned SQ_DEPTH         = 16; // Store queue depth (provisional parameter)
@@ -953,19 +955,21 @@ package fursoy_s1_pkg;
 
     // -------------------------------------------------------------------------
     // Wrap-Safe ROB Circular Distance Helper
-    // dist(idx, head) = (idx - head + 48) mod 48
-    // Uses 7-bit intermediate arithmetic to prevent 6-bit modulo-64 wrapping
+    // dist(idx, head) = (idx - head + ROB_DEPTH) mod ROB_DEPTH
+    // Power-of-2 ROB_DEPTH (128) simplifies circular distance to idx - head.
     // -------------------------------------------------------------------------
-    function automatic logic [5:0] rob_dist(
+    function automatic rob_dist_t rob_dist(
         input rob_idx_t idx,
         input rob_idx_t head
     );
-        logic [6:0] diff;
-        begin
-            diff = {1'b0, idx} + 7'd48 - {1'b0, head};
-            rob_dist = (diff >= 7'd48)
-                     ? diff[5:0] - 6'd48
-                     : diff[5:0];
+        if (ROB_DEPTH == (1 << ROB_IDX_W)) begin
+            return idx - head;
+        end else begin
+            logic [ROB_IDX_W:0] diff;
+            diff = {1'b0, idx} + (ROB_IDX_W+1)'(ROB_DEPTH) - {1'b0, head};
+            return (diff >= (ROB_IDX_W+1)'(ROB_DEPTH))
+                 ? diff[ROB_IDX_W-1:0] - ROB_IDX_W'(ROB_DEPTH)
+                 : diff[ROB_IDX_W-1:0];
         end
     endfunction
 

@@ -470,7 +470,7 @@ int main(int argc, char** argv) {
         tb.step();
 
         uint8_t initial_fl_count = tb.dut->freelist_count_o;
-        assert(initial_fl_count == 48 && "PROP_M9_04 FAILED: Initial free list count is not 48!");
+        assert(initial_fl_count == 128 && "PROP_M9_04 FAILED: Initial free list count is not 128!");
 
         // Run 50 iterations of speculative allocations followed by interrupt squash
         for (int iter = 0; iter < 50; iter++) {
@@ -532,7 +532,7 @@ int main(int argc, char** argv) {
         // Trap must be taken immediately without waiting for ROB entry
         assert(tb.dut->csr_mcause_o == 0x800000000000000BULL && "PROP_M9_05 FAILED: mcause is not MEI (11)!");
         assert(tb.dut->csr_mepc_o == expected_fe_pc && "PROP_M9_05 FAILED: mepc did not capture fe_pc!");
-        assert(tb.dut->freelist_count_o == 48 && "PROP_M9_05 FAILED: Free list corrupted on ROB-empty trap!");
+        assert(tb.dut->freelist_count_o == 128 && "PROP_M9_05 FAILED: Free list corrupted on ROB-empty trap!");
 
         tb.dut->irq_external_i = 0;
         tb.step();
@@ -709,8 +709,8 @@ int main(int argc, char** argv) {
                     seed_events++;
                     total_events++;
 
-                    // Verify Free List conservation: freelist_count + rob_count == 48
-                    assert(tb.dut->freelist_count_o <= 48 && "TORTURE FAILED: Free list count > 48!");
+                    // Verify Free List conservation: freelist_count <= 128
+                    assert(tb.dut->freelist_count_o <= 128 && "TORTURE FAILED: Free list count > 128!");
 
                     // Clear cause register for next check
                     if (tb.dut->csr_mcause_o != 0) {

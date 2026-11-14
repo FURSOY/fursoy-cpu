@@ -31,13 +31,13 @@ public:
     std::unique_ptr<Vfursoy_s1_substrate> dut;
     uint64_t cycle_count;
 
-    uint8_t rob_allocated_epoch[48];
+    uint8_t rob_allocated_epoch[128];
     bool manual_comp_epoch[3];
 
     SubstrateTB() {
         dut = std::make_unique<Vfursoy_s1_substrate>();
         cycle_count = 0;
-        for (int i = 0; i < 48; i++) rob_allocated_epoch[i] = 0;
+        for (int i = 0; i < 128; i++) rob_allocated_epoch[i] = 0;
         clear_inputs();
     }
 
@@ -103,9 +103,9 @@ public:
 
         // Sample allocations and flushes
         if (dut->rst_i) {
-            for (int i = 0; i < 48; i++) rob_allocated_epoch[i] = 0;
+            for (int i = 0; i < 128; i++) rob_allocated_epoch[i] = 0;
         } else if (dut->flush_valid_i) {
-            for (int i = 0; i < 48; i++) rob_allocated_epoch[i] = (rob_allocated_epoch[i] + 1) & 0xF;
+            for (int i = 0; i < 128; i++) rob_allocated_epoch[i] = (rob_allocated_epoch[i] + 1) & 0xF;
         } else {
             if (dut->rename_ack_o & 1) {
                 rob_allocated_epoch[dut->uop0_rob_idx_o] = dut->uop0_rob_epoch_o;
@@ -138,9 +138,9 @@ public:
         assert(dut->srat_map_o[0] == 0 && "Invariant: SRAT[0] must be p0");
 
         // 2. Count bounds
-        if (dut->freelist_count_o > 48) {
+        if (dut->freelist_count_o > 128) {
             std::cout << "[ERROR INVARIANT] Free List count " << (int)dut->freelist_count_o
-                      << " > 48 at loc: " << loc << ", cycle: " << cycle_count << std::endl;
+                      << " > 128 at loc: " << loc << ", cycle: " << cycle_count << std::endl;
             std::cout << "ARAT mappings:\n";
             for (int r = 0; r < 32; r++) {
                 std::cout << "  x" << r << " -> p" << (int)dut->arat_map_o[r] << "\n";
@@ -149,8 +149,8 @@ public:
                       << ", head: " << (int)dut->rob_head_o
                       << ", tail: " << (int)dut->rob_tail_o << std::endl;
         }
-        assert(dut->freelist_count_o <= 48 && "Invariant: Free List count <= 48");
-        assert(dut->rob_count_o <= 48 && "Invariant: ROB count <= 48");
+        assert(dut->freelist_count_o <= 128 && "Invariant: Free List count <= 128");
+        assert(dut->rob_count_o <= 128 && "Invariant: ROB count <= 128");
         assert(dut->chkpt_free_count_o <= 8 && "Invariant: Checkpoint free count <= 8");
 
         // 3. p0 permanently ready
@@ -158,7 +158,7 @@ public:
     }
 
     bool is_prf_ready(uint8_t preg) const {
-        if (preg >= 80) return false;
+        if (preg >= 160) return false;
         return (dut->prf_ready_o[preg / 32] & (1U << (preg % 32))) != 0;
     }
 };
@@ -171,7 +171,7 @@ void test_01_reset_state(SubstrateTB &tb) {
     tb.reset();
     tb.check_invariants();
 
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
     assert(tb.dut->rob_count_o == 0);
     assert(tb.dut->chkpt_free_count_o == 8);
     assert(tb.dut->recovering_o == 0);
@@ -202,7 +202,7 @@ void test_02_single_rename(SubstrateTB &tb) {
 
     assert(tb.dut->srat_map_o[1] == 32);
     assert(tb.dut->arat_map_o[1] == 1); // ARAT unchanged until commit
-    assert(tb.dut->freelist_count_o == 47);
+    assert(tb.dut->freelist_count_o == 127);
     assert(tb.dut->rob_count_o == 1);
 
     std::cout << "[PASS] Test 02: Single rename verified.\n";
@@ -228,7 +228,7 @@ void test_03_two_wide_rename(SubstrateTB &tb) {
 
     assert(tb.dut->srat_map_o[1] == 32);
     assert(tb.dut->srat_map_o[4] == 33);
-    assert(tb.dut->freelist_count_o == 46);
+    assert(tb.dut->freelist_count_o == 126);
     assert(tb.dut->rob_count_o == 2);
 
     std::cout << "[PASS] Test 03: Two-wide rename verified.\n";
@@ -283,7 +283,7 @@ void test_05_same_group_waw(SubstrateTB &tb) {
 
     assert(tb.dut->arat_map_o[1] == pnew0);
     // p1 was returned to Free List
-    assert(tb.dut->freelist_count_o == 47);
+    assert(tb.dut->freelist_count_o == 127);
 
     // Retire uop1 second
     tb.dut->comp_valid_i = (1 << 0);
@@ -294,7 +294,7 @@ void test_05_same_group_waw(SubstrateTB &tb) {
 
     assert(tb.dut->arat_map_o[1] == pnew1);
     // pnew0 (32) was returned to Free List!
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
 
     std::cout << "[PASS] Test 05: Same-group WAW handling and sequential retirement verified.\n";
 }
@@ -317,7 +317,7 @@ void test_06_rd_x0(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    assert(tb.dut->freelist_count_o == 48); // No register allocated
+    assert(tb.dut->freelist_count_o == 128); // No register allocated
     assert(tb.dut->srat_map_o[0] == 0);
 
     // Complete and retire both
@@ -328,7 +328,7 @@ void test_06_rd_x0(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    assert(tb.dut->freelist_count_o == 48); // No register returned
+    assert(tb.dut->freelist_count_o == 128); // No register returned
     assert(tb.dut->arat_map_o[0] == 0);
 
     std::cout << "[PASS] Test 06: rd=x0 destination suppression verified.\n";
@@ -336,8 +336,8 @@ void test_06_rd_x0(SubstrateTB &tb) {
 
 void test_07_freelist_near_empty(SubstrateTB &tb) {
     tb.reset();
-    // Allocate 47 registers (leaving 1)
-    for (int i = 0; i < 23; i++) {
+    // Allocate 127 registers (leaving 1)
+    for (int i = 0; i < 63; i++) {
         tb.dut->uop0_valid_i = 1; tb.dut->uop0_rd_i = (i % 31) + 1;
         tb.dut->uop1_valid_i = 1; tb.dut->uop1_rd_i = ((i + 1) % 31) + 1;
         tb.step();
@@ -376,8 +376,8 @@ void test_07_freelist_near_empty(SubstrateTB &tb) {
 
 void test_08_rob_full(SubstrateTB &tb) {
     tb.reset();
-    // Fill ROB to 48 entries (can write x0 to not exhaust Free List)
-    for (int i = 0; i < 24; i++) {
+    // Fill ROB to 128 entries (can write x0 to not exhaust Free List)
+    for (int i = 0; i < 64; i++) {
         tb.dut->uop0_valid_i = 1; tb.dut->uop0_rd_i = 0;
         tb.dut->uop1_valid_i = 1; tb.dut->uop1_rd_i = 0;
         tb.step();
@@ -385,7 +385,7 @@ void test_08_rob_full(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    assert(tb.dut->rob_count_o == 48);
+    assert(tb.dut->rob_count_o == 128);
 
     // Attempt to dispatch when full
     tb.dut->uop0_valid_i = 1; tb.dut->uop0_rd_i = 0;
@@ -397,15 +397,15 @@ void test_08_rob_full(SubstrateTB &tb) {
 
 void test_09_rob_wraparound(SubstrateTB &tb) {
     tb.reset();
-    // Continuously allocate 2 and complete/retire 2 for 100 cycles
-    for (int c = 0; c < 100; c++) {
+    // Continuously allocate 2 and complete/retire 2 for 150 cycles
+    for (int c = 0; c < 150; c++) {
         tb.dut->uop0_valid_i = 1; tb.dut->uop0_rd_i = (c % 31) + 1;
         tb.dut->uop1_valid_i = 1; tb.dut->uop1_rd_i = ((c + 1) % 31) + 1;
 
         // Complete the uops that will be at head
         tb.dut->comp_valid_i = (1 << 0) | (1 << 1);
         tb.dut->comp_rob_idx_i[0] = tb.dut->rob_head_o;
-        tb.dut->comp_rob_idx_i[1] = (tb.dut->rob_head_o + 1) % 48;
+        tb.dut->comp_rob_idx_i[1] = (tb.dut->rob_head_o + 1) % 128;
 
         tb.dut->retire_ready_i = 1;
         tb.step();
@@ -427,7 +427,7 @@ void test_10_simultaneous_alloc_retire(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->rob_count_o == 4);
-    assert(tb.dut->freelist_count_o == 44);
+    assert(tb.dut->freelist_count_o == 124);
 
     // Complete entries at head (0 and 1)
     tb.dut->comp_valid_i = (1 << 0) | (1 << 1);
@@ -443,9 +443,9 @@ void test_10_simultaneous_alloc_retire(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    // Counts remain 4 and 44
+    // Counts remain 4 and 124
     assert(tb.dut->rob_count_o == 4);
-    assert(tb.dut->freelist_count_o == 44);
+    assert(tb.dut->freelist_count_o == 124);
 
     std::cout << "[PASS] Test 10: Simultaneous 2-wide allocate + 2-wide retire verified.\n";
 }
@@ -466,7 +466,7 @@ void test_11_retirement_pold_reclamation(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->arat_map_o[5] == 32);
-    assert(tb.dut->freelist_count_o == 48); // p5 is back in Free List!
+    assert(tb.dut->freelist_count_o == 128); // p5 is back in Free List!
 
     std::cout << "[PASS] Test 11: Retirement Pold reclamation verified.\n";
 }
@@ -483,7 +483,7 @@ void test_12_long_waw_chain(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->rob_count_o == 10);
-    assert(tb.dut->freelist_count_o == 38);
+    assert(tb.dut->freelist_count_o == 118);
     uint8_t final_pnew = tb.dut->srat_map_o[1];
 
     // Retire all 10
@@ -497,7 +497,7 @@ void test_12_long_waw_chain(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->rob_count_o == 0);
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
     assert(tb.dut->arat_map_o[1] == final_pnew);
 
     std::cout << "[PASS] Test 12: Long WAW chain allocation and retirement verified.\n";
@@ -558,7 +558,7 @@ void test_15_simple_branch_squash(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->rob_count_o == 4);
-    assert(tb.dut->freelist_count_o == 45); // 3 allocated: p32, p33, p34
+    assert(tb.dut->freelist_count_o == 125); // 3 allocated: p32, p33, p34
 
     // Branch at index 1 mispredicts
     tb.dut->recover_valid_i = 1;
@@ -575,7 +575,7 @@ void test_15_simple_branch_squash(SubstrateTB &tb) {
     }
 
     assert(tb.dut->rob_count_o == 2); // only entries 0 and 1 remain
-    assert(tb.dut->freelist_count_o == 47); // p33 and p34 reclaimed, p32 kept!
+    assert(tb.dut->freelist_count_o == 127); // p33 and p34 reclaimed, p32 kept!
     assert(tb.dut->srat_map_o[1] == 32);   // SRAT restored from checkpoint
     assert(tb.dut->srat_map_o[2] == 2);    // x2 reverted
     assert(tb.dut->srat_map_o[3] == 3);    // x3 reverted
@@ -600,7 +600,7 @@ void test_16_branch_squash_several_dests(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->rob_count_o == 11);
-    assert(tb.dut->freelist_count_o == 38);
+    assert(tb.dut->freelist_count_o == 118);
 
     // Mispredict branch at 0
     tb.dut->recover_valid_i = 1;
@@ -615,22 +615,22 @@ void test_16_branch_squash_several_dests(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->rob_count_o == 1);
-    assert(tb.dut->freelist_count_o == 48); // All 10 Pnews returned!
+    assert(tb.dut->freelist_count_o == 128); // All 10 Pnews returned!
 
     std::cout << "[PASS] Test 16: Branch squash of 10 younger destinations verified.\n";
 }
 
 void test_17_branch_squash_across_rob_wrap(SubstrateTB &tb) {
     tb.reset();
-    // Advance ROB pointers near 45
-    for (int c = 0; c < 45; c++) {
+    // Advance ROB pointers near 125
+    for (int c = 0; c < 125; c++) {
         tb.dut->uop0_valid_i = 1; tb.dut->uop0_rd_i = 0;
         tb.dut->comp_valid_i = (1 << 0);
         tb.dut->comp_rob_idx_i[0] = tb.dut->rob_head_o;
         tb.dut->retire_ready_i = 1;
         tb.step();
     }
-    // Complete and retire the last advance uop to empty ROB and bring head/tail to 45
+    // Complete and retire the last advance uop to empty ROB and bring head/tail to 125
     tb.dut->uop0_valid_i = 0;
     tb.dut->comp_valid_i = (1 << 0);
     tb.dut->comp_rob_idx_i[0] = tb.dut->rob_head_o;
@@ -639,11 +639,11 @@ void test_17_branch_squash_across_rob_wrap(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    // Branch at 45 (chkpt 0)
+    // Branch at 125 (chkpt 0)
     tb.dut->uop0_valid_i = 1; tb.dut->uop0_is_branch_i = 1; tb.dut->uop0_rd_i = 0;
     tb.step();
 
-    // Younger instructions wrapping across 48 (indices 46, 47, 0, 1, 2)
+    // Younger instructions wrapping across 128 (indices 126, 127, 0, 1, 2)
     for (int i = 0; i < 5; i++) {
         tb.dut->uop0_valid_i = 1; tb.dut->uop0_rd_i = (i + 1);
         tb.step();
@@ -651,9 +651,9 @@ void test_17_branch_squash_across_rob_wrap(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    // Mispredict branch at 45
+    // Mispredict branch at 125
     tb.dut->recover_valid_i = 1;
-    tb.dut->recover_rob_idx_i = 45;
+    tb.dut->recover_rob_idx_i = 125;
     tb.dut->recover_chkpt_id_i = 0;
     tb.step();
     tb.clear_inputs();
@@ -663,8 +663,8 @@ void test_17_branch_squash_across_rob_wrap(SubstrateTB &tb) {
     }
     tb.dut->eval();
 
-    assert(tb.dut->rob_count_o == 1); // Only branch at 45 remains
-    assert(tb.dut->rob_tail_o == 46);
+    assert(tb.dut->rob_count_o == 1); // Only branch at 125 remains
+    assert(tb.dut->rob_tail_o == 126);
 
     std::cout << "[PASS] Test 17: Branch squash across ROB wrap verified.\n";
 }
@@ -706,7 +706,7 @@ void test_18_older_retire_concurrent_with_recovery(SubstrateTB &tb) {
 
     assert(tb.dut->arat_map_o[1] == 32); // Older instruction retired cleanly
     assert(tb.dut->rob_count_o == 1);    // Only branch at 1 remains
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
 
     std::cout << "[PASS] Test 18: Older retirement concurrent with branch recovery verified.\n";
 }
@@ -798,7 +798,7 @@ void test_21_back_to_back_recovery(SubstrateTB &tb) {
     tb.dut->eval();
 
     assert(tb.dut->rob_count_o == 1); // Only branch 0 remains
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
 
     std::cout << "[PASS] Test 21: Back-to-back recovery requests verified.\n";
 }
@@ -831,7 +831,7 @@ void test_22_full_architectural_flush(SubstrateTB &tb) {
     }
     tb.dut->eval();
 
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
     assert(tb.dut->rob_count_o == 0);
     for (int r = 0; r < 32; r++) {
         assert(tb.dut->srat_map_o[r] == tb.dut->arat_map_o[r]);
@@ -857,7 +857,7 @@ void test_23_full_flush_after_waw_chains(SubstrateTB &tb) {
     while (tb.dut->reconstructing_o) tb.step();
     tb.dut->eval();
 
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
     for (int r = 0; r < 32; r++) {
         assert(tb.dut->srat_map_o[r] == tb.dut->arat_map_o[r]);
     }
@@ -867,8 +867,8 @@ void test_23_full_flush_after_waw_chains(SubstrateTB &tb) {
 
 void test_24_full_flush_near_empty_freelist(SubstrateTB &tb) {
     tb.reset();
-    // Allocate 47 registers
-    for (int i = 0; i < 23; i++) {
+    // Allocate 127 registers
+    for (int i = 0; i < 63; i++) {
         tb.dut->uop0_valid_i = 1; tb.dut->uop0_rd_i = (i % 31) + 1;
         tb.dut->uop1_valid_i = 1; tb.dut->uop1_rd_i = ((i + 1) % 31) + 1;
         tb.step();
@@ -888,7 +888,7 @@ void test_24_full_flush_near_empty_freelist(SubstrateTB &tb) {
     while (tb.dut->reconstructing_o) tb.step();
     tb.dut->eval();
 
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
     std::cout << "[PASS] Test 24: Full flush with nearly exhausted Free List verified.\n";
 }
 
@@ -919,7 +919,7 @@ void test_25_interrupt_flush_during_activity(SubstrateTB &tb) {
     while (tb.dut->reconstructing_o) tb.step();
     tb.dut->eval();
 
-    assert(tb.dut->freelist_count_o == 48);
+    assert(tb.dut->freelist_count_o == 128);
     assert(tb.dut->recovering_o == 0);
     assert(tb.dut->rob_count_o == 0);
 
@@ -1220,10 +1220,10 @@ void run_randomized_adversarial_stress(SubstrateTB &tb, uint32_t seed, int targe
             tb.dut->comp_valid_i = 0;
             for (int w = 0; w < comp_cnt; w++) {
                 uint8_t rand_offset = rng() % tb.dut->rob_count_o;
-                uint8_t comp_idx = (tb.dut->rob_head_o + rand_offset) % 48;
+                uint8_t comp_idx = (tb.dut->rob_head_o + rand_offset) % 128;
                 tb.dut->comp_valid_i |= (1 << w);
                 tb.dut->comp_rob_idx_i[w] = comp_idx;
-                tb.dut->comp_preg_i[w] = rng() % 80;
+                tb.dut->comp_preg_i[w] = rng() % 160;
             }
             tb.update_comp_epochs();
         }
@@ -1232,7 +1232,7 @@ void run_randomized_adversarial_stress(SubstrateTB &tb, uint32_t seed, int targe
         active_branches.erase(
             std::remove_if(active_branches.begin(), active_branches.end(),
                 [&](const BranchTracker &b) {
-                    uint8_t age = (b.rob_idx - tb.dut->rob_head_o + 48) % 48;
+                    uint8_t age = (b.rob_idx - tb.dut->rob_head_o + 128) % 128;
                     return age >= tb.dut->rob_count_o;
                 }),
             active_branches.end());
@@ -1284,7 +1284,7 @@ void run_randomized_adversarial_stress(SubstrateTB &tb, uint32_t seed, int targe
 
         // Track branches retiring out of pipeline (match strictly by unique rob_idx)
         uint8_t ret_rob_idx0 = tb.dut->rob_head_o;
-        uint8_t ret_rob_idx1 = (tb.dut->rob_head_o + 1) % 48;
+        uint8_t ret_rob_idx1 = (tb.dut->rob_head_o + 1) % 128;
 
         if ((tb.dut->retire_valid_o & 1) && (tb.dut->retire_is_branch_o & 1)) {
             for (auto it = active_branches.begin(); it != active_branches.end(); ++it) {

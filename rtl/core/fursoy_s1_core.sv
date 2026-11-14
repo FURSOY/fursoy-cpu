@@ -170,12 +170,12 @@ module fursoy_s1_core
     output logic [63:0]            probe_pdata_o,
 
     // Backend Diagnostics
-    output logic [15:0]            diag_valid_mask_o,
-    output logic [15:0]            diag_ready_p0_o,
-    output logic [15:0]            diag_ready_p1_o,
-    output logic [15:0]            diag_prs1_rdy_o,
-    output logic [15:0]            diag_prs2_rdy_o,
-    output rob_idx_t               diag_rob_idx_o       [16],
+    output logic [INT_IQ_DEPTH-1:0] diag_valid_mask_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_ready_p0_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_ready_p1_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_prs1_rdy_o,
+    output logic [INT_IQ_DEPTH-1:0] diag_prs2_rdy_o,
+    output rob_idx_t                diag_rob_idx_o       [INT_IQ_DEPTH],
 
     // ROB Head diagnostics
     output logic                   diag_head_valid_o,
@@ -1839,7 +1839,7 @@ module fursoy_s1_core
     wire uop0_is_load_type = (be_uop0_class == UOP_LOAD);
     wire uop0_is_store_type = (be_uop0_class == UOP_STORE) || (be_uop0_class == UOP_AMO);
 
-    wire ev_stall_rob_full   = rename_stalled && (rob_count_o >= 7'd48);
+    wire ev_stall_rob_full   = rename_stalled && (rob_count_o >= ROB_CNT_W'(ROB_NUM));
     wire ev_stall_intiq_full = rename_stalled && !uop0_is_mem_type && !backend_int_dispatch_ready[0];
     wire ev_stall_memiq_full = rename_stalled && uop0_is_mem_type && !backend_memiq_ready[0];
     wire ev_stall_lq_full    = rename_stalled && uop0_is_load_type && !backend_lq_ready[0];
@@ -1848,7 +1848,7 @@ module fursoy_s1_core
     wire ev_stall_recovery   = rename_stalled && int_recovering;
 
     // Retire Density and Serialization Events
-    wire ev_retire_cycles_0  = (rob_count_o > 7'd0) && (retire_valid_o == 2'b00);
+    wire ev_retire_cycles_0  = (rob_count_o > ROB_CNT_W'(0)) && (retire_valid_o == 2'b00);
     wire ev_retire_cycles_1  = (retire_valid_o[0] ^ retire_valid_o[1]);
     wire ev_retire_cycles_2  = (retire_valid_o[0] && retire_valid_o[1]);
     wire ev_serialize_cycles = !fe_retire_ready || csr_flush_valid || csr_sfence_active || (frontend_en_i && fe_fence_i_flush);
@@ -1859,7 +1859,7 @@ module fursoy_s1_core
     wire cpi_productive  = (retire_valid_o != 2'b00);
     wire cpi_mem_stall   = be_rob_head_is_mem_stall;
     wire cpi_be_rename   = !fe_fetch_queue_empty_o && ((int_rename_ack == 2'b00) || (fl_fp_ready_o == 2'b00) || viq_full_o);
-    wire cpi_be_sched    = (rob_count_o > 7'd0) && be_event_intiq_empty && be_event_memiq_empty;
+    wire cpi_be_sched    = (rob_count_o > ROB_CNT_W'(0)) && be_event_intiq_empty && be_event_memiq_empty;
     wire cpi_fe_starve   = fe_fetch_queue_empty_o && frontend_en_i && !rst_i;
 
     // Milestone 8 FP & Vector Event Declarations

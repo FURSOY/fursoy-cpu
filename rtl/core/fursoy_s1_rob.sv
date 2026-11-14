@@ -166,26 +166,38 @@ module fursoy_s1_rob
     logic       recovering_q;
     rob_idx_t   target_tail_q;
 
-    // Modulo-48 pointer helpers
-    function automatic [5:0] inc48(input [5:0] ptr, input [2:0] val);
-        logic [6:0] sum;
-        sum = {1'b0, ptr} + {4'b0, val};
-        return (sum >= 7'd48) ? (sum[5:0] - 6'd48) : sum[5:0];
+    // Circular ROB pointer helpers
+    function automatic rob_idx_t inc_rob(input rob_idx_t ptr, input [2:0] val);
+        if (CAPACITY == (1 << ROB_IDX_W)) begin
+            return ptr + ROB_IDX_W'(val);
+        end else begin
+            logic [ROB_IDX_W:0] sum;
+            sum = {1'b0, ptr} + (ROB_IDX_W+1)'(val);
+            return (sum >= (ROB_IDX_W+1)'(CAPACITY))
+                 ? (sum[ROB_IDX_W-1:0] - ROB_IDX_W'(CAPACITY))
+                 : sum[ROB_IDX_W-1:0];
+        end
     endfunction
 
-    function automatic [5:0] dec48(input [5:0] ptr, input [2:0] val);
-        logic signed [7:0] diff;
-        diff = {2'b00, ptr} - {5'b00000, val};
-        return (diff < 0) ? (diff[5:0] + 6'd48) : diff[5:0];
+    function automatic rob_idx_t dec_rob(input rob_idx_t ptr, input [2:0] val);
+        if (CAPACITY == (1 << ROB_IDX_W)) begin
+            return ptr - ROB_IDX_W'(val);
+        end else begin
+            logic signed [ROB_IDX_W+1:0] diff;
+            diff = $signed({2'b00, ptr}) - $signed({{(ROB_IDX_W-1){1'b0}}, val});
+            return (diff < 0)
+                 ? (diff[ROB_IDX_W-1:0] + ROB_IDX_W'(CAPACITY))
+                 : diff[ROB_IDX_W-1:0];
+        end
     endfunction
 
     // -------------------------------------------------------------------------
     // Allocation Peeks & Readiness
     // -------------------------------------------------------------------------
     assign alloc_rob_idx_o[0]   = tail_q;
-    assign alloc_rob_idx_o[1]   = inc48(tail_q, 3'd1);
+    assign alloc_rob_idx_o[1]   = inc_rob(tail_q, 3'd1);
     assign alloc_rob_epoch_o[0] = slot_epoch_q[tail_q];
-    assign alloc_rob_epoch_o[1] = slot_epoch_q[inc48(tail_q, 3'd1)];
+    assign alloc_rob_epoch_o[1] = slot_epoch_q[inc_rob(tail_q, 3'd1)];
 
     // Live completion qualification against slot validity, completion status, and epoch
     logic [4:0] comp_match;
@@ -198,23 +210,23 @@ module fursoy_s1_rob
     assign comp_ack_o = comp_match;
 
     logic [ROB_CNT_W-1:0] free_slots;
-    assign free_slots = 7'd48 - count_q;
+    assign free_slots = ROB_CNT_W'(CAPACITY) - count_q;
 
-    assign alloc_ready_o[0] = !recovering_q && (free_slots >= 7'd1);
-    assign alloc_ready_o[1] = !recovering_q && (free_slots >= 7'd2);
+    assign alloc_ready_o[0] = !recovering_q && (free_slots >= ROB_CNT_W'(1));
+    assign alloc_ready_o[1] = !recovering_q && (free_slots >= ROB_CNT_W'(2));
 
     assign head_o  = head_q;
     assign tail_o  = tail_q;
     assign count_o = count_q;
-    assign empty_o = (count_q == 7'd0);
-    assign full_o  = (count_q == 7'd48);
+    assign empty_o = (count_q == ROB_CNT_W'(0));
+    assign full_o  = (count_q == ROB_CNT_W'(CAPACITY));
     assign recovering_o = recovering_q;
 
     // -------------------------------------------------------------------------
     // In-Order Retirement Logic at head_q
     // -------------------------------------------------------------------------
     rob_idx_t head_next;
-    assign head_next = inc48(head_q, 3'd1);
+    assign head_next = inc_rob(head_q, 3'd1);
     assign head_next_o = head_next;
 
     /* verilator lint_off UNUSEDSIGNAL */
@@ -287,9 +299,9 @@ module fursoy_s1_rob
     wire head_in_recovery = recovering_q && (head_q == target_tail_q);
 
     // Replay detection at head (Prompt Rule 14, 19: Violation suppresses speculative exception)
-    wire head_has_replay    = (count_q >= 7'd1) && entry0.valid && entry0.completed &&
+    wire head_has_replay    = (count_q >= ROB_CNT_W'(1)) && entry0.valid && entry0.completed &&
                               entry0_mem_violation_eff && !head_in_recovery;
-    wire head_has_exception = (count_q >= 7'd1) && entry0.valid && entry0_completed_eff &&
+    wire head_has_exception = (count_q >= ROB_CNT_W'(1)) && entry0.valid && entry0_completed_eff &&
                               entry0_exception_eff && !entry0_mem_violation_eff && !head_in_recovery;
 
     assign retire_replay_o    = head_has_replay;
@@ -306,10 +318,10 @@ module fursoy_s1_rob
                            (!recovering_q || (head_next != target_tail_q));
 
     // Retirement conditions
-    wire uop0_can_retire = (count_q >= 7'd1) && entry0.valid && entry0_completed_eff &&
+    wire uop0_can_retire = (count_q >= ROB_CNT_W'(1)) && entry0.valid && entry0_completed_eff &&
                            !entry0_exception_eff && !entry0_mem_violation_eff &&
                            lsu_retire0_allow_i && rec_allows_uop0;
-    wire uop1_can_retire = uop0_can_retire && (count_q >= 7'd2) && entry1.valid && entry1_completed_eff &&
+    wire uop1_can_retire = uop0_can_retire && (count_q >= ROB_CNT_W'(2)) && entry1.valid && entry1_completed_eff &&
                            !entry1_exception_eff && !entry1_mem_violation_eff &&
                            lsu_retire1_allow_i && rec_allows_uop1;
 
@@ -379,8 +391,8 @@ module fursoy_s1_rob
     // -------------------------------------------------------------------------
     rob_idx_t rec_cand0;
     rob_idx_t rec_cand1;
-    assign rec_cand0 = dec48(tail_q, 3'd1);
-    assign rec_cand1 = dec48(tail_q, 3'd2);
+    assign rec_cand0 = dec_rob(tail_q, 3'd1);
+    assign rec_cand1 = dec_rob(tail_q, 3'd2);
 
     logic [1:0] rec_squash_cnt;
     preg_t      rec_pnew0;
@@ -406,7 +418,7 @@ module fursoy_s1_rob
         rec_valid_fp0  = 1'b0;
         rec_valid_fp1  = 1'b0;
 
-        if (recovering_q && (tail_q != target_tail_q) && (count_q > {5'b0, num_retire})) begin
+        if (recovering_q && (tail_q != target_tail_q) && (count_q > ROB_CNT_W'(num_retire))) begin
             // First candidate entry
             rec_squash_cnt = 2'd1;
             if (entries_q[rec_cand0].valid && (!entries_q[rec_cand0].fp_dest_valid) && (entries_q[rec_cand0].rd != 5'd0)) begin
@@ -419,7 +431,7 @@ module fursoy_s1_rob
             end
 
             // Second candidate entry (if rec_cand0 was not already the target and capacity allows)
-            if ((rec_cand0 != target_tail_q) && (count_q > ({5'b0, num_retire} + 7'd1))) begin
+            if ((rec_cand0 != target_tail_q) && (count_q > (ROB_CNT_W'(num_retire) + ROB_CNT_W'(1)))) begin
                 rec_squash_cnt = 2'd2;
                 if (entries_q[rec_cand1].valid && (!entries_q[rec_cand1].fp_dest_valid) && (entries_q[rec_cand1].rd != 5'd0)) begin
                     rec_valid1 = 1'b1;
@@ -447,9 +459,9 @@ module fursoy_s1_rob
     rob_idx_t next_tail_comb;
     rob_idx_t tail1_comb;
 
-    assign target_tail_comb = inc48(recover_rob_idx_i, 3'd1);
-    assign next_tail_comb   = dec48(tail_q, {1'b0, rec_squash_cnt});
-    assign tail1_comb       = inc48(tail_q, 3'd1);
+    assign target_tail_comb = inc_rob(recover_rob_idx_i, 3'd1);
+    assign next_tail_comb   = dec_rob(tail_q, {1'b0, rec_squash_cnt});
+    assign tail1_comb       = inc_rob(tail_q, 3'd1);
 
     // -------------------------------------------------------------------------
     // Sequential State Update
@@ -461,10 +473,12 @@ module fursoy_s1_rob
             count_q       <= '0;
             recovering_q  <= 1'b0;
             target_tail_q <= '0;
+            /* verilator lint_off BLKSEQ */
             for (int unsigned i = 0; i < CAPACITY; i++) begin
-                entries_q[i]    <= '0;
-                slot_epoch_q[i] <= '0;
+                entries_q[i]    = '0;
+                slot_epoch_q[i] = '0;
             end
+            /* verilator lint_on BLKSEQ */
         end else if (flush_valid_i) begin
             // -----------------------------------------------------------------
             // Full Architectural Flush: Wipe all speculative in-flight ROB entries
@@ -475,11 +489,13 @@ module fursoy_s1_rob
             count_q       <= '0;
             recovering_q  <= 1'b0;
             target_tail_q <= '0;
+            /* verilator lint_off BLKSEQ */
             for (int unsigned i = 0; i < CAPACITY; i++) begin
-                entries_q[i].valid   <= 1'b0;
-                entries_q[i].exc_val <= '0;
-                slot_epoch_q[i]      <= slot_epoch_q[i] + 4'd1;
+                entries_q[i].valid   = 1'b0;
+                entries_q[i].exc_val = '0;
+                slot_epoch_q[i]      = slot_epoch_q[i] + 4'd1;
             end
+            /* verilator lint_on BLKSEQ */
         end else begin
             // -----------------------------------------------------------------
             // 1. Writeback Completion Updates (strictly qualified by epoch match)
@@ -513,7 +529,7 @@ module fursoy_s1_rob
             if (retire_grant[1]) begin
                 entries_q[head_next].valid <= 1'b0;
             end
-            head_q <= inc48(head_q, {1'b0, num_retire});
+            head_q <= inc_rob(head_q, {1'b0, num_retire});
 
             // -----------------------------------------------------------------
             // 3. Recovery or Normal Allocation
@@ -536,9 +552,9 @@ module fursoy_s1_rob
                     end
 
                     tail_q  <= next_tail_comb;
-                    count_q <= count_q - {5'b0, num_retire} - {5'b0, rec_squash_cnt};
+                    count_q <= count_q - ROB_CNT_W'(num_retire) - ROB_CNT_W'(rec_squash_cnt);
 
-                    if ((next_tail_comb == target_tail_comb) || (count_q <= ({5'b0, num_retire} + {5'b0, rec_squash_cnt}))) begin
+                    if ((next_tail_comb == target_tail_comb) || (count_q <= (ROB_CNT_W'(num_retire) + ROB_CNT_W'(rec_squash_cnt)))) begin
                         recovering_q <= 1'b0;
                     end else begin
                         recovering_q <= 1'b1;
@@ -547,10 +563,10 @@ module fursoy_s1_rob
                     if (tail_q == target_tail_comb) begin
                         // No younger instructions were dispatched after this branch
                         recovering_q <= 1'b0;
-                        count_q      <= count_q - {5'b0, num_retire};
+                        count_q      <= count_q - ROB_CNT_W'(num_retire);
                     end else begin
                         recovering_q <= 1'b1;
-                        count_q      <= count_q - {5'b0, num_retire};
+                        count_q      <= count_q - ROB_CNT_W'(num_retire);
                     end
                 end
             end else if (recovering_q) begin
@@ -563,9 +579,9 @@ module fursoy_s1_rob
                 end
 
                 tail_q  <= next_tail_comb;
-                count_q <= count_q - {5'b0, num_retire} - {5'b0, rec_squash_cnt};
+                count_q <= count_q - ROB_CNT_W'(num_retire) - ROB_CNT_W'(rec_squash_cnt);
 
-                if ((next_tail_comb == target_tail_q) || (count_q <= ({5'b0, num_retire} + {5'b0, rec_squash_cnt}))) begin
+                if ((next_tail_comb == target_tail_q) || (count_q <= (ROB_CNT_W'(num_retire) + ROB_CNT_W'(rec_squash_cnt)))) begin
                     recovering_q <= 1'b0;
                 end
             end else begin
@@ -626,8 +642,8 @@ module fursoy_s1_rob
                     entries_q[tail1_comb].prd_vec        <= alloc_prd_vec_i[1];
                 end
 
-                tail_q  <= inc48(tail_q, {1'b0, num_alloc});
-                count_q <= count_q + {5'b0, num_alloc} - {5'b0, num_retire};
+                tail_q  <= inc_rob(tail_q, {1'b0, num_alloc});
+                count_q <= count_q + ROB_CNT_W'(num_alloc) - ROB_CNT_W'(num_retire);
             end
         end
     end
@@ -638,9 +654,9 @@ module fursoy_s1_rob
 `ifndef SYNTHESIS
     always_ff @(posedge clk_i) begin
         if (!rst_i && !flush_valid_i) begin
-            // 1. ROB count within bounds (0..48)
-            if (count_q > 7'd48) begin
-                $fatal(1, "[ROB ASSERTION FAILED] ROB count %0d exceeds 48!", count_q);
+            // 1. ROB count within bounds (0..CAPACITY)
+            if (count_q > ROB_CNT_W'(CAPACITY)) begin
+                $fatal(1, "[ROB ASSERTION FAILED] ROB count %0d exceeds %0d!", count_q, CAPACITY);
             end
 
             // 2. Uniqueness: No two simultaneously valid destination-producing ROB entries own the same Pnew

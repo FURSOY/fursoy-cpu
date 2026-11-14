@@ -160,38 +160,34 @@ module fursoy_s1_l1d
 );
 
     // =========================================================================
-    // Cache Storage Arrays (16 KiB 4-Way: 64 Sets, 4 Ways, 64 B line)
+    // Cache Storage Arrays (16 KiB 4-Way: 64 Sets, 4 Ways, 64 B line, 8 Banks)
     // =========================================================================
     // Physical Tag: PA[55:12] (44 bits)
     // Set Index:   PA[11:6]  (6 bits)
-    // Sub-DW:      PA[5]     (1 bit: 0 = DW0..3, 1 = DW4..7)
-    // Bank ID:     PA[4:3]   (2 bits: Bank 0 = DW0/4, Bank 1 = DW1/5, Bank 2 = DW2/6, Bank 3 = DW3/7)
+    // Bank ID:     PA[5:3]   (3 bits: Bank 0..7 = DW0..DW7)
     // Byte Offset: PA[2:0]   (3 bits)
     logic [43:0]  tag_array   [L1D_SETS][L1D_WAYS];
     logic         valid_array [L1D_SETS][L1D_WAYS];
     logic         dirty_array [L1D_SETS][L1D_WAYS];
     logic [1:0]   lru_array   [L1D_SETS]; // Pseudo-LRU replacement pointer
 
-    // 4 Independent Physical 64-bit SRAM Banks (§6.1, §9.1)
-    // Bank dimension: 64 sets x 4 ways x 2 DWs = 512 entries x 64 bits = 4 KiB/bank (16 KiB total)
-    logic [63:0] bank_data [4][L1D_SETS][L1D_WAYS][2];
+    // 8 Independent Physical 64-bit SRAM Banks (Stage 2 IPC: 8 banks x 64 sets x 4 ways x 64 bits = 16 KiB)
+    logic [63:0] bank_data [8][L1D_SETS][L1D_WAYS];
 
-    // Helper: read full 512-bit cache line across all 4 banks
+    // Helper: read full 512-bit cache line across all 8 banks
     function automatic logic [511:0] read_cache_line(
         input logic [5:0] set_idx,
         input logic [1:0] way_idx
     );
         logic [511:0] line;
-        // Sub-DW 0: DW0..DW3
-        line[63:0]    = bank_data[0][set_idx][way_idx][0];
-        line[127:64]  = bank_data[1][set_idx][way_idx][0];
-        line[191:128] = bank_data[2][set_idx][way_idx][0];
-        line[255:192] = bank_data[3][set_idx][way_idx][0];
-        // Sub-DW 1: DW4..DW7
-        line[319:256] = bank_data[0][set_idx][way_idx][1];
-        line[383:320] = bank_data[1][set_idx][way_idx][1];
-        line[447:384] = bank_data[2][set_idx][way_idx][1];
-        line[511:448] = bank_data[3][set_idx][way_idx][1];
+        line[63:0]    = bank_data[0][set_idx][way_idx];
+        line[127:64]  = bank_data[1][set_idx][way_idx];
+        line[191:128] = bank_data[2][set_idx][way_idx];
+        line[255:192] = bank_data[3][set_idx][way_idx];
+        line[319:256] = bank_data[4][set_idx][way_idx];
+        line[383:320] = bank_data[5][set_idx][way_idx];
+        line[447:384] = bank_data[6][set_idx][way_idx];
+        line[511:448] = bank_data[7][set_idx][way_idx];
         return line;
     endfunction
 
@@ -519,8 +515,7 @@ module fursoy_s1_l1d
     wire [5:0]  ptw_snoop_set  = ptw_snoop_pa_i[11:6];
     wire [43:0] ptw_snoop_tag  = ptw_snoop_pa_i[55:12];
     wire [49:0] ptw_snoop_line = ptw_snoop_pa_i[55:6];
-    wire [1:0]  ptw_snoop_bank = ptw_snoop_pa_i[4:3];
-    wire        ptw_snoop_sub  = ptw_snoop_pa_i[5];
+    wire [2:0]  ptw_snoop_bank = ptw_snoop_pa_i[5:3];
 
     logic [1:0] ptw_snoop_way;
     wire        ptw_snoop_cache_hit = check_cache_hit(ptw_snoop_set, ptw_snoop_tag, ptw_snoop_way);
@@ -532,7 +527,7 @@ module fursoy_s1_l1d
         ptw_snoop_data_o      = 64'd0;
         if (ptw_snoop_cache_hit && dirty_array[ptw_snoop_set][ptw_snoop_way]) begin
             ptw_snoop_dirty_hit_o = 1'b1;
-            ptw_snoop_data_o      = bank_data[ptw_snoop_bank][ptw_snoop_set][ptw_snoop_way][ptw_snoop_sub];
+            ptw_snoop_data_o      = bank_data[ptw_snoop_bank][ptw_snoop_set][ptw_snoop_way];
         end else if (ptw_snoop_wbb_hit && wbb_q[ptw_snoop_wbb_idx].dirty) begin
             ptw_snoop_dirty_hit_o = 1'b1;
             ptw_snoop_data_o      = wbb_q[ptw_snoop_wbb_idx].data[ptw_snoop_pa_i[5:3] * 64 +: 64];
@@ -545,8 +540,7 @@ module fursoy_s1_l1d
     wire [5:0]  store_set     = store_drain_pa_i[11:6];
     wire [43:0] store_tag     = store_drain_pa_i[55:12];
     wire [49:0] store_line    = store_drain_pa_i[55:6];
-    wire [1:0]  store_bank    = store_drain_pa_i[4:3];
-    wire        store_sub_dw  = store_drain_pa_i[5];
+    wire [2:0]  store_bank    = store_drain_pa_i[5:3];
 
     logic [1:0] store_cache_hit_way;
     wire store_cache_hit = check_cache_hit(store_set, store_tag, store_cache_hit_way);
@@ -613,7 +607,7 @@ module fursoy_s1_l1d
 
     // Store Drain claims its target bank if it hits in cache
     wire store_claims_bank = store_can_drain && store_cache_hit;
-    wire [1:0] store_claimed_bank = store_bank;
+    wire [2:0] store_claimed_bank = store_bank;
 
     // =========================================================================
     // Dual Load Evaluation (Port 2 / AGU0 & Port 3 / AGU1)
@@ -621,20 +615,12 @@ module fursoy_s1_l1d
     wire [5:0]  load0_set    = load0_req_pa_i[11:6];
     wire [43:0] load0_tag    = load0_req_pa_i[55:12];
     wire [49:0] load0_line   = load0_req_pa_i[55:6];
-    wire [1:0]  load0_bank   = load0_req_pa_i[4:3];
-    wire        load0_sub_dw = load0_req_pa_i[5];
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire [2:0]  load0_dw     = load0_req_pa_i[5:3];
-    /* verilator lint_on UNUSEDSIGNAL */
+    wire [2:0]  load0_bank   = load0_req_pa_i[5:3];
 
     wire [5:0]  load1_set    = load1_req_pa_i[11:6];
     wire [43:0] load1_tag    = load1_req_pa_i[55:12];
     wire [49:0] load1_line   = load1_req_pa_i[55:6];
-    wire [1:0]  load1_bank   = load1_req_pa_i[4:3];
-    wire        load1_sub_dw = load1_req_pa_i[5];
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire [2:0]  load1_dw     = load1_req_pa_i[5:3];
-    /* verilator lint_on UNUSEDSIGNAL */
+    wire [2:0]  load1_bank   = load1_req_pa_i[5:3];
 
     // Cache hit checks
     logic [1:0] load0_cache_hit_way;
@@ -760,8 +746,10 @@ module fursoy_s1_l1d
     wire bank_conflict_loads = same_bank_loads && !same_dw_loads;
 
     // Dynamic ROB Age Priority Evaluation (PROP_M7_13)
-    wire [5:0] l0_dist = rob_dist(load0_req_rob_idx_i, rob_head_i);
-    wire [5:0] l1_dist = rob_dist(load1_req_rob_idx_i, rob_head_i);
+    rob_dist_t l0_dist;
+    rob_dist_t l1_dist;
+    assign l0_dist = rob_dist(load0_req_rob_idx_i, rob_head_i);
+    assign l1_dist = rob_dist(load1_req_rob_idx_i, rob_head_i);
 
     // Anti-starvation register: tracks if Load 1 stalled in previous cycle on bank conflict
     logic p3_bank_stall_q;
@@ -844,7 +832,7 @@ module fursoy_s1_l1d
         raw_word            = 64'd0;
 
         if (load0_cache_hit && !load0_misaligned) begin
-            raw_word = bank_data[load0_bank][load0_set][load0_cache_hit_way][load0_sub_dw];
+            raw_word = bank_data[load0_bank][load0_set][load0_cache_hit_way];
             load0_rsp_data_o = format_load_result_func(raw_word, load0_req_pa_i[2:0], load0_req_size_i, load0_req_sign_ext_i);
         end else if (load0_wbb_hit && !load0_misaligned) begin
             raw_word = extract_word_from_line(wbb_q[load0_wbb_idx].data, load0_req_pa_i[5:0]);
@@ -866,9 +854,9 @@ module fursoy_s1_l1d
         if (load1_cache_hit && !load1_misaligned) begin
             if (same_dw_loads) begin
                 // Bank Broadcast: Read data from identical bank doubleword broadcast concurrently (§6.3, PROP_M7_12)
-                raw_word = bank_data[load0_bank][load0_set][load0_cache_hit_way][load0_sub_dw];
+                raw_word = bank_data[load0_bank][load0_set][load0_cache_hit_way];
             end else begin
-                raw_word = bank_data[load1_bank][load1_set][load1_cache_hit_way][load1_sub_dw];
+                raw_word = bank_data[load1_bank][load1_set][load1_cache_hit_way];
             end
             load1_rsp_data_o = format_load_result_func(raw_word, load1_req_pa_i[2:0], load1_req_size_i, load1_req_sign_ext_i);
         end else if (load1_wbb_hit && !load1_misaligned) begin
@@ -965,9 +953,8 @@ module fursoy_s1_l1d
                     valid_array[s][w] = 1'b0;
                     dirty_array[s][w] = 1'b0;
                     tag_array[s][w]   = '0;
-                    for (int b = 0; b < 4; b++) begin
-                        bank_data[b][s][w][0] = 64'd0;
-                        bank_data[b][s][w][1] = 64'd0;
+                    for (int b = 0; b < 8; b++) begin
+                        bank_data[b][s][w] = 64'd0;
                     end
                 end
             end
@@ -1113,10 +1100,10 @@ module fursoy_s1_l1d
                     set_i    = mshr_q[m_idx].line_addr[5:0];
                     rep_way  = mshr_q[m_idx].victim_way;
 
-                    bank_data[0][set_i][rep_way][0] <= rsp_data[63:0];   // DW0
-                    bank_data[1][set_i][rep_way][0] <= rsp_data[127:64]; // DW1
-                    bank_data[2][set_i][rep_way][0] <= rsp_data[191:128];// DW2
-                    bank_data[3][set_i][rep_way][0] <= rsp_data[255:192];// DW3
+                    bank_data[0][set_i][rep_way] <= rsp_data[63:0];   // DW0
+                    bank_data[1][set_i][rep_way] <= rsp_data[127:64]; // DW1
+                    bank_data[2][set_i][rep_way] <= rsp_data[191:128];// DW2
+                    bank_data[3][set_i][rep_way] <= rsp_data[255:192];// DW3
 
                     refill_busy_q <= 1'b1;
                     refill_tag_q  <= m_idx;
@@ -1142,10 +1129,10 @@ module fursoy_s1_l1d
                     set_i   = mshr_q[m_idx].line_addr[5:0];
                     rep_way = mshr_q[m_idx].victim_way;
 
-                    bank_data[0][set_i][rep_way][0] <= bus_rd_rsp_data_i[63:0];   // DW0
-                    bank_data[1][set_i][rep_way][0] <= bus_rd_rsp_data_i[127:64]; // DW1
-                    bank_data[2][set_i][rep_way][0] <= bus_rd_rsp_data_i[191:128];// DW2
-                    bank_data[3][set_i][rep_way][0] <= bus_rd_rsp_data_i[255:192];// DW3
+                    bank_data[0][set_i][rep_way] <= bus_rd_rsp_data_i[63:0];   // DW0
+                    bank_data[1][set_i][rep_way] <= bus_rd_rsp_data_i[127:64]; // DW1
+                    bank_data[2][set_i][rep_way] <= bus_rd_rsp_data_i[191:128];// DW2
+                    bank_data[3][set_i][rep_way] <= bus_rd_rsp_data_i[255:192];// DW3
 
                     refill_busy_q <= 1'b1;
                     refill_tag_q  <= m_idx;
@@ -1154,7 +1141,7 @@ module fursoy_s1_l1d
                     mshr_q[m_idx].victim_data <= bus_rd_rsp_data_i;
                 end
             end else begin
-                // Beat 1 (Cycle 2): Write upper 256 bits across Banks 0..3 (PA[5] == 1), update tags
+                // Beat 1 (Cycle 2): Write upper 256 bits across Banks 4..7 (PA[5] == 1), update tags
                 logic [5:0] set_i;
                 logic [43:0] tag_i;
                 logic [1:0] rep_way;
@@ -1166,10 +1153,10 @@ module fursoy_s1_l1d
                 refill_line_snoop_inv = mshr_snoop_invalid_q[refill_tag_q] ||
                                         (snoop_req_valid_i && snoop_do_inv && (snoop_req_addr_i == mshr_q[refill_tag_q].line_addr));
 
-                bank_data[0][set_i][rep_way][1] <= refill_data_q[319:256]; // DW4
-                bank_data[1][set_i][rep_way][1] <= refill_data_q[383:320]; // DW5
-                bank_data[2][set_i][rep_way][1] <= refill_data_q[447:384]; // DW6
-                bank_data[3][set_i][rep_way][1] <= refill_data_q[511:448]; // DW7
+                bank_data[4][set_i][rep_way] <= refill_data_q[319:256]; // DW4
+                bank_data[5][set_i][rep_way] <= refill_data_q[383:320]; // DW5
+                bank_data[6][set_i][rep_way] <= refill_data_q[447:384]; // DW6
+                bank_data[7][set_i][rep_way] <= refill_data_q[511:448]; // DW7
 
                 valid_array[set_i][rep_way] <= !refill_line_snoop_inv;
                 dirty_array[set_i][rep_way] <= 1'b0;
@@ -1225,13 +1212,13 @@ module fursoy_s1_l1d
                 if (store_cache_hit) begin
                     // Write strictly to target bank and doubleword (zero conflict on other banks!)
                     logic [63:0] old_dw;
-                    old_dw = bank_data[store_bank][store_set][store_cache_hit_way][store_sub_dw];
+                    old_dw = bank_data[store_bank][store_set][store_cache_hit_way];
                     for (int b = 0; b < 8; b++) begin
                         if (store_drain_mask_i[b]) begin
                             old_dw[b*8 +: 8] = store_drain_data_i[b*8 +: 8];
                         end
                     end
-                    bank_data[store_bank][store_set][store_cache_hit_way][store_sub_dw] <= old_dw;
+                    bank_data[store_bank][store_set][store_cache_hit_way] <= old_dw;
                     dirty_array[store_set][store_cache_hit_way] <= 1'b1;
                     lru_array[store_set] <= store_cache_hit_way + 2'd1;
                 end else if (store_wbb_hit) begin

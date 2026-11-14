@@ -446,9 +446,16 @@ module fursoy_s1_csr
     end
 
     // Write Intent & Source Operand Generation
+    // RISC-V Priv Spec (§3.1.9): CSRRS/CSRRC read-modify-write on mip uses only the
+    // software-writable SEIP bit (mip_q[9]), not the external irq_seip_i wire, while
+    // p0_sys_rdata_o (rd) still returns mip_val (mip_q[9] | irq_seip_i).
     wire is_imm_csr = (p0_sys_subop_i == SYS_CSRRWI ||
                        p0_sys_subop_i == SYS_CSRRSI ||
                        p0_sys_subop_i == SYS_CSRRCI);
+
+    wire [63:0] rmw_csr_val = (p0_sys_csr_addr_i == 12'h344)
+                            ? {mip_val[63:10], mip_q[9], mip_val[8:0]}
+                            : old_csr_val;
 
     logic [63:0] source_operand;
     logic [63:0] csr_write_val;
@@ -466,11 +473,11 @@ module fursoy_s1_csr
             end
             SYS_CSRRS, SYS_CSRRSI: begin
                 csr_write_intent = (p0_sys_rs1_field_i != 5'd0);
-                csr_write_val    = old_csr_val | source_operand;
+                csr_write_val    = rmw_csr_val | source_operand;
             end
             SYS_CSRRC, SYS_CSRRCI: begin
                 csr_write_intent = (p0_sys_rs1_field_i != 5'd0);
-                csr_write_val    = old_csr_val & ~source_operand;
+                csr_write_val    = rmw_csr_val & ~source_operand;
             end
             default: begin
                 csr_write_intent = 1'b0;
@@ -517,8 +524,8 @@ module fursoy_s1_csr
                     else if (p0_sys_csr_addr_i == 12'h180 && eff_priv == 2'b01 && eff_mstatus[20]) sys_illegal = 1'b1;
                     // Counter access gates (cycle/time/instret + hpmcounter3..31)
                     else if (p0_sys_csr_addr_i >= 12'hc00 && p0_sys_csr_addr_i <= 12'hc1f) begin
-                        if (eff_priv == 2'b01 && !mcounteren_q[31:0][p0_sys_csr_addr_i[4:0]]) sys_illegal = 1'b1;
-                        else if (eff_priv == 2'b00 && (!mcounteren_q[31:0][p0_sys_csr_addr_i[4:0]] || !scounteren_q[31:0][p0_sys_csr_addr_i[4:0]])) sys_illegal = 1'b1;
+                        if (eff_priv == 2'b01 && !mcounteren_q[{1'b0, p0_sys_csr_addr_i[4:0]}]) sys_illegal = 1'b1;
+                        else if (eff_priv == 2'b00 && (!mcounteren_q[{1'b0, p0_sys_csr_addr_i[4:0]}] || !scounteren_q[{1'b0, p0_sys_csr_addr_i[4:0]}])) sys_illegal = 1'b1;
                     end
                     // Milestone 8 Phase A: Floating-Point CSR Gating (fcsr, frm, fflags)
                     // If mstatus.FS == 2'b00 (Off), ANY access from ANY mode raises Illegal Instruction (Cause 2)!
