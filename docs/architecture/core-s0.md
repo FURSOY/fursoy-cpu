@@ -1,46 +1,18 @@
-# İlk uçtan uca Slice-0 core sözleşmesi
+# Initial End-to-End Slice-0 Core Contract
 
-`fursoy_s0_core`, tek talimatı aynı anda fetch/execute/commit eden in-order bir
-DUT dilimidir. Fetch cevabı RV64I `OP-IMM`/`OP` ALU veya control-flow decoder'ın
-tanıdığı talimatlarda tüketilir. ALU PC'yi dört bayt ilerletir; branch/JAL/JALR
-hesaplanan hedefi seçer ve JAL/JALR link değerini register file'a yazar.
+`fursoy_s0_core` is an in-order DUT slice that fetches, executes, and commits one instruction at a time. The fetch response is consumed for instructions recognized by the RV64I `OP-IMM`/`OP` ALU or control-flow decoder. ALU instructions advance the PC by four bytes; branches/JAL/JALR select the computed target, and JAL/JALR write the link value to the register file.
 
-Commit-trace, `commit_valid`, PC, instruction, destination register write
-niyeti ve verisinden oluşur. `x0` için geçerli bir ALU talimatı commit olur ama
-register write niyeti kapalıdır; register dosyasının x0 girdisi sıfır tutulur.
+The commit trace consists of `commit_valid`, PC, instruction word, destination register write intent, and write data. For `x0`, a valid ALU instruction commits with register write intent disabled; entry `x0` in the register file remains zero.
 
-Tanınmayan kodlama, M-mode `ECALL` veya `EBREAK`, `trap_valid` üretir ve fetch cevabı aynı
-edge'de tüketilir. Trap girişi `mepc=PC` yazar; illegal için `mcause=2` ve
-instruction'ı zero-extend ederek `mtval`, ECALL için `mcause=11`, EBREAK için
-`mcause=3` ve her ikisi için `mtval=0`
-kurar. `MPIE←MIE`, `MIE←0`, `MPP←M` uygulanır ve PC `mtvec`e yönlendirilir.
-`mret` M-mode'da commit olur, PC'yi `mepc`e döndürür, `MIE←MPIE`, `MPIE←1` ve
-M-only WARL gereği `MPP←M` uygular; U-mode'a geçiş yoktur. Normal Slice-0 reseti `mstatus=0x1800`,
-`mie=mtvec=mepc=mcause=mtval=0` kurar. `RESET_MTVEC` yalnız doğrulama için
-parametreleştirilebilir; ürün reset sözleşmesini değiştirmez.
+An unrecognized encoding, M-mode `ECALL`, or `EBREAK` asserts `trap_valid`, and the fetch response is consumed on the same clock edge. Trap entry sets `mepc = PC`, sets `mcause = 2` with zero-extended instruction in `mtval` for illegal instructions, `mcause = 11` for `ECALL`, and `mcause = 3` for `EBREAK` (with `mtval = 0` for both). It applies `MPIE <- MIE`, `MIE <- 0`, `MPP <- M`, and redirects PC to `mtvec`.
+`MRET` commits in M-mode, returns PC to `mepc`, applies `MIE <- MPIE`, `MPIE <- 1`, and preserves `MPP <- M` per M-only WARL rules; there is no transition to U-mode. Normal Slice-0 reset initializes `mstatus = 0x1800` and `mie = mtvec = mepc = mcause = mtval = 0`. `RESET_MTVEC` is parameterized strictly for verification and does not alter the production reset contract.
 
-Load/store decoder ve tek-outstanding LSU port core'a bağlıdır. LSU işlemi
-sürerken fetch durur; store request kabulünde, load ise response kabulünde
-commit olur. Veri belleği cevabı istenen genişliğe göre sağa yaslıdır. Bu sürüm
-henüz cache veya çoklu outstanding bellek işlemi çalıştırmaz.
+The load/store decoder and a single-outstanding LSU port are connected to the core. Fetch stalls while an LSU transaction is in flight; stores commit on request acceptance, and loads commit on response acceptance. Data memory responses are right-aligned according to the requested width. This version does not yet include data caches or multiple outstanding memory operations.
 
-Başarılı store request handshake'i request zamanında commit olur; aynı handshake'deki
-store error `mcause=7` trap'iyle işlemi sonlandırır. Load başarı ve hata dahil her
-zaman response ile tamamlanır; hata response'u `mcause=5` üretir. Her iki access
-fault için `mepc` hatalı komutu, `mtval` efektif adresi gösterir; hedef register ve
-commit izi değişmez. Ayrıntılı handshake/reset kuralları `lsu-s0.md` içindedir.
+A successful store request handshake commits at request time; a store error on that same handshake terminates the instruction with a `mcause = 7` trap. Loads always complete on response (whether success or error); an error response raises `mcause = 5`. For both access faults, `mepc` points to the faulting instruction and `mtval` holds the effective address; the destination register and commit trace are not updated. Detailed handshake and reset rules are documented in `lsu-s0.md`.
 
-`FENCE` sıralı, tek-outstanding LSU'da önceki bellek işlemi tamamlandıktan sonra
-commit olur. `FENCE.I` ayrıca `fence_i_valid_o` olayı üretir. Slice-0'da I-cache
-yoktur; gelecekteki I-cache bu olayı invalidate tamamlanana kadar bekletmek için
-bir handshake'e dönüştürecektir.
+In the ordered, single-outstanding LSU, `FENCE` commits after any prior memory transaction completes. `FENCE.I` additionally generates a `fence_i_valid_o` event. Slice-0 has no I-cache; a future I-cache will turn this event into a handshake that stalls until invalidation completes.
 
-Zicsr yolu `mstatus`, `mie`, `mtvec`, `mscratch`, `mepc`, `mcause`, `mtval`
-ve read-only `cycle` CSR'lerini işler. Core CSR write'larında Slice-0 WARL
-maskelerini uygular; read-only veya tanımsız CSR erişimleri illegal-instruction
-trap'ine gider.
+The Zicsr path handles `mstatus`, `mie`, `mtvec`, `mscratch`, `mepc`, `mcause`, `mtval`, and the read-only `cycle` CSR. On CSR writes, the core applies Slice-0 WARL masks; accesses to read-only or undefined CSRs take an illegal-instruction trap.
 
-Instruction-memory error response'u decode edilmez ve commit üretmez. İstekle
-tutulan PC için `mcause=1`, `mepc=PC`, `mtval=PC` kurulur ve doğrudan `mtvec`e
-gidilir. Böylece response veri bitleri geçerli bir talimat kodlasa bile mimari
-yan etki oluşturamaz.
+An instruction-memory error response is neither decoded nor committed. For the PC held with the request, the core sets `mcause = 1`, `mepc = PC`, and `mtval = PC`, and jumps directly to `mtvec`. Thus, even if the error response data bits happen to encode a valid instruction, no architectural side effects can occur.

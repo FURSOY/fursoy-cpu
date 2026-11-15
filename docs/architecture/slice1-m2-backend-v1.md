@@ -160,37 +160,49 @@ The IntIQ contains **16 entries** (provisional capacity). Each entry buffers:
 
 #### 2.2.3 ROB48 Wrap-Safe Age Comparison (Resolution of P2-2 & P3-2)
 - **Mathematical Age Distance**: Rather than maintaining an expensive $16 \times 16$ triangular flip-flop age matrix, IntIQ computes the age of each entry dynamically using its `rob_idx` relative to `rob_head_o` exported by M1:
-  $$\text{dist}(\text{idx}, \text{head}) = (\text{idx} - \text{head} + 48) \pmod{48}$$
-- **Age Ordering Relation**: For any two valid entries $i$ and $j$:
-  $$\text{Entry } i \text{ is older than Entry } j \iff \text{dist}(\text{rob\_idx}[i], \text{rob\_head\_o}) < \text{dist}(\text{rob\_idx}[j], \text{rob\_head\_o})$$
+
+  ```text
+  dist(idx, head) = (idx - head + ROB_DEPTH) mod ROB_DEPTH
+  ```
+
+- **Age Ordering Relation**: For any two valid entries `i` and `j`:
+
+  ```text
+  Entry i is older than Entry j  <=>  dist(rob_idx[i], rob_head_o) < dist(rob_idx[j], rob_head_o)
+  ```
+
 - **Retirement Invariance**: In-flight uncompleted instructions in IntIQ have ROB indices strictly downstream of `rob_head_o`. When the ROB head advances during retirement, the relative circular distance between uncompleted instructions is strictly preserved.
 - **Classification**: ROB-head-relative age ordering is **FROZEN SEMANTIC CONTRACT**. An age matrix implementation remains an optional provisional alternative if comparator tree timing on specific ASIC cells requires it.
 
 #### 2.2.4 Port-Aware Scheduler Matching (Resolution of P2-1)
 - **Objective**: Select up to two ready uops such that legal port assignment is achieved whenever one exists, strictly avoiding artificial serialization while preserving age priority.
 - **Readiness Condition**: An entry is ready if:
-  $$\text{Ready} = \text{valid} \land \text{prs1\_ready} \land (\text{prs2\_ready} \lor \text{use\_imm})$$
+
+  ```text
+  Ready = valid && prs1_ready && (prs2_ready || use_imm)
+  ```
+
   - Multiplier uops additionally require Port 1 multiplier issue credits (`mul_fifo_free > muls_in_flight`).
-  - Divider uops additionally require $\neg \text{divider\_busy}$ and $\neg \text{div\_buf.valid}$.
+  - Divider uops additionally require `!divider_busy && !div_buf.valid`.
   - ALU1 uops requiring Port 1 require Port 1 ALU credits (`alu1_fifo_free > alu1_in_flight`).
 - **Deterministic 2-Port Matching Logic**:
   Let $\mathcal{R}$ be the set of ready uops ordered by age ($u_0$ oldest, $u_1$ second-oldest, etc.).
   Partition $\mathcal{R}$ into:
-  - $\mathcal{S}_{\text{P0\_only}}$: P0-only uops (Branch, JAL, JALR).
-  - $\mathcal{S}_{\text{P1\_only}}$: P1-only uops (Multiplier, Divider).
+  - $\mathcal{S}_{\text{P0}}$: P0-only uops (Branch, JAL, JALR).
+  - $\mathcal{S}_{\text{P1}}$: P1-only uops (Multiplier, Divider).
   - $\mathcal{S}_{\text{flex}}$: Symmetric ALU uops (`port_mask = 2'b11`).
-  
+
   **Arbitration Rules**:
-  1. If $u_0 \in \mathcal{S}_{\text{P0\_only}}$: Assign $u_0 \rightarrow \text{Port 0}$. Port 1 selects oldest ready uop in $\mathcal{S}_{\text{P1\_only}} \cup \mathcal{S}_{\text{flex}}$.
-  2. If $u_0 \in \mathcal{S}_{\text{P1\_only}}$: Assign $u_0 \rightarrow \text{Port 1}$. Port 0 selects oldest ready uop in $\mathcal{S}_{\text{P0\_only}} \cup \mathcal{S}_{\text{flex}}$.
+  1. If $u_0 \in \mathcal{S}_{\text{P0}}$: Assign $u_0 \rightarrow \text{Port 0}$. Port 1 selects oldest ready uop in $\mathcal{S}_{\text{P1}} \cup \mathcal{S}_{\text{flex}}$.
+  2. If $u_0 \in \mathcal{S}_{\text{P1}}$: Assign $u_0 \rightarrow \text{Port 1}$. Port 0 selects oldest ready uop in $\mathcal{S}_{\text{P0}} \cup \mathcal{S}_{\text{flex}}$.
   3. If $u_0 \in \mathcal{S}_{\text{flex}}$:
      - Inspect $u_1$:
-       - **If $u_1 \in \mathcal{S}_{\text{P0\_only}}$**: Assign $u_1 \rightarrow \text{Port 0}$ and $u_0 \rightarrow \text{Port 1}$ *(Resolves the reviewer critical example: flexible ALU + branch dual-issue in 1 cycle!)*.
-       - **If $u_1 \in \mathcal{S}_{\text{P1\_only}}$**: Assign $u_0 \rightarrow \text{Port 0}$ and $u_1 \rightarrow \text{Port 1}$.
+       - **If $u_1 \in \mathcal{S}_{\text{P0}}$**: Assign $u_1 \rightarrow \text{Port 0}$ and $u_0 \rightarrow \text{Port 1}$ *(Resolves the reviewer critical example: flexible ALU + branch dual-issue in 1 cycle!)*.
+       - **If $u_1 \in \mathcal{S}_{\text{P1}}$**: Assign $u_0 \rightarrow \text{Port 0}$ and $u_1 \rightarrow \text{Port 1}$.
        - **If $u_1 \in \mathcal{S}_{\text{flex}}$**: Assign $u_0 \rightarrow \text{Port 0}$ and $u_1 \rightarrow \text{Port 1}$.
        - If no second ready uop exists: Assign $u_0 \rightarrow \text{Port 0}$.
-  4. If both $u_0, u_1 \in \mathcal{S}_{\text{P0\_only}}$: Assign $u_0 \rightarrow \text{Port 0}$. Port 1 selects the oldest ready uop in $\mathcal{S}_{\text{P1\_only}} \cup \mathcal{S}_{\text{flex}}$ (if any).
-  5. If both $u_0, u_1 \in \mathcal{S}_{\text{P1\_only}}$: Assign $u_0 \rightarrow \text{Port 1}$. Port 0 selects the oldest ready uop in $\mathcal{S}_{\text{P0\_only}} \cup \mathcal{S}_{\text{flex}}$ (if any).
+  4. If both $u_0, u_1 \in \mathcal{S}_{\text{P0}}$: Assign $u_0 \rightarrow \text{Port 0}$. Port 1 selects the oldest ready uop in $\mathcal{S}_{\text{P1}} \cup \mathcal{S}_{\text{flex}}$ (if any).
+  5. If both $u_0, u_1 \in \mathcal{S}_{\text{P1}}$: Assign $u_0 \rightarrow \text{Port 1}$. Port 0 selects the oldest ready uop in $\mathcal{S}_{\text{P0}} \cup \mathcal{S}_{\text{flex}}$ (if any).
 
 ---
 

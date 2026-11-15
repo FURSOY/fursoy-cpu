@@ -630,21 +630,41 @@ Hardware assertion of `rst_i` places the PLIC into a fully deterministic, quiesc
 ### 16.2 Formal properties and assertions
 
 1. **At Most One Outstanding Claim**:
-   $$\text{always\_comb } \forall i \in \{1 \dots 31\}, \quad \text{in\_service}[i] \le 1$$
+   ```systemverilog
+   always_comb assert (in_service[i] <= 1); // for all i in 1..31
+   ```
 2. **No Duplicate Claim Before Completion**:
-   $$\text{assert property (@(posedge clk) (claim\_fire \&\& claim\_id == i) |=> !((claim\_fire \&\& claim\_id == i) until (complete\_fire \&\& complete\_id == i \&\& valid\_complete(c, i))))}$$
+   ```systemverilog
+   assert property (@(posedge clk)
+     (claim_fire && claim_id == i) |=> !((claim_fire && claim_id == i) until (complete_fire && complete_id == i && valid_complete(c, i))));
+   ```
 3. **Context Notification Line Assertion**:
-   $$\text{assign context\_irq}[c] = \exists i \in \{1 \dots 31\} : (\text{pending}[i] \land \text{enable}[c][i] \land (\text{priority}[i] > \text{threshold}[c]) \land (\text{priority}[i] > 0))$$
+   ```systemverilog
+   assign context_irq[c] = |{ pending[i] && enable[c][i] && (priority[i] > threshold[c]) && (priority[i] > 0) }; // over i in 1..31
+   ```
 4. **Claim Arbitration Independent of Threshold**:
-   $$\text{assert property (@(posedge clk) claim\_fire \&\& (claim\_id != 0) |-> \text{claim\_eligible}(c, \text{claim\_id}))}$$
+   ```systemverilog
+   assert property (@(posedge clk) claim_fire && (claim_id != 0) |-> claim_eligible(c, claim_id));
+   ```
 5. **Deterministic Tie-Break Correctness**:
-   $$\text{assert property (@(posedge clk) claim\_fire \&\& (claim\_id != 0) |-> (\text{priority}[\text{claim\_id}] == \max_{j} (\text{claim\_eligible}(c, j))) \land (\forall j < \text{claim\_id}, \text{priority}[j] < \text{priority}[\text{claim\_id}]))}$$
+   ```systemverilog
+   assert property (@(posedge clk)
+     claim_fire && (claim_id != 0) |->
+       (priority[claim_id] == max_j(claim_eligible(c, j) ? priority[j] : 0)) &&
+       (forall j < claim_id: !claim_eligible(c, j) || priority[j] < priority[claim_id]));
+   ```
 6. **Cross-Context Completion Protection**:
-   $$\text{assert property (@(posedge clk) complete\_write \&\& !enable[c][k] |=> $stable(in\_service[k]))}$$
+   ```systemverilog
+   assert property (@(posedge clk) complete_write && !enable[c][k] |=> $stable(in_service[k]));
+   ```
 7. **No Spurious Pending Creation on Completion**:
-   $$\text{assert property (@(posedge clk) complete\_fire \&\& valid\_complete(c, i) \&\& !irq\_source\_i[i] |=> !pending[i])}$$
+   ```systemverilog
+   assert property (@(posedge clk) complete_fire && valid_complete(c, i) && !irq_source_i[i] |=> !pending[i]);
+   ```
 8. **Zero Side Effect on Rejected Bus Error**:
-   $$\text{assert property (@(posedge clk) req\_valid \&\& access\_error |=> $stable(all\_registers))}$$
+   ```systemverilog
+   assert property (@(posedge clk) req_valid && access_error |=> $stable(all_registers));
+   ```
 
 ---
 

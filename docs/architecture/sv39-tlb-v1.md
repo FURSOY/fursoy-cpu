@@ -85,20 +85,23 @@ Superpage alignment checks (`PTE.PPN[0] == 0` for 2 MiB, `PTE.PPN[1:0] == 0` for
 ### 3.2 Tag Matching Rules
 Let `req_vpn` be the 27-bit virtual page number of the incoming virtual address (`req_va[38:12]`). For entry $k$, a match occurs if and only if:
 
-$$\text{match}_k = \text{valid}_k \land \begin{cases} 
-(\text{vpn}_k[26:0] == \text{req\_vpn}[26:0]), & \text{if } \text{level}_k == 2\text{'b00} \text{ (4 KiB)} \\
-(\text{vpn}_k[26:9] == \text{req\_vpn}[26:9]), & \text{if } \text{level}_k == 2\text{'b01} \text{ (2 MiB)} \\
-(\text{vpn}_k[26:18] == \text{req\_vpn}[26:18]), & \text{if } \text{level}_k == 2\text{'b10} \text{ (1 GiB)}
-\end{cases}$$
+```text
+match[k] = valid[k] && (
+    (level[k] == 2'b00) ? (vpn[k][26:0]  == req_vpn[26:0])  :  // 4 KiB
+    (level[k] == 2'b01) ? (vpn[k][26:9]  == req_vpn[26:9])  :  // 2 MiB
+                          (vpn[k][26:18] == req_vpn[26:18])    // 1 GiB
+);
+```
 
 ### 3.3 Physical Address Formation
 On a matching hit in entry $k$, the translated 56-bit physical address `pa[55:0]` is constructed combinationally by merging the entry PPN with the unmasked low bits of the incoming virtual address:
 
-$$\text{pa}[55:0] = \begin{cases}
-\{\text{ppn}_k[43:0], \text{req\_va}[11:0]\}, & \text{if } \text{level}_k == 2\text{'b00} \text{ (4 KiB)} \\
-\{\text{ppn}_k[43:9], \text{req\_va}[20:0]\}, & \text{if } \text{level}_k == 2\text{'b01} \text{ (2 MiB)} \\
-\{\text{ppn}_k[43:18], \text{req\_va}[29:0]\}, & \text{if } \text{level}_k == 2\text{'b10} \text{ (1 GiB)}
-\end{cases}$$
+```text
+pa[55:0] =
+    (level[k] == 2'b00) ? {ppn[k][43:0],  req_va[11:0]} :  // 4 KiB
+    (level[k] == 2'b01) ? {ppn[k][43:9],  req_va[20:0]} :  // 2 MiB
+                          {ppn[k][43:18], req_va[29:0]};   // 1 GiB
+```
 
 The upper 8 bits (`pa[63:56]`) are zero-extended on the physical bus interfaces.
 

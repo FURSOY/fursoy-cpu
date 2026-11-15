@@ -1,91 +1,65 @@
-# ISA/platform sözleşmesi — taslak 0.2
+# ISA/Platform Contract — Draft 0.2
 
-Tarih: 6 Eylül 2026. W02 özelliğe göre ilk izlenebilir gereksinim dökümü.
-Bu belge bir uyumluluk veya uygulanmış özellik beyanı değildir.
+Date: September 6, 2026. Initial traceable requirements breakdown based on W02 scope.
+This document is not a compliance statement or a claim of implemented features.
 
-ECC/RAS, DMA izolasyonu ve sürekli yük hedefleri platform satırlarında (`SRV-001…005`) izlenir.
+ECC/RAS, DMA isolation, and sustained load targets are tracked under platform rows (`SRV-001…005`).
 
-## Hedef ve kaynak önceliği
+## Target and Source Priority
 
-Çalışma ISA'sı RISC-V; nihai hedef RVA23U64 + RVA23S64 v1.0 (2024-10-17).
-Profilin kullanıcı, supervisor ve Sha bileşenleri makinece okunabilir envanterde
-listelenmiştir. Profil için normatif kaynak [RVA23 v1.0](https://docs.riscv.org/reference/rva23/v1.0/_attachments/rva23-profile.pdf),
-özellikle basılı sayfa 4–9'dur. Teknik adlar değiştirilmeden tutulur.
+The working ISA is RISC-V; the long-term profile target is RVA23U64 + RVA23S64 v1.0 (2024-10-17).
+The user, supervisor, and Sha components of the profile are listed in the machine-readable inventory. The normative source for the profile is [RVA23 v1.0](https://docs.riscv.org/reference/rva23/v1.0/_attachments/rva23-profile.pdf), specifically printed pages 4–9. Technical extension names are preserved verbatim.
 
-Komut/CSR ayrıntılarında [ISA Volume I](https://docs.riscv.org/reference/isa/v20260120/unpriv/unpriv-index.html)
-ve [Volume II](https://docs.riscv.org/reference/isa/v20260120/priv/priv-index.html)
-20260120 koleksiyonu referanstır. Koleksiyon tarihi uzantı sürümü değildir.
-RVA23'ün Ss1p13 tabanı korunur; daha yeni bir koleksiyondaki ek özellikler otomatik
-olarak zorunlu sayılmaz. Her komut/CSR alt belirtimi yazılırken ilgili uzantı
-sürümü ayrıca sabitlenecek; uyuşmazlık varsa karar kaydı açılacaktır.
+For instruction/CSR details, [ISA Volume I](https://docs.riscv.org/reference/isa/v20260120/unpriv/unpriv-index.html) and [Volume II](https://docs.riscv.org/reference/isa/v20260120/priv/priv-index.html) (20260120 collection) serve as references. The collection date is not the extension version. RVA23's Ss1p13 baseline is preserved; additional features in newer collections are not automatically mandatory. As each instruction/CSR sub-spec is authored, the corresponding extension version is locked; any discrepancies trigger a decision record.
 
-## Karar verilen ilk doğrulama dilimi
+## Initial Agreed Verification Slice
 
-`slice-0`: RV64I + Zicsr + Zifencei için bare-metal test ortamı; little-endian,
-XLEN=64, tek hart, M-mode, çevirisiz test RAM'i. Hedef derleme seçenekleri
-`-march=rv64i_zicsr_zifencei -mabi=lp64`; başlangıçta libc gerekmez.
-Bu bayraklarla ilk ELF derlendi ve yerleşimi kontrol edildi; program henüz
-referansta yürütülmedi. [Test haritası](../architecture/baremetal-v1.md) sürüm 1'dir.
-Program bitişi timeout ile başarı
-sayılmayacak; açık sonuç imzası ve beklenen trap bilgisi kontrol edilecek.
+`slice-0`: Bare-metal test environment for RV64I + Zicsr + Zifencei; little-endian, XLEN=64, single hart, M-mode, unpaged test RAM. Target compile flags: `-march=rv64i_zicsr_zifencei -mabi=lp64`; libc is not required initially.
+The first ELF was compiled and layout-checked with these flags. See [Test Memory Map](../architecture/baremetal-v1.md) v1. Program completion does not pass by timeout; an explicit result signature and expected trap metadata are verified.
 
-Bu dilim Linux veya RVA23 uyumlu ürün değildir. İlk test ortamı, sonraki OoO
-çekirdeğin de kullanacağı mimari sonuç/commit kontrolünü geliştirmek içindir.
-Geçici in-order CPU veya daraltılmış nihai ISA kararı alınmadı.
+This slice is not a Linux-capable or RVA23-compliant product. The initial test harness exists to validate the architectural result/commit checker reused by later out-of-order core stages. It does not restrict the final ISA or in-order/OoO microarchitecture decisions.
 
-İlk detaylandırma sırası: integer register/PC ve RV64I komutları; illegal opcode
-ve ECALL/EBREAK; CSR erişim izinleri ve trap/return; RAM/fence; sonra M/A/C ve
-supervisor bellek yönetimi. Her grup RTL'den önce opcode/CSR alt maddelerine ayrılır.
+Initial breakdown order: integer registers/PC and RV64I instructions; illegal opcodes and `ECALL`/`EBREAK`; CSR access permissions and trap/return; RAM/fence; then M/A/C extensions and supervisor memory management. Each group is decomposed into opcode/CSR sub-items prior to RTL.
 
-## Nihai platform kararları
+## Long-Term Platform Decisions
 
-| Başlık | Çalışma kararı | Açık ayrıntı |
+| Topic | Working Decision | Open Details |
 |---|---|---|
-| Modlar | M, S, U; nihai H/HS/VS/VU desteği | CSR WARL ve delegation tabloları |
-| Adresleme | Svbare/Sv39 zorunlu hedef; Sv48 değerlendirme adayı | Fiziksel adres genişliği, ASID/VMID bitleri |
-| Bellek sıralaması | RVWMO ve atomik ilerleme gereksinimleri | Litmus çalıştırıcı, çok hart model |
-| Veri düzeni | Little-endian, XLEN=64 | Bellek haritası ve reset adresi |
-| Vektör | VLEN=256 aday, fiziksel lane genişliği ayrı | ELEN/SEW, fiziksel RF ve test araç uyumu |
-| RAM/MMIO | Ayrı PMA/izin politikası | RAM aralıkları, cihaz erişim genişlikleri |
-| Kesmeler | Yazılım/timer/external yolları, nihai Sstc | AIA/denetleyici tercihi, adres haritası |
-| Koruma | PMP ve çeviri izin kontrolleri | PMP giriş sayısı/granülü/lock davranışı |
-| Boot/debug | Boot ROM, SBI yolu, debug erişimi | SBI/debug sürümü ve test platformu |
-| İsteğe bağlı uzantılar | Hiçbiri henüz ürün taahhüdü değil | Sv48/Svadu/crypto/BF16 vb. ayrı karar |
+| Modes | M, S, U; planned H/HS/VS/VU support | CSR WARL and delegation tables |
+| Addressing | Svbare/Sv39 mandatory target; Sv48 candidate for evaluation | Physical address width, ASID/VMID bits |
+| Memory Ordering | RVWMO and atomic forward-progress guarantees | Litmus runner, multi-hart model |
+| Data Endianness | Little-endian, XLEN=64 | Memory map and reset address |
+| Vector | VLEN=256 candidate, physical lane width separate | ELEN/SEW, physical RF, verification tool alignment |
+| RAM/MMIO | Separate PMA/permission policy | RAM ranges, device access widths |
+| Interrupts | Software/timer/external paths, planned Sstc | AIA/controller choice, address map |
+| Protection | PMP and translation permission checks | PMP entry count/granularity/lock behavior |
+| Boot/Debug | Boot ROM, SBI path, debug access | SBI/debug version and test platform |
+| Optional Extensions | None committed as production targets yet | Sv48/Svadu/crypto/BF16 etc. decided separately |
 
-Sv48 seçilirse guest çeviri desteğinin buna etkisi de ele alınır. Misaligned
-erişim desteği, her erişimin atomik olduğu anlamına gelmez. Veri bağımsız gecikme
-kuralları da bütün komutların sabit süreli olduğu varsayımına dönüştürülmez.
-Zkt/Zvkt kapsamı komut düzeyinde çıkarılmadan yürütme gecikmeleri onaylanmaz.
+If Sv48 is selected, guest translation impact will also be evaluated. Misaligned access support does not imply that every misaligned access is atomic. Data-independent timing rules do not turn into an assumption that all instructions are fixed-latency. Execution latencies are not locked until Zkt/Zvkt instruction-level scope is finalized.
 
-## İzlenebilirlik ve durumlar
+## Traceability and Statuses
 
-`isa-platform.csv` sütunları: sabit gereksinim kimliği, kapsanan özellik adları,
-kaynak, hedef kapı, sorumlu tasarım bölümü ve planlanan doğrulama yöntemi.
-CSV özellik grupları düzeyindedir; tüm opcode/CSR/PMA alt kurallarının tamamlanmış
-listesi değildir. `rva23-inventory.json` profilin doğrudan zorunlu adlarını ve Sha
-alt bileşenlerini ayrı tutar. Bağımlı uzantıların tüm geçişli açılımı henüz yoktur.
+`isa-platform.csv` columns: stable requirement ID, covered feature names, source, target gate, owning design section, and planned verification method.
+The CSV operates at the feature-group level rather than an exhaustive opcode/CSR/PMA sub-rule catalog. `rva23-inventory.json` separately tracks directly mandatory profile names and Sha sub-components. Full transitive expansion of dependent extensions is not included yet.
 
-Tüm satırlar `planned`; hiçbir ISA/platform satırının yürütülmüş test kanıtı yok.
-`verification` bir test planıdır, test sonucu değildir. `evidence` bu nedenle boş.
-Durumlar: planned → implemented → verified. Verified için kanıt zorunludur;
-kanıt dosyasının varlığı tek başına teknik yeterlilik onayı vermez.
+All baseline rows start as `planned`; `verification` represents a test plan rather than test results, and `evidence` begins empty.
+Statuses: `planned` -> `implemented` -> `verified`. `verified` requires evidence; the mere existence of an evidence file does not guarantee technical sufficiency.
 
-Kontrol komutu:
+Check commands:
 
 ```bash
 python3 tools/check_requirements.py
 python3 -m unittest discover -s verification -v
 ```
 
-Kontrol, envanterdeki adların tabloda unutulmasını, tekrarlanan ID'yi, kaynak/hedef
-hatalarını ve kanıtsız verified durumunu reddeder. Envanterin resmî kaynağa göre
-doğruluğu manuel incelemedir; kendi JSON listemizi kontrol etmek sertifikasyon değildir.
+The checker rejects missing inventory items in the table, duplicate IDs, invalid sources/targets, and `verified` entries without evidence. Accuracy of the inventory against official specs requires manual review; validating an internal JSON list is not formal certification.
 
-## W02 kapanışı için açık işler
+## Open Items for W02 Closeout
 
-1. İlk dilimin opcode ve CSR erişim/trap tabloları, WARL davranışı ve reset değerleri.
-2. B/A/C/V ve profil tanımlı adların bağımlılık/sürüm açılımı; referans araç kapsamı.
-3. Bellek haritası, reset vektörü ve test bitiş/commit kayıt sözleşmesi.
-4. Optional özellik kararları ve kesme/debug/SBI platform belirtim sürümleri.
+1. Opcode and CSR access/trap tables, WARL behavior, and reset values for the initial slice.
+2. Dependency/version expansion for B/A/C/V and profile-defined extensions; reference tool coverage.
+3. Memory map, reset vector, and test termination/commit trace contract.
+4. Optional feature decisions and interrupt/debug/SBI platform spec versions.
 
-Bu teslimat W02'nin ilk alt adımıdır; W02 veya G0 bütünüyle kapanmış sayılmaz.
+This deliverable is the first sub-step of W02; neither W02 nor G0 is closed solely by this document.

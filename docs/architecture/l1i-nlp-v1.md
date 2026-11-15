@@ -108,11 +108,13 @@ Speculative prefetch executes as a series of 8 independent, single-beat handshak
 ### 3.2 Formal Protocol Latency Bounds (Resolving P1-3)
 The demand preemption penalty is formally defined in protocol terms:
 
-$$\text{Demand Preemption Penalty} =
+$$
+\text{Demand Preemption Penalty} =
 \begin{cases}
-0\text{ cycles}, & \text{if prefetch is in }\text{PF\_IDLE}\text{ or }\text{PF\_REQ}\text{ (before req handshake)} \\
-(1 + t_{\text{rsp\_remain}})\text{ cycles}, & \text{if prefetch is in }\text{PF\_RSP}\text{ (awaiting response for accepted beat)}
-\end{cases}$$
+0\text{ cycles}, & \text{if prefetch is in }\text{PF-IDLE}\text{ or }\text{PF-REQ}\text{ (before req handshake)} \\
+(1 + t_{\text{remain}})\text{ cycles}, & \text{if prefetch is in }\text{PF-RSP}\text{ (awaiting response for accepted beat)}
+\end{cases}
+$$
 
 where $t_{\text{rsp\_remain}}$ is the remaining latency until the memory subsystem delivers `imem_rsp_valid_i` for the in-flight beat.
 * **In Frozen Simulation Platform:** Memory delivers zero-wait single-cycle responses ($t_{\text{rsp}} = 1$). Therefore, worst-case preemption delay is **$\le 2$ cycles** (1 request cycle + 1 response cycle).
@@ -306,7 +308,7 @@ $$\text{pf\_trigger\_pulse} = \text{trigger\_from\_refill} \lor \text{trigger\_f
 To prevent infinite flapping and duplicate requests in tight loops:
 1. **Last Prefetched Line Register (`last_pf_line_q[55:6]`):**
    Stores the physical line address of the most recently issued prefetch candidate.
-   If $\text{cand\_line\_pa} == \text{last\_pf_line\_q}$, candidate is suppressed as a duplicate.
+   If `cand_line_pa == last_pf_line_q`, the candidate is suppressed as a duplicate.
 2. **Transfer-Fire Gating:** Trigger pulses require `transfer_fire_f == 1`. Multi-cycle Stage-E stalls never re-trigger prefetch generation.
 3. **Cache Hit Immunity:** Repetitive cache hits within resident loops (branches looping within cached lines) do NOT assert `pfb_promote_event` or `l1i_refill_event_o`, generating **strictly zero prefetch triggers**.
 

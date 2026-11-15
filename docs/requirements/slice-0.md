@@ -1,66 +1,52 @@
-# Slice-0 mimari sözleşmesi
+# Slice-0 Architectural Contract
 
-Durum: taslak 0.1. Bu, ilk bare-metal test platformunun sözleşmesidir;
-nihai sunucu SoC reset davranışı veya RVA23 uyumluluk beyanı değildir.
+Status: Draft 0.1. This is the contract for the initial bare-metal test platform; it is not the final SoC reset behavior or an RVA23 compliance claim.
 
-## Başlangıç durumu
+## Initial Reset State
 
-| Alan | Slice-0 değeri | Açıklama |
+| Field | Slice-0 Value | Description |
 |---|---|---|
-| Hart | 0 | Tek hart |
-| PC | `0x8000_0000` | `_start` adresi |
-| Ayrıcalık | M-mode | S/U/H kapalıdır |
-| `mstatus` | MIE=0, MPIE=0, MPP=3 | Reset M-mode'a gelir; MXL ve diğer bitler sonraki alt tabloda |
-| `mie` | `0x0` | Kesme kaynakları kapalı |
-| `mtvec` | `0x0` | Başlangıç kodu ilk iş olarak yazar |
-| `mepc`, `mcause`, `mtval` | `0x0` | İlk trap öncesi platform başlangıç değeri |
-| RAM | `0x8000_0000`–`0x8001_ffff` | Test haritasına göre okunur/yazılır/yürütülür |
-| Kesme | Yok | Test boyunca dış/yazılım/timer kesmesi enjekte edilmez |
+| Hart | `0` | Single hart |
+| PC | `0x8000_0000` | `_start` address |
+| Privilege | M-mode | S/U/H disabled |
+| `mstatus` | `MIE=0`, `MPIE=0`, `MPP=3` | Resets into M-mode; MXL and other fields covered in sub-table |
+| `mie` | `0x0` | Interrupt sources disabled |
+| `mtvec` | `0x0` | Written first by startup code |
+| `mepc`, `mcause`, `mtval` | `0x0` | Platform reset value prior to first trap |
+| RAM | `0x8000_0000`–`0x8001_ffff` | Readable/writable/executable per test memory map |
+| Interrupts | None | No external/software/timer interrupts injected during Slice-0 tests |
 
-`mhartid=0` kabul edilir. Kimlik CSR'ları (`mvendorid`, `marchid`, `mimpid`) bu
-dilimde test edilmez ve ürün değerleri seçilmemiştir. `misa` ve PMP tanımı da
-sonraki alt dilimdedir. Uygulanmamış standard CSR veya opcode, illegal-instruction
-trap üretmelidir; bu davranış nihai profilde de önerilir.
+`mhartid = 0` is assumed. Identity CSRs (`mvendorid`, `marchid`, `mimpid`) are not tested in this slice and production IDs are not assigned yet. `misa` and PMP definitions belong to subsequent slices. Unimplemented standard CSRs or opcodes must raise an illegal-instruction trap; this behavior is recommended in the target profile as well.
 
-## Kullanılan komutlar ve kesin davranış
+## Instructions Used and Exact Behavior
 
-| Grup | Kodlama ailesi | Slice-0 kuralı | İlk test |
+| Group | Encoding Family | Slice-0 Rule | Initial Test |
 |---|---|---|---|
-| Integer | LUI, AUIPC, ADDI, ADD, SUB, BGEU, BNE, JAL, JALR | XLEN=64; sonuç mod 2^64; branch alınırsa hedef PC, alınmazsa PC+4 | ALU/branch sınırları, `ra` ve PC izleri |
-| Load/store | LD, SD | 8 bayt hizalı RAM erişimi; `LD` 64 bit yükler, `SD` 64 bit yazar | BSS sıfırlama, dizi okuma/yazma |
-| CSR | CSRRW, CSRRS, CSRRC, CSRWI/CSRRSI/CSRRCI | `rd=x0` okuma yan etkisini, `rs1=x0` veya `zimm=0` yazma yan etkisini bastırır | Her bastırma kombinasyonu ve izin reddi |
-| System | ECALL, MRET | M-mode ECALL: `mcause=11`, `mepc=faulting PC`, `mtval=0`; `MRET` önceki MIE/MPIE/MPP sözleşmesine göre döner | Tek ECALL → handler → `mepc+4` → MRET |
-| Fences | FENCE, FENCE.I | Slice-0 tek hart RAM'de FENCE mimari durum değiştirmez; FENCE.I önceki kod yazımının sonraki fetch'e görünmesini sağlar | self-modifying code testi |
-| Hata | Illegal opcode / uygunsuz CSR | `mcause=2`; `mepc=faulting PC`; `mtval=faulting instruction`; daha genç hiçbir mimari yazma görünmez | Bilinen illegal 32-bit kodlama |
+| Integer | `LUI`, `AUIPC`, `ADDI`, `ADD`, `SUB`, `BGEU`, `BNE`, `JAL`, `JALR` | XLEN=64; result mod 2^64; taken branch jumps to target PC, untaken advances to PC+4 | ALU/branch boundaries, `ra` and PC traces |
+| Load/Store | `LD`, `SD` | 8-byte aligned RAM access; `LD` loads 64 bits, `SD` writes 64 bits | BSS zeroing, array read/write |
+| CSR | `CSRRW`, `CSRRS`, `CSRRC`, `CSRWI`/`CSRRSI`/`CSRRCI` | `rd=x0` suppresses read side effects; `rs1=x0` or `zimm=0` suppresses write side effects | Every suppression combination and permission rejection |
+| System | `ECALL`, `MRET` | M-mode `ECALL`: `mcause=11`, `mepc=faulting PC`, `mtval=0`; `MRET` returns per prior `MIE`/`MPIE`/`MPP` rules | Single `ECALL` -> handler -> `mepc+4` -> `MRET` |
+| Fences | `FENCE`, `FENCE.I` | In single-hart RAM, `FENCE` does not alter architectural state; `FENCE.I` makes prior instruction writes visible to subsequent fetch | Self-modifying code test |
+| Faults | Illegal opcode / invalid CSR | `mcause=2`; `mepc=faulting PC`; `mtval=faulting instruction`; no younger architectural write becomes visible | Known illegal 32-bit encoding |
 
-M-only `mret`, `MIE←MPIE`, `MPIE←1` uygular ve desteklenen tek WARL değer olduğu
-için `MPP=M` bırakır. Bu sözleşme S/U dönüşü içermez; daha düşük privilege mode
-eklenirse ayrı bir mimari kilometre taşında genişletilecektir.
+M-only `MRET` applies `MIE <- MPIE`, `MPIE <- 1`, and leaves `MPP = M` as the only supported WARL value. This contract does not include S/U returns; lower privilege modes are introduced in a later architectural milestone.
 
-## Trap önceliği ve görünürlük
+## Trap Priority and Visibility
 
-Bir komut erişim hatası üretirse hedef register, store, CSR yazımı veya PC'nin
-normal sonraki değeri görünür olmaz. Trap handler'a girerken `mepc` hatalı komutun
-adresidir. Slice-0'da eşzamanlı kesme yoktur; exception ve kesme öncelik tablosu
-sonraki platform sözleşmesinin işidir. RTL, mimari commit sırasıyla iz üretecek;
-doğrulayıcı bunu Spike referansıyla karşılaştıracaktır.
+If an instruction triggers an access fault, neither its destination register, store, CSR write, nor sequential next-PC update becomes visible. Upon trap entry, `mepc` holds the faulting instruction address. Slice-0 has no concurrent interrupts; exception and interrupt priority arbitration is specified in subsequent platform contracts. RTL emits an architectural commit-order trace, which the verifier cross-checks against the Spike reference.
 
-## Test bağları
+## Test Bindings
 
-| Kimlik | Önkoşul | Beklenen sonuç | Kanıt durumu |
+| ID | Precondition | Expected Outcome | Evidence Status |
 |---|---|---|---|
-| S0-BOOT | reset durumu | `_start` M-mode'da doğru PC ve CSR başlangıcıyla görülür | Spike'da geçti; DUT planned |
-| S0-ECALL | `mtvec=trap_handler` | `mcause=11`, `mepc=ecall_probe`, `mtval=0`, handler sayacı=1 | Spike geçti; DUT planned |
-| S0-MEM | BSS ve RAM | 100 kelime sıfırdan 1…100'e, toplam 5050 | Spike geçti; DUT planned |
-| S0-CSR | M-mode | CSR okuma/yazma bastırma ve illegal CSR davranışı | cycle'a yazma ve mscratch bastırma Spike'da geçti; DUT planned |
-| S0-ILL | illegal 32-bit komut | cause=2, doğru `mepc`/`mtval`, görünür genç yazma yok | Spike'da geçti; DUT planned |
-| S0-FI | RAM'de kod değişimi | FENCE.I sonrası yeni komut fetch edilir | Spike passed; DUT planned |
+| `S0-BOOT` | Reset state | `_start` reached in M-mode with expected PC and CSR reset state | Passed on Spike; DUT planned |
+| `S0-ECALL` | `mtvec=trap_handler` | `mcause=11`, `mepc=ecall_probe`, `mtval=0`, handler counter=1 | Passed on Spike; DUT planned |
+| `S0-MEM` | BSS and RAM | 100 words summed from `1…100`, total `5050` | Passed on Spike; DUT planned |
+| `S0-CSR` | M-mode | CSR read/write suppression and illegal CSR trap behavior | Write to `cycle` and `mscratch` suppression passed on Spike; DUT planned |
+| `S0-ILL` | Illegal 32-bit instruction | `cause=2`, exact `mepc`/`mtval`, no visible younger writes | Passed on Spike; DUT planned |
+| `S0-FI` | Code modification in RAM | New instruction fetched after `FENCE.I` | Passed on Spike; DUT planned |
 
-Spike sonucu, self-modifying-code sırasının mimari `FENCE.I` davranışını
-doğrular. Fursoy'un gelecekteki I-cache invalidation uygulamasını kanıtlamaz;
-bu, I-cache'li DUT üzerinde ayrıca doğrulanacaktır.
+Spike results validate architectural `FENCE.I` ordering for self-modifying code. They do not validate Fursoy's future I-cache invalidation implementation, which is verified separately on the I-cache-equipped DUT.
 
-Kaynaklar: [RISC-V unprivileged ISA](https://docs.riscv.org/reference/isa/v20260120/unpriv/unpriv-index.html),
-[privileged ISA](https://docs.riscv.org/reference/isa/v20260120/priv/priv-index.html).
-Spike varsayımları test aracı içindir: `--isa=RV64I_Zicsr_Zifencei --priv=m`,
-tek 128 KiB RAM bölgesi. Spike, Fursoy davranışının kanıtı değildir.
+References: [RISC-V Unprivileged ISA](https://docs.riscv.org/reference/isa/v20260120/unpriv/unpriv-index.html), [Privileged ISA](https://docs.riscv.org/reference/isa/v20260120/priv/priv-index.html).
+Spike reference flags for test tooling: `--isa=RV64I_Zicsr_Zifencei --priv=m`, single 128 KiB RAM region. Spike passes are not proof of Fursoy RTL conformance.

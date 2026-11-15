@@ -12,7 +12,7 @@ Fursoy Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`) is a clean-slate 64-bit out-
   - 2-wide fetch, decode, register rename, and in-order retirement (`M/S/U` privilege modes, `medeleg`/`mideleg`, `WFI`, `MRET`/`SRET`).
   - **128-entry Reorder Buffer** (`ROB_DEPTH = 128`) with 4-bit wrap-safe epoch tags and precise exception/interrupt flush recovery.
   - **160-entry Physical Integer Register File** (`PRF_SIZE = 160`, `128` speculative free-list entries) plus **8 branch checkpoints** (`NUM_CHECKPOINTS = 8`) for single-cycle speculative RAT rollback.
-  - Dedicated issue queues: **32-entry Integer IQ** (`INT_IQ_DEPTH = 32`), **32-entry Memory IQ** (`MEM_IQ_DEPTH = 32`), **FP IQ** (`FPRF_SIZE = 64`), and decoupled **8-entry Vector IQ** (`VLEN = 256`, `ELEN = 64`, `48` vector physical registers).
+  - Dedicated issue queues: **32-entry Integer IQ** (`INT_IQ_DEPTH = 32`), **32-entry Memory IQ** (`MEM_IQ_DEPTH = 32`), **16-entry FP IQ** (`FPIQ_DEPTH = 16`, `FPRF_SIZE = 64`), plus an **8-entry fetched RVV execution queue** (`vecq_q[8]` over a `48 × 256-bit` 4-banked VRF, alongside a standalone **8-entry `VIQ8`** vector issue queue module).
   - Parallel-prefix **64-bit Kogge-Stone `fursoy_s1_alu`** and `fursoy_s1_branch_unit` (single-cycle execution + carry-free target equality), 3-stage pipelined multiplier, and hardware divider.
 - **Sv39 Virtual Memory & Non-Blocking Caches**:
   - **Dual-port Sv39 DTLB**: `64`-entry 4-way set-associative base TLB (`16` sets, Tree-PLRU) + `8`-entry 2 MiB / 1 GiB superpage CAM with `32`-entry Translation Request Table (`TRT_DEPTH = 32`).
@@ -26,6 +26,73 @@ Fursoy Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`) is a clean-slate 64-bit out-
 
 ---
 
+## Execution Engine & Pipeline Architecture
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                                   FRONTEND (2-Wide In-Order Fetch & Decode)                       |
+|                                                                                                   |
+|  [F0 GenPC + BPU]                  [F1/F2 ITLB + L1I]                 [F3/F4 Fetch Queue -> D0]   |
+|   - 512-entry BTB (256x2-way)       - ITLB: 64-ent 4-way + 8-ent CAM   - 16-entry Fetch Queue     |
+|   - TAGE-Lite (30.2 kb, 108b GHR)   - L1I:  16 KiB 4-way VIPT (64x64B) - 2W Decode (RV64IMAFDV)   |
+|   - 16-entry RAS, 8 Checkpoints     - Next-Line Prefetcher (2 I-MSHR)  - + Zba/Zbb/Zicsr/Zifencei |
++-------------------------------------------------+-------------------------------------------------+
+                                                  | 2 uops / cycle
+                                                  v
++---------------------------------------------------------------------------------------------------+
+|                             RENAME, DISPATCH & IN-ORDER RETIREMENT                                |
+|                                                                                                   |
+|  [2-Wide Rename / SRAT / ARAT] <====== 8 Branch Checkpoints (Single-Cycle Speculative Rollback)   |
+|  [128-Entry ROB (2W Alloc / 2W Retire, 4-bit Epoch Tags)]                                         |
+|  Register Files:  Int PRF: 160 x 64b (32 arch + 128 spec) | FP PRF: 64 x 64b | VRF: 48 x 256b     |
++--------+-------------------------+-------------------------+------------------------+-------------+
+         |                         |                         |                        |
+         v                         v                         v                        v
++------------------+     +-------------------+     +-------------------+    +-----------------------+
+| IntIQ (32 ent)   |     | MemIQ (32 ent)    |     | FPIQ (16 ent)     |    | Fetched RVV Engine    |
+| 2W Dispatch      |     | 2W Dispatch       |     | 2W Dispatch       |    | vecq_q[8] (core FSM)  |
++----+--------+----+     +----+---------+----+     +---------+---------+    +-----------+-----------+
+     |        |               |         |                    |                          |
+     v        v               v         v                    v                          v
+  [Port 0] [Port 1]       [Port 2]  [Port 3]             [Port 4]                 [Vector FSM]
+  - ALU0   - ALU1         - AGU0    - AGU1               - FMA (3c/4c)            - Element-by-element
+    (1c)     (1c FIFO)      (Ld/St/   (Loads             - FDIV/FSQRT               scalar ALU/mem ops
+  - BR     - MUL (3c)        AMO/      only)               (12/21/15/28c)           over 4-banked VRF
+    (1c)   - DIV (~34c)      FENCE)                      - FCONV/FCMP             - (Standalone VIQ8
+  - CSR/                   - 16 LQ / 16 SQ                                          in testbench harness)
+    I2F                    - 32 TRT
+     |        |               |         |                    |                          |
+     +---+----+---------------+---------+--------------------+--------------------------+
+         |                    |         |                                               |
+         v                    v         v                                               v
++---------------------------------------------------------------------------------------------------+
+|                                  MEMORY & COHERENT SUBSYSTEM                                      |
+|                                                                                                   |
+|  [Dual-Port Sv39 DTLB]  <--------->  [Hardware PTW] (Non-destructive L1D dirty snoop coherency)   |
+|   (64-ent 4-way + 8-ent CAM)                                                                      |
+|  [16 KiB 4-Way 8-Bank L1D (PA[5:3])] --- 4 MSHRs, 2 WBBs, Snoop Coherent (no victim cache)        |
++-------------------------------------------------+-------------------------------------------------+
+                                                  |
+                                                  v
++---------------------------------------------------------------------------------------------------+
+|                                   SoC INTERCONNECT & PERIPHERALS (fursoy_s1_soc)                  |
+|                                                                                                   |
+|  [5-to-1 Priority Crossbar]:  Core MMIO > PTW Walks > L1I Refills > L1D Refills > L1D Writebacks  |
+|   -> DRAM (256 MiB @ 0x8000_0000) | CLINT | PLIC (31 sources) | 16550 UART | Unmapped Fault Trap  |
++---------------------------------------------------------------------------------------------------+
+```
+
+The backend issues out of **five scalar execution ports** across three out-of-order issue queues (plus the sequential fetched-RVV path) — up to **5 scalar operations/cycle** peak (2 Int + 2 Mem + 1 FP):
+
+| Issue Queue | Capacity | Dispatch | Issue Port(s) | Functional Units & Exact Latency | Constraints & Arbitration |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`IntIQ`** (`fursoy_s1_int_iq`) | 32 entries | 2-wide | **Port 0** (`P0`), **Port 1** (`P1`) | **P0**: `ALU0` (`1c`, Kogge-Stone), `Branch` (`1c`), `System/CSR`, `int2fp` dispatch<br>**P1**: `ALU1` (`1c` via `alu1_fifo`), `MUL` (`3c` pipelined), `DIV` (`~34c` Radix-4 iterative; `1c` corner bypass) | Max **1 branch/cycle** (`P0` only); `DIV` is single-occupancy; `ALU0` has PRF writeback priority over `F2I` |
+| **`MemIQ`** (`fursoy_s1_mem_iq`) | 32 entries | 2-wide | **Port 2** (`P2/AGU0`), **Port 3** (`P3/AGU1`) | **P2**: `AGU0` (`1c` EA) for Loads, Stores, AMOs, `FENCE`/`FENCE.I`<br>**P3**: `AGU1` (`1c` EA) for Loads only | Max **2 loads/cycle** or **1 load + 1 store AGU/cycle** across **8 L1D banks** (`PA[5:3]`); same-DW dual loads broadcast with zero stall; backed by `16 LQ / 16 SQ / 32 TRT / 4 MSHRs / 2 WBBs` |
+| **`FPIQ`** (`fursoy_s1_fp_iq`) | 16 entries | 2-wide | **Port 4** (`P4`) | **P4**: `FMA` (`3c` FP32 / `4c` FP64, `1/cyc` throughput), `FDIV/FSQRT` (`12c` FDIV.S / `21c` FDIV.D / `15c` FSQRT.S / `28c` FSQRT.D, non-blocking Radix-4), `FCONV/FCMP/FSGNJ/FMINMAX` (`1c` eval + `8`-entry `f2i_fifo`) | Single FP issue port; `FMA` holds strict writeback priority over `FDIV`; `frm`/`fcsr` CSR writes serialize pipeline flush |
+| **Vector (`vecq_q` / `VIQ8`)** | 8 entries | In-order fetched FIFO | Sequential core FSM | Fetched `RVV 1.0` instructions execute sequentially in `vecq_q[8]` inside `fursoy_s1_core` element-by-element via scalar ALU/mem paths over `48 × 256-bit` 4-banked `VRF` | Standalone dual-lane `VIQ8` (`fursoy_s1_vec_iq`, 128-bit SIMD beats) is instantiated in RTL and verified via dedicated testbench harness ports (`test_viq_*`) |
+
+---
+
 ## Physical Synthesis & STA (Nangate 45nm @ 500 MHz)
 
 Evaluated standalone across 8 core functional blocks using **Yosys 0.33** + **sv2v v0.0.13** + **OpenSTA 3.1.0** on **NangateOpenCellLibrary (45nm Typical, 1.10V, 25C)** targeting **500 MHz (`2.000 ns` clock period)** (`tools/run_s1_synth.py --run-synth`, full report in `build/synth/s1_synth_report.json`):
@@ -33,16 +100,16 @@ Evaluated standalone across 8 core functional blocks using **Yosys 0.33** + **sv
 | Module | Type | Cells | DFFs | Area (kGE) | Baseline Arrival / WNS | Optimized Arrival | Opt WNS @ 500 MHz |
 | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `fursoy_s1_branch_unit` | Comb | 3,285 | 0 | 4.49 | 3.712 ns (`-1.712 ns`) | **0.629 ns** | **+1.371 ns (MET)** |
-| `fursoy_s1_csr` | Seq | 13,438 | 1,688 | 25.81 | 22.776 ns (`-21.120 ns`) | **1.828 ns** | **+0.133 ns (MET)** |
+| `fursoy_s1_csr` | Seq | 13,957 | 1,790 | 26.75 | 22.776 ns (`-21.120 ns`) | **1.663 ns** | **+0.298 ns (MET)** |
 | `fursoy_s1_dtlb` | Seq | 50,417 | 6,515 | 99.83 | 11.011 ns (`-9.211 ns`) | **1.249 ns** | **+0.551 ns (MET)** |
 | `fursoy_s1_itlb` | Seq | 36,238 | 6,304 | 77.12 | 4.057 ns (`-2.102 ns`) | **1.198 ns** | **+0.602 ns (MET)** |
 | `fursoy_s1_agu` | Comb | 321 | 0 | 0.66 | 2.301 ns (`-0.301 ns`) | **1.901 ns** | **+0.099 ns (MET)** |
 | `fursoy_s1_ptw` | Seq | 1,765 | 329 | 3.67 | 1.956 ns (`+0.005 ns`) | **0.948 ns** | **+1.013 ns (MET)** |
-| `fursoy_s1_decode` | Comb | 1,489 | 0 | 1.92 | 0.875 ns (`+1.125 ns`) | **0.663 ns** | **+1.337 ns (MET)** |
-| `fursoy_s1_alu` | Comb | 4,066 | 0 | 5.93 | 3.823 ns (`-1.823 ns`) | **0.994 ns** | **+1.006 ns (MET)** |
-| **Total (8 Core Blocks)** | — | **111,019** | **14,836** | **219.43** | — | **8 / 8 MET** | **TNS = 0.00 ns** |
+| `fursoy_s1_decode` | Comb | 2,459 | 0 | 3.21 | 0.875 ns (`+1.125 ns`) | **0.783 ns** | **+1.217 ns (MET)** |
+| `fursoy_s1_alu` | Comb | 4,309 | 0 | 6.27 | 3.823 ns (`-1.823 ns`) | **1.133 ns** | **+0.867 ns (MET)** |
+| **Total (8 Core Blocks)** | — | **112,751** | **14,938** | **222.00** | — | **8 / 8 MET** | **TNS = 0.00 ns** |
 
-> *Note: Total standard-cell area across these 8 standalone blocks is `175,106.74 um^2` (`NAND2_X1 = 0.798 um^2`). Full-SoC place-and-route and SRAM macro compilation are not yet executed.*
+> *Note: Total standard-cell area across these 8 standalone blocks is `177,155.73 um^2` (`NAND2_X1 = 0.798 um^2`). Full-SoC place-and-route and SRAM macro compilation are not yet executed.*
 
 ---
 

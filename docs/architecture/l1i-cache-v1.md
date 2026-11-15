@@ -136,12 +136,15 @@ Each of the 64 sets maintains a 3-bit binary decision tree (`b0, b1, b2`):
 
 #### Victim Selection:
 When a replacement is required on a line refill:
-$$\text{Victim Way} = \begin{cases}
-\text{Way 0}, & \text{if } b0 == 0 \land b1 == 0 \\
-\text{Way 1}, & \text{if } b0 == 0 \land b1 == 1 \\
-\text{Way 2}, & \text{if } b0 == 1 \land b2 == 0 \\
-\text{Way 3}, & \text{if } b0 == 1 \land b2 == 1
-\end{cases}$$
+
+$$
+\text{Victim Way} = \begin{cases}
+\text{Way 0}, & \text{if } b_0 == 0 \land b_1 == 0 \\
+\text{Way 1}, & \text{if } b_0 == 0 \land b_1 == 1 \\
+\text{Way 2}, & \text{if } b_0 == 1 \land b_2 == 0 \\
+\text{Way 3}, & \text{if } b_0 == 1 \land b_2 == 1
+\end{cases}
+$$
 
 #### Tree Update on Access:
 Whenever Way $W$ is accessed (on a hit or upon refill completion), the tree bits are updated to point **away** from the accessed way:
