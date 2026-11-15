@@ -1,3 +1,6 @@
+`ifndef FURSOY_S0_CLINT_SV
+`define FURSOY_S0_CLINT_SV
+
 // Minimal single-hart CLINT-style interrupt source.  This block is platform
 // logic: it exposes level-sensitive interrupt pins and deliberately contains
 // no core trap or CSR policy.
@@ -18,7 +21,8 @@ module fursoy_s0_clint #(
     output logic        rsp_error_o,
     output logic        access_error_o,
     output logic        irq_software_o,
-    output logic        irq_timer_o
+    output logic        irq_timer_o,
+    output logic [63:0] mtime_o
 );
     localparam logic [63:0] MSIP_ADDR     = BASE_ADDR;
     localparam logic [63:0] MTIMECMP_ADDR = BASE_ADDR + 64'h4000;
@@ -45,6 +49,7 @@ module fursoy_s0_clint #(
     assign rsp_data_o = rsp_data_q;
     assign irq_software_o = msip_q;
     assign irq_timer_o = (mtime_q >= mtimecmp_q);
+    assign mtime_o = mtime_q;
 
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
@@ -76,3 +81,5 @@ module fursoy_s0_clint #(
         end
     end
 endmodule
+
+`endif // FURSOY_S0_CLINT_SV

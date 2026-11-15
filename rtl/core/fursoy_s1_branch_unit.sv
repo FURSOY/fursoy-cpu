@@ -23,6 +23,8 @@
 //   actual_taken_o, and mispredict_o.
 // =============================================================================
 
+`include "fursoy_s1_ks_adder.sv"
+
 module fursoy_s1_branch_unit
     import fursoy_s1_pkg::*;
 (
@@ -72,69 +74,14 @@ module fursoy_s1_branch_unit
     genvar g_idx;
     generate
         for (g_idx = 0; g_idx < 3; g_idx++) begin : gen_ks_add
-            wire [63:0] p0 = add_a[g_idx] ^ add_b[g_idx];
-            wire [62:0] g0 = add_a[g_idx][62:0] & add_b[g_idx][62:0];
-
-            logic [62:0] p1, g1;
-            (* keep = "true" *) logic [62:0] p2, g2;
-            logic [62:0] p3, g3;
-            (* keep = "true" *) logic [62:0] p4, g4;
-            logic [62:0] p5, g5;
-            logic [62:0] g6;
-
-            always_comb begin
-                p1[0] = p0[0];
-                g1[0] = g0[0];
-                for (int i = 1; i < 63; i++) begin
-                    p1[i] = p0[i] & p0[i-1];
-                    g1[i] = g0[i] | (p0[i] & g0[i-1]);
-                end
-
-                for (int i = 0; i < 2; i++) begin
-                    p2[i] = p1[i];
-                    g2[i] = g1[i];
-                end
-                for (int i = 2; i < 63; i++) begin
-                    p2[i] = p1[i] & p1[i-2];
-                    g2[i] = g1[i] | (p1[i] & g1[i-2]);
-                end
-
-                for (int i = 0; i < 4; i++) begin
-                    p3[i] = p2[i];
-                    g3[i] = g2[i];
-                end
-                for (int i = 4; i < 63; i++) begin
-                    p3[i] = p2[i] & p2[i-4];
-                    g3[i] = g2[i] | (p2[i] & g2[i-4]);
-                end
-
-                for (int i = 0; i < 8; i++) begin
-                    p4[i] = p3[i];
-                    g4[i] = g3[i];
-                end
-                for (int i = 8; i < 63; i++) begin
-                    p4[i] = p3[i] & p3[i-8];
-                    g4[i] = g3[i] | (p3[i] & g3[i-8]);
-                end
-
-                for (int i = 0; i < 16; i++) begin
-                    p5[i] = p4[i];
-                    g5[i] = g4[i];
-                end
-                for (int i = 16; i < 63; i++) begin
-                    p5[i] = p4[i] & p4[i-16];
-                    g5[i] = g4[i] | (p4[i] & g4[i-16]);
-                end
-
-                for (int i = 0; i < 32; i++) begin
-                    g6[i] = g5[i];
-                end
-                for (int i = 32; i < 63; i++) begin
-                    g6[i] = g5[i] | (p5[i] & g5[i-32]);
-                end
-            end
-
-            assign add_s[g_idx] = p0 ^ {g6[62:0], 1'b0};
+            fursoy_s1_ks_adder #(
+                .WIDTH (64)
+            ) u_ks_adder (
+                .a_i   (add_a[g_idx]),
+                .b_i   (add_b[g_idx]),
+                .cin_i (1'b0),
+                .sum_o (add_s[g_idx])
+            );
         end
     endgenerate
 

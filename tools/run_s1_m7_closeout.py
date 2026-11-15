@@ -18,69 +18,20 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parent.parent
+from s1_rtl_manifest import (
+    ACCEPTED_RTL_MANIFEST_SHA256S,
+    M6_M7_CORE_RTL as ALL_RTL,
+    ROOT,
+    compute_manifest_sha256 as compute_manifest_sha,
+    sha256_file as sha,
+)
+
 BUILD_DIR = ROOT / "build/s1_m7_closeout"
 REPORT = ROOT / "results/s1-m7-closeout.json"
 
-EXPECTED_RTL_MANIFEST_SHA256 = "30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003"
-ACCEPTED_RTL_MANIFEST_SHA256S = {
-    "30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003",
-    "03598b7836f34036b5f3ca4081a6cd438d1030fba140f43bd620d29b881da79b",  # M8 Phase A Final
-    "8fd9aa9634cf71a8c00f49df0a0b8bbc1becdc2bcd441b4e486b33cfbac2430d",  # M8 Phase B Pre-remediation
-    "cf08268b3b900a3233b35ddb6b4d10b3cb8aa988656f103aefcb717109b827d2",  # M8 Phase B Final
-    "69a94959bb1a03684f35146a940b119b85cef3e365a695f67221b0c83acd6a2f",  # M8 Phase C Final
-    "b5f823b9dcb8395127193852f6afcdf31518fbb4e9dd270d9e7c3920cdc0350f",  # M8 Phase D Final
-    "c3cdd842b5373b1371dfaf33ac9da198d84eb3bf4783b104f90dc180d1604408",  # M8 Phase E Final
-    "dd3d03b09557277172e8d1805fd139d58802a5b6fd873a908805e7c2f7615896",  # M9 Phase A
-    "e303802320fbbf21ed07872429bbbeb395a6c73995c96cdab95966198a8f7670",  # M9 Phase B (31-file manifest)
-    "53741012bd63803978aca787b91780f4e3d3a3271ba3ecd808225575c1e0fa52",  # M9 Phase D (31-file manifest)
-    "ced10f73147edcafe442edf22406aa0a3eafd4dba013b6b8d45524d25c1acea3",  # M9 Closeout (31-file manifest)
-    "a8c15faf4692d45393e06ddb3bcb12b68d4a04f326a71c1de242627175c99ed2",  # Stage 3 Single-Core Closure Final (34-file manifest)
-    "9db77eb51a4ea1ee283e4e892bb233018c379ed4ee6308f0b70f1141f00bcc35",  # Post-Issue #1/#2/#3 RTL Fixes (34-file manifest)
-    "c3350da8f092bf4e449badb1c082b336aa0ff6a5266192a59b55a229fc57cc48",  # Post-Issue #4 Fetched FP/Vec & Zbb Fixes (34-file manifest)
-    "49b14995cabfe11101f42122d70aeafe1e1851fdae848df57f2956dc9e9c7905",  # Sail Cosim + FMA/FDIV/FCONV/CSR Closure (34-file manifest)
-    "395f311c62d2ab545f2fe7646a1f7796de5ec48684ca71cf84e7ebe0c1dd6fb5",  # Post-Review P1/P2 Fixes + Sail Cosim Closure (34-file manifest)
-}
 SPEC_DOCUMENT = "docs/architecture/slice1-m7-multibank-l1d-v1.md"
 SPEC_VERSION = "1.1"
 SPEC_SHA256 = "c8ae7b5b19672db9dcacb3daa7113cb8251c7e14b857cc79f5aef3a6a91d79c9"
-
-ALL_RTL = [
-    ROOT / "rtl/core/fursoy_s1_pkg.sv",
-    ROOT / "rtl/core/fursoy_s1_freelist.sv",
-    ROOT / "rtl/core/fursoy_s1_rat.sv",
-    ROOT / "rtl/core/fursoy_s1_prf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_frat.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_rob.sv",
-    ROOT / "rtl/core/fursoy_s1_substrate.sv",
-    ROOT / "rtl/core/fursoy_s1_prf.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf.sv",
-    ROOT / "rtl/core/fursoy_s1_alu.sv",
-    ROOT / "rtl/core/fursoy_s1_branch_unit.sv",
-    ROOT / "rtl/core/fursoy_s1_multiplier.sv",
-    ROOT / "rtl/core/fursoy_s1_divider.sv",
-    ROOT / "rtl/core/fursoy_s1_port1_buffers.sv",
-    ROOT / "rtl/core/fursoy_s1_int_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_mem_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_agu.sv",
-    ROOT / "rtl/core/fursoy_s1_trt.sv",
-    ROOT / "rtl/core/fursoy_s1_l1d.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu_queues.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu.sv",
-    ROOT / "rtl/core/fursoy_s1_backend.sv",
-    ROOT / "rtl/core/fursoy_s1_bpu.sv",
-    ROOT / "rtl/core/fursoy_s1_ptw.sv",
-    ROOT / "rtl/core/fursoy_s1_itlb.sv",
-    ROOT / "rtl/core/fursoy_s1_l1i.sv",
-    ROOT / "rtl/core/fursoy_s1_fetch_queue.sv",
-    ROOT / "rtl/core/fursoy_s1_decode.sv",
-    ROOT / "rtl/core/fursoy_s1_serialization.sv",
-    ROOT / "rtl/core/fursoy_s1_csr.sv",
-    ROOT / "rtl/core/fursoy_s1_hpm.sv",
-    ROOT / "rtl/core/fursoy_s1_frontend.sv",
-    ROOT / "rtl/core/fursoy_s1_core.sv",
-]
 
 RTL_CORE = ROOT / "rtl/core/fursoy_s1_core.sv"
 TB_CORE = ROOT / "verification/s1_m7_tb.cpp"
@@ -179,20 +130,6 @@ SECTION_10_1_PROPERTIES = [
     {"id": "PROP_M7_39", "subsystem": "Multi-Seed", "name": "Multi-Seed Stress Torture >=100k Ops", "phase": "Multi-Seed", "provenance": "Torture Suite", "description": ">= 100,000 randomized dual-memory operations pass with 0 mismatches across canonical seeds."},
     {"id": "PROP_M7_40", "subsystem": "Workloads", "name": "Canonical Benchmarking IPC Optimization", "phase": "Profiling", "provenance": "Profiling Suite", "description": "5 canonical profiling benchmarks run to clean completion with IPC gains."}
 ]
-
-
-def sha(path: Path) -> str:
-    h = hashlib.sha256()
-    h.update(path.read_bytes())
-    return h.hexdigest()
-
-
-def compute_manifest_sha(files: list[Path]) -> str:
-    h = hashlib.sha256()
-    for f in sorted(files, key=lambda p: p.name):
-        h.update(f.name.encode("utf-8"))
-        h.update(f.read_bytes())
-    return h.hexdigest()
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, float]:
@@ -304,14 +241,14 @@ def main() -> None:
     print("=============================================================================")
 
     # 1. Manifest Verification
-    print("\n[M7-CLOSEOUT] Validating 31-file Production RTL Manifest SHA-256...")
+    print(f"\n[M7-CLOSEOUT] Validating {len(ALL_RTL)}-file Production RTL Manifest SHA-256...")
     current_manifest_sha = compute_manifest_sha(ALL_RTL)
     print(f"  Computed manifest SHA-256: {current_manifest_sha}")
 
     if current_manifest_sha not in ACCEPTED_RTL_MANIFEST_SHA256S:
         print(f"ERROR: Production RTL manifest SHA-256 mismatch!")
-        print(f"  Expected: {EXPECTED_RTL_MANIFEST_SHA256}")
-        print(f"  Got:      {current_manifest_sha}")
+        print(f"  Expected one of: {sorted(ACCEPTED_RTL_MANIFEST_SHA256S)}")
+        print(f"  Got:             {current_manifest_sha}")
         sys.exit(1)
 
     print("  [PASS] Production RTL manifest SHA-256 verified cleanly.")

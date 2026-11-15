@@ -9,7 +9,7 @@
 // - F1 ReqMem: Virtual instruction address generation, ITLB lookup, parallel BPU query.
 // - F2 RspMem: Non-blocking L1I cache lookup, 2 I-MSHRs, F2 synchronous skid buffer.
 // - F3 Align: 64-bit fetch block extraction, odd-slot masking, gated early JAL redirect.
-// - F4 Queue: 12-entry decoupled Fetch Queue FIFO.
+// - F4 Queue: 16-entry decoupled Fetch Queue FIFO with compact 73-bit RAS undo checkpoints.
 // - D0 Decode: 2-wide parallel decoder with decode exception bypass.
 // - M4 System Serialization Controller for FENCE.I.
 // - Hardware Performance Event Counters (18 architectural telemetry counters).
@@ -81,13 +81,13 @@ module fursoy_s1_frontend
     input  logic              chkpt_alloc_valid0_i,
     input  chkpt_idx_t        chkpt_alloc_id0_i,
     input  ghr_t              chkpt_alloc_ghr0_i,
-    input  ras_chkpt_t        chkpt_alloc_ras0_i,
+    input  ras_chkpt_id_t     chkpt_alloc_ras0_i,
     input  tage_csr_bundle_t  chkpt_alloc_csr0_i,
 
     input  logic              chkpt_alloc_valid1_i,
     input  chkpt_idx_t        chkpt_alloc_id1_i,
     input  ghr_t              chkpt_alloc_ghr1_i,
-    input  ras_chkpt_t        chkpt_alloc_ras1_i,
+    input  ras_chkpt_id_t     chkpt_alloc_ras1_i,
     input  tage_csr_bundle_t  chkpt_alloc_csr1_i,
 
     // Predictor Training from Resolved Control-Flow (Port 0 WB)
@@ -104,13 +104,13 @@ module fursoy_s1_frontend
     output logic              uop0_valid_o,
     output uop_decoded_t      uop0_o,
     output ghr_t              uop0_pre_ghr_o,
-    output ras_chkpt_t        uop0_ras_chkpt_o,
+    output ras_chkpt_id_t     uop0_ras_chkpt_o,
     output tage_csr_bundle_t  uop0_csr_chkpt_o,
 
     output logic              uop1_valid_o,
     output uop_decoded_t      uop1_o,
     output ghr_t              uop1_pre_ghr_o,
-    output ras_chkpt_t        uop1_ras_chkpt_o,
+    output ras_chkpt_id_t     uop1_ras_chkpt_o,
     output tage_csr_bundle_t  uop1_csr_chkpt_o,
 
     input  logic [1:0]        rename_ack_i,         // M1 dispatch acceptance
@@ -218,6 +218,7 @@ module fursoy_s1_frontend
     output logic              event_bpu_cond_pred_o,
     output logic              event_ras_call_push_o,
     output logic              event_ras_ret_pop_o,
+    output logic              event_early_jal_o,
 
     // Milestone 9 Phase A: Architectural Fetch PC Export
     output logic [63:0]       fe_pc_o,
@@ -251,7 +252,7 @@ module fursoy_s1_frontend
     wire [63:0] slot0_pred_target;
     branch_type_t slot0_br_type;
     ghr_t             slot0_pre_ghr;
-    ras_chkpt_t       slot0_ras_chkpt;
+    ras_chkpt_id_t    slot0_ras_chkpt;
     tage_csr_bundle_t slot0_csr_chkpt;
 
     wire        slot1_btb_hit;
@@ -259,14 +260,14 @@ module fursoy_s1_frontend
     wire [63:0] slot1_pred_target;
     branch_type_t slot1_br_type;
     ghr_t             slot1_pre_ghr;
-    ras_chkpt_t       slot1_ras_chkpt;
+    ras_chkpt_id_t    slot1_ras_chkpt;
     tage_csr_bundle_t slot1_csr_chkpt;
 
     // Stage F3 Early JAL recovery signals
     logic             early_jal_redirect;
     logic [63:0]      early_jal_target;
     ghr_t             early_jal_restore_ghr;
-    ras_chkpt_t       early_jal_restore_ras;
+    ras_chkpt_id_t    early_jal_restore_ras;
     tage_csr_bundle_t early_jal_restore_csr;
 
     // PTW to ITLB superpage and PTE channels
@@ -504,7 +505,9 @@ module fursoy_s1_frontend
     wire bpu_lookup_valid = f1_to_l1i_valid && !itlb_rsp_page_fault && !itlb_rsp_access_fault;
 
     // Dynamic Branch Prediction Subsystem (BPU)
-    fursoy_s1_bpu u_bpu (
+    fursoy_s1_bpu #(
+        .INDEXED_RAS_CHKPT        (1'b1)
+    ) u_bpu (
         .clk_i                    (clk_i),
         .rst_i                    (rst_i || !frontend_en_i),
 
@@ -520,7 +523,8 @@ module fursoy_s1_frontend
         .slot0_pred_target_o      (slot0_pred_target),
         .slot0_br_type_o          (slot0_br_type),
         .slot0_pre_ghr_o          (slot0_pre_ghr),
-        .slot0_ras_chkpt_o        (slot0_ras_chkpt),
+        .slot0_ras_chkpt_o        (),
+        .slot0_ras_id_o           (slot0_ras_chkpt),
         .slot0_csr_chkpt_o        (slot0_csr_chkpt),
 
         .slot1_btb_hit_o          (slot1_btb_hit),
@@ -528,25 +532,29 @@ module fursoy_s1_frontend
         .slot1_pred_target_o      (slot1_pred_target),
         .slot1_br_type_o          (slot1_br_type),
         .slot1_pre_ghr_o          (slot1_pre_ghr),
-        .slot1_ras_chkpt_o        (slot1_ras_chkpt),
+        .slot1_ras_chkpt_o        (),
+        .slot1_ras_id_o           (slot1_ras_chkpt),
         .slot1_csr_chkpt_o        (slot1_csr_chkpt),
 
         .early_jal_valid_i        (early_jal_redirect),
         .early_jal_restore_ghr_i  (early_jal_restore_ghr),
-        .early_jal_restore_ras_i  (early_jal_restore_ras),
+        .early_jal_restore_ras_i    ('0),
+        .early_jal_restore_ras_id_i (early_jal_restore_ras),
         .early_jal_restore_csr_i  (early_jal_restore_csr),
 
         // Branch Checkpoint Allocation at Rename (from M1 Substrate)
         .chkpt_alloc_valid0_i     (chkpt_alloc_valid0_i),
         .chkpt_alloc_id0_i        (chkpt_alloc_id0_i),
         .chkpt_alloc_ghr0_i       (chkpt_alloc_ghr0_i),
-        .chkpt_alloc_ras0_i       (chkpt_alloc_ras0_i),
+        .chkpt_alloc_ras0_i       ('0),
+        .chkpt_alloc_ras_id0_i    (chkpt_alloc_ras0_i),
         .chkpt_alloc_csr0_i       (chkpt_alloc_csr0_i),
 
         .chkpt_alloc_valid1_i     (chkpt_alloc_valid1_i),
         .chkpt_alloc_id1_i        (chkpt_alloc_id1_i),
         .chkpt_alloc_ghr1_i       (chkpt_alloc_ghr1_i),
-        .chkpt_alloc_ras1_i       (chkpt_alloc_ras1_i),
+        .chkpt_alloc_ras1_i       ('0),
+        .chkpt_alloc_ras_id1_i    (chkpt_alloc_ras1_i),
         .chkpt_alloc_csr1_i       (chkpt_alloc_csr1_i),
 
         .slot0_tage_pred_o        (),
@@ -589,14 +597,14 @@ module fursoy_s1_frontend
         logic [63:0]       slot0_pred_target;
         branch_type_t      slot0_br_type;
         ghr_t              slot0_pre_ghr;
-        ras_chkpt_t        slot0_ras_chkpt;
+        ras_chkpt_id_t     slot0_ras_chkpt;
         tage_csr_bundle_t  slot0_csr_chkpt;
         logic              slot1_btb_hit;
         logic              slot1_pred_taken;
         logic [63:0]       slot1_pred_target;
         branch_type_t      slot1_br_type;
         ghr_t              slot1_pre_ghr;
-        ras_chkpt_t        slot1_ras_chkpt;
+        ras_chkpt_id_t     slot1_ras_chkpt;
         tage_csr_bundle_t  slot1_csr_chkpt;
     } bpu_meta_entry_t;
 
@@ -1043,6 +1051,7 @@ module fursoy_s1_frontend
     assign event_bpu_cond_pred_o    = bpu_event_cond_pred;
     assign event_ras_call_push_o    = bpu_event_ras_call;
     assign event_ras_ret_pop_o      = bpu_event_ras_ret;
+    assign event_early_jal_o        = early_jal_redirect;
 
     /* verilator lint_on PINCONNECTEMPTY */
 

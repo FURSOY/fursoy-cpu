@@ -131,6 +131,9 @@ module fursoy_s1_l1d
     // Observability & Telemetry (Milestone 5 & Milestone 7)
     output logic              event_l1d_hit_o,
     output logic              event_l1d_miss_o,
+    output logic [1:0]        event_l1d_miss_cold_o,
+    output logic [1:0]        event_l1d_miss_conflict_o,
+    output logic [1:0]        event_l1d_dirty_evict_o,
     output logic [2:0]        mshr_occ_o,
     output logic              wbb_full_o,
     output logic [1:0]        event_bank_access_count_o,
@@ -566,6 +569,7 @@ module fursoy_s1_l1d
 
     // Candidate victim way for store miss allocation
     logic [1:0] store_victim_way;
+    logic       store_found_invalid;
     always_comb begin
         logic       found_invalid;
         logic [1:0] cand_way;
@@ -589,6 +593,7 @@ module fursoy_s1_l1d
                 end
             end
         end
+        store_found_invalid = found_invalid;
     end
 
     wire clean_active = (clean_state_q != CLEAN_IDLE) || dcache_clean_all_req_i;
@@ -660,6 +665,7 @@ module fursoy_s1_l1d
 
     // Candidate victim way for load0
     logic [1:0] load0_victim_way;
+    logic       load0_found_invalid;
     always_comb begin
         logic       found_invalid;
         logic [1:0] cand_way;
@@ -683,6 +689,7 @@ module fursoy_s1_l1d
                 end
             end
         end
+        load0_found_invalid = found_invalid;
     end
 
     wire load0_victim_is_dirty = valid_array[load0_set][load0_victim_way] && dirty_array[load0_set][load0_victim_way];
@@ -702,6 +709,7 @@ module fursoy_s1_l1d
 
     // Candidate victim way for load1
     logic [1:0] load1_victim_way;
+    logic       load1_found_invalid;
     always_comb begin
         logic       found_invalid;
         logic [1:0] cand_way;
@@ -725,6 +733,7 @@ module fursoy_s1_l1d
                 end
             end
         end
+        load1_found_invalid = found_invalid;
     end
 
     wire load1_victim_is_dirty = valid_array[load1_set][load1_victim_way] && dirty_array[load1_set][load1_victim_way];
@@ -870,6 +879,20 @@ module fursoy_s1_l1d
                               (load1_req_valid_i && load1_accept && (load1_cache_hit || load1_wbb_hit));
     assign event_l1d_miss_o = (load0_req_valid_i && load0_accept && !(load0_cache_hit || load0_wbb_hit)) ||
                               (load1_req_valid_i && load1_accept && !(load1_cache_hit || load1_wbb_hit));
+
+    wire store_mshr_alloc_fire = store_alloc_mshr;
+    wire load0_mshr_alloc_fire = load0_accept && !load0_cache_hit && !load0_wbb_hit && !load0_mshr_match && load0_can_alloc_mshr;
+    wire load1_mshr_alloc_fire = load1_accept && !load1_cache_hit && !load1_wbb_hit && !load1_mshr_match && load1_can_alloc_mshr;
+
+    assign event_l1d_miss_cold_o     = ((store_mshr_alloc_fire && store_found_invalid) ? 2'd1 : 2'd0) +
+                                       ((load0_mshr_alloc_fire && load0_found_invalid) ? 2'd1 : 2'd0) +
+                                       ((load1_mshr_alloc_fire && load1_found_invalid) ? 2'd1 : 2'd0);
+    assign event_l1d_miss_conflict_o = ((store_mshr_alloc_fire && !store_found_invalid) ? 2'd1 : 2'd0) +
+                                       ((load0_mshr_alloc_fire && !load0_found_invalid) ? 2'd1 : 2'd0) +
+                                       ((load1_mshr_alloc_fire && !load1_found_invalid) ? 2'd1 : 2'd0);
+    assign event_l1d_dirty_evict_o   = ((store_mshr_alloc_fire && store_victim_is_dirty) ? 2'd1 : 2'd0) +
+                                       ((load0_mshr_alloc_fire && load0_victim_is_dirty) ? 2'd1 : 2'd0) +
+                                       ((load1_mshr_alloc_fire && load1_victim_is_dirty) ? 2'd1 : 2'd0);
 
     assign event_bank_broadcast_o = dual_load_active && same_dw_loads && load0_accept && load1_accept;
     assign event_bank_conflict_o  = (dual_load_active && bank_conflict_loads) ||

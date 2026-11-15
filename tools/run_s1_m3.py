@@ -7,38 +7,12 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from s1_rtl_manifest import M3_CORE_RTL as ALL_RTL, ROOT, sha256_file as sha
+
 RTL_CORE = ROOT / "rtl/core/fursoy_s1_core.sv"
 TB = ROOT / "verification/s1_m3_tb.cpp"
 BUILD_DIR = ROOT / "build/s1_m3"
 REPORT = ROOT / "results/s1-m3.json"
-
-ALL_RTL = [
-    ROOT / "rtl/core/fursoy_s1_pkg.sv",
-    ROOT / "rtl/core/fursoy_s1_freelist.sv",
-    ROOT / "rtl/core/fursoy_s1_rat.sv",
-    ROOT / "rtl/core/fursoy_s1_prf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_rob.sv",
-    ROOT / "rtl/core/fursoy_s1_substrate.sv",
-    ROOT / "rtl/core/fursoy_s1_prf.sv",
-    ROOT / "rtl/core/fursoy_s1_alu.sv",
-    ROOT / "rtl/core/fursoy_s1_branch_unit.sv",
-    ROOT / "rtl/core/fursoy_s1_multiplier.sv",
-    ROOT / "rtl/core/fursoy_s1_divider.sv",
-    ROOT / "rtl/core/fursoy_s1_port1_buffers.sv",
-    ROOT / "rtl/core/fursoy_s1_int_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_mem_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_agu.sv",
-    ROOT / "rtl/core/fursoy_s1_trt.sv",
-    ROOT / "rtl/core/fursoy_s1_l1d.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu_queues.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu.sv",
-    ROOT / "rtl/core/fursoy_s1_backend.sv",
-    ROOT / "rtl/core/fursoy_s1_core.sv",
-]
-
-def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def build(report):
     BUILD_DIR.mkdir(parents=True, exist_ok=True)

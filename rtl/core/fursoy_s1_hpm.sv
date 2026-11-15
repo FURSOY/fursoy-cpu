@@ -7,11 +7,11 @@
 // Canonical Reference: docs/architecture/slice1-m5-performance-v1.md Section 8 & 9
 //
 // Key Features:
-// - 56 Hardware Performance Event Sources (0x01 .. 0x38).
-//   (Events 0x24 and 0x27 are Phase B only and driven to zero in Phase A).
+// - 74 Hardware Performance Event Sources (0x01 .. 0x4A).
 // - Up to 29 Programmable 64-bit Performance Event Counters (hpmcounter3..31).
-// - 29 Event Selector Registers (mhpmevent3..31), storing 6-bit event IDs.
-// - Base Architected Counters: mcycle (0xB00/0xC00), minstret (0xB02/0xC02).
+// - 29 Event Selector Registers (mhpmevent3..31), storing full 56-bit event masks.
+// - Base Architected Counters: mcycle (0xB00/0xC00), time (0xC01 -> CLINT mtime), minstret (0xB02/0xC02),
+//   and mcountinhibit (0x320, writable bits 0xFFFF_FFFD).
 // - Deterministic Single-Owner CPI Cycle Accounting Engine:
 //   8 mutually exclusive master categories evaluated in strict priority order:
 //     1. C_serialize
@@ -131,6 +131,21 @@ module fursoy_s1_hpm
     input  logic              ev_vec_viq_full_i,           // 0x3F: EV_VEC_VIQ_FULL
     input  logic              ev_vec_fof_trunc_i,          // 0x40: EV_VEC_FOF_TRUNC
 
+    // External CLINT mtime input (for CSR 0xC01 time / mhpmcounter_o[1])
+    input  logic [63:0]       mtime_i,
+
+    // Phase 1 Extended Architectural Observability Events (0x41 .. 0x4A)
+    input  logic [1:0]        ev_l1d_miss_cold_i,          // 0x41: L1D miss count (invalid way / cold)
+    input  logic [1:0]        ev_l1d_miss_conflict_i,      // 0x42: L1D miss count (valid victim / conflict+capacity)
+    input  logic [1:0]        ev_l1d_dirty_evict_i,        // 0x43: L1D miss causing dirty victim WBB eviction count
+    input  logic              ev_bpu_miss_btb_i,           // 0x44: BPU recovery: BTB miss / wrong target
+    input  logic              ev_bpu_miss_tage_i,          // 0x45: BPU recovery: TAGE direction miss
+    input  logic              ev_bpu_miss_ras_i,           // 0x46: BPU recovery: RAS return target miss
+    input  logic              ev_bpu_miss_jalr_i,          // 0x47: BPU recovery: indirect JALR target miss
+    input  logic              ev_stall_freelist_i,         // 0x48: Rename stall due to integer freelist empty
+    input  logic              ev_bpu_early_jal_i,          // 0x49: Stage F3 early JAL redirect
+    input  logic              ev_stall_serialize_i,        // 0x4A: Rename stall due to system serialization
+
     // -------------------------------------------------------------------------
     // Deterministic Single-Owner CPI Classification Predicates (Section 9.1)
     // -------------------------------------------------------------------------
@@ -150,7 +165,8 @@ module fursoy_s1_hpm
     output logic [63:0]       mhpmcounter_o        [32],
     output logic [63:0]       cpi_category_o       [8],
     output logic [7:0]        cpi_active_owner_o,
-    output logic [64:1]       raw_event_pulse_o
+    output logic [64:1]       raw_event_pulse_o,
+    output logic [74:65]      raw_event_ext_pulse_o
 );
 
     // =========================================================================
@@ -192,9 +208,9 @@ module fursoy_s1_hpm
                                                    (pending_mispred_type_q == BR_TYPE_CORO));
 
     // =========================================================================
-    // 2. Hardware Performance Event Value Multiplexer (0x01 .. 0x40)
+    // 2. Hardware Performance Event Value Multiplexer (0x01 .. 0x4A)
     // =========================================================================
-    logic [63:0] event_val [65]; // 0x00 .. 0x40
+    logic [63:0] event_val [75]; // 0x00 .. 0x4A
 
     always_comb begin
         event_val[7'h00] = 64'd0;
@@ -262,6 +278,16 @@ module fursoy_s1_hpm
         event_val[7'h3E] = {63'd0, ev_vec_mem_traffic_i};
         event_val[7'h3F] = {63'd0, ev_vec_viq_full_i};
         event_val[7'h40] = {63'd0, ev_vec_fof_trunc_i};
+        event_val[7'h41] = {62'd0, ev_l1d_miss_cold_i};
+        event_val[7'h42] = {62'd0, ev_l1d_miss_conflict_i};
+        event_val[7'h43] = {62'd0, ev_l1d_dirty_evict_i};
+        event_val[7'h44] = {63'd0, ev_bpu_miss_btb_i};
+        event_val[7'h45] = {63'd0, ev_bpu_miss_tage_i};
+        event_val[7'h46] = {63'd0, ev_bpu_miss_ras_i};
+        event_val[7'h47] = {63'd0, ev_bpu_miss_jalr_i};
+        event_val[7'h48] = {63'd0, ev_stall_freelist_i};
+        event_val[7'h49] = {63'd0, ev_bpu_early_jal_i};
+        event_val[7'h4A] = {63'd0, ev_stall_serialize_i};
     end
 
     // Raw pulse output for observability
@@ -269,23 +295,40 @@ module fursoy_s1_hpm
         for (int e = 1; e <= 64; e++) begin
             raw_event_pulse_o[e] = (event_val[e] != 64'd0);
         end
+        for (int e = 65; e <= 74; e++) begin
+            raw_event_ext_pulse_o[e] = (event_val[e] != 64'd0);
+        end
     end
 
     // =========================================================================
-    // 3. Base Architected Performance Counters: mcycle & minstret
+    // 3. Base Architected Performance Counters: mcountinhibit, mcycle, minstret
     // =========================================================================
+    logic [31:0] mcountinhibit_q;
     logic [63:0] mcycle_q;
     logic [63:0] minstret_q;
+    logic        mcycle_overwritten_q;
 
-    wire mcycle_we   = csr_we_i && (csr_waddr_i == 12'hB00);
-    wire minstret_we = csr_we_i && (csr_waddr_i == 12'hB02);
+    wire mcountinhibit_we = csr_we_i && (csr_waddr_i == 12'h320);
+    wire mcycle_we        = csr_we_i && (csr_waddr_i == 12'hB00);
+    wire minstret_we      = csr_we_i && (csr_waddr_i == 12'hB02);
 
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
-            mcycle_q <= 64'd0;
+            mcountinhibit_q <= 32'd0;
+        end else if (mcountinhibit_we) begin
+            // Bit 1 (TM/time) is read-only 0 per Sail platform config (writable 0xFFFF_FFFD)
+            mcountinhibit_q <= csr_wdata_i[31:0] & 32'hFFFF_FFFD;
+        end
+    end
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i) begin
+            mcycle_q             <= 64'd0;
+            mcycle_overwritten_q <= 1'b0;
         end else if (mcycle_we) begin
-            mcycle_q <= csr_wdata_i;
-        end else begin
+            mcycle_q             <= csr_wdata_i;
+            mcycle_overwritten_q <= 1'b1;
+        end else if (!mcountinhibit_q[0]) begin
             mcycle_q <= mcycle_q + 64'd1;
         end
     end
@@ -295,7 +338,7 @@ module fursoy_s1_hpm
             minstret_q <= 64'd0;
         end else if (minstret_we) begin
             minstret_q <= csr_wdata_i;
-        end else begin
+        end else if (!mcountinhibit_q[2]) begin
             minstret_q <= minstret_q + {63'd0, retire_valid_i[0]} + {63'd0, retire_valid_i[1]};
         end
     end
@@ -306,7 +349,7 @@ module fursoy_s1_hpm
     // =========================================================================
     // 4. Programmable Performance Counters & Selectors (hpmcounter3..31)
     // =========================================================================
-    logic [6:0]  mhpmevent_q   [3:31];
+    logic [55:0] mhpmevent_q   [3:31];
     logic [63:0] mhpmcounter_q [3:31];
 
     generate
@@ -316,19 +359,19 @@ module fursoy_s1_hpm
 
             always_ff @(posedge clk_i) begin
                 if (rst_i) begin
-                    mhpmevent_q[c]   <= 7'd0;
+                    mhpmevent_q[c]   <= 56'd0;
                     mhpmcounter_q[c] <= 64'd0;
                 end else begin
-                    // Selector update
+                    // Selector update (56-bit event mask per Sail platform config)
                     if (sel_we) begin
-                        mhpmevent_q[c] <= csr_wdata_i[6:0];
+                        mhpmevent_q[c] <= csr_wdata_i[55:0];
                     end
 
-                    // Counter update: CSR write overrides hardware increment
+                    // Counter update: CSR write overrides hardware increment; mcountinhibit gates increment
                     if (cnt_we) begin
                         mhpmcounter_q[c] <= csr_wdata_i;
-                    end else if (mhpmevent_q[c] <= 7'h40) begin
-                        mhpmcounter_q[c] <= mhpmcounter_q[c] + event_val[mhpmevent_q[c]];
+                    end else if (!mcountinhibit_q[c] && (mhpmevent_q[c][55:7] == 49'd0) && (mhpmevent_q[c][6:0] <= 7'h4A)) begin
+                        mhpmcounter_q[c] <= mhpmcounter_q[c] + event_val[mhpmevent_q[c][6:0]];
                     end
                 end
             end
@@ -338,7 +381,7 @@ module fursoy_s1_hpm
     // Export array of 32 counters for observability
     always_comb begin
         mhpmcounter_o[0] = mcycle_q;
-        mhpmcounter_o[1] = mcycle_q; // shadow time
+        mhpmcounter_o[1] = mtime_i; // CLINT mtime (architected time)
         mhpmcounter_o[2] = minstret_q;
         for (int i = 3; i <= 31; i++) begin
             mhpmcounter_o[i] = mhpmcounter_q[i];
@@ -389,7 +432,7 @@ module fursoy_s1_hpm
             for (int k = 0; k < 8; k++) begin
                 cpi_category_q[k] <= 64'd0;
             end
-        end else begin
+        end else if (!mcountinhibit_q[0]) begin
             for (int k = 0; k < 8; k++) begin
                 if (cpi_owner[k]) begin
                     cpi_category_q[k] <= cpi_category_q[k] + 64'd1;
@@ -407,7 +450,7 @@ module fursoy_s1_hpm
     // Dynamic Zero-Leakage Assertion (Section 9.2)
 `ifndef SYNTHESIS
     always_ff @(posedge clk_i) begin
-        if (!rst_i) begin
+        if (!rst_i && !mcycle_overwritten_q) begin
             // Verify that the sum of the 8 categories equals mcycle
             // (holding when mcycle has not been overwritten by CSR)
             assert (
@@ -426,15 +469,17 @@ module fursoy_s1_hpm
         csr_rdata_o = 64'd0;
 
         case (csr_raddr_i)
-            12'hB00, 12'hC00, 12'hC01: csr_rdata_o = mcycle_q;
-            12'hB02, 12'hC02:         csr_rdata_o = minstret_q;
+            12'h320:          csr_rdata_o = {32'd0, mcountinhibit_q};
+            12'hB00, 12'hC00: csr_rdata_o = mcycle_q;
+            12'hC01:          csr_rdata_o = mtime_i;
+            12'hB02, 12'hC02: csr_rdata_o = minstret_q;
             default: begin
                 if (csr_raddr_i >= 12'hB03 && csr_raddr_i <= 12'hB1F) begin
                     csr_rdata_o = mhpmcounter_q[csr_raddr_i[4:0]];
                 end else if (csr_raddr_i >= 12'hC03 && csr_raddr_i <= 12'hC1F) begin
                     csr_rdata_o = mhpmcounter_q[csr_raddr_i[4:0]];
                 end else if (csr_raddr_i >= 12'h323 && csr_raddr_i <= 12'h33F) begin
-                    csr_rdata_o = {57'd0, mhpmevent_q[csr_raddr_i[4:0]]};
+                    csr_rdata_o = {8'd0, mhpmevent_q[csr_raddr_i[4:0]]};
                 end else begin
                     csr_hit_o   = 1'b0;
                     csr_rdata_o = 64'd0;

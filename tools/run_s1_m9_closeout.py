@@ -8,7 +8,14 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[1]
+from s1_rtl_manifest import (
+    CORE_RTL,
+    ROOT,
+    SOC_RTL,
+    compute_manifest_sha256,
+    sha256_file,
+)
+
 BUILD_DIR = ROOT / "build/s1_m9_closeout"
 REPORT = ROOT / "results/s1-m9-closeout.json"
 DTB_OUT = ROOT / "build/dts/fursoy_s1.dtb"
@@ -22,56 +29,6 @@ SPEC_DOCUMENT = "docs/architecture/slice1-m9-soc-linux-v1.md"
 SPEC_VERSION = "1.1"
 SPEC_SHA256 = "bb353f632ec909b3270522e289d994cc90a34f18ab323705a9010e1070181347"
 
-CORE_RTL = [
-    ROOT / "rtl/core/fursoy_s1_pkg.sv",
-    ROOT / "rtl/core/fursoy_s1_freelist.sv",
-    ROOT / "rtl/core/fursoy_s1_rat.sv",
-    ROOT / "rtl/core/fursoy_s1_prf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_frat.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_rob.sv",
-    ROOT / "rtl/core/fursoy_s1_substrate.sv",
-    ROOT / "rtl/core/fursoy_s1_prf.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf.sv",
-    ROOT / "rtl/core/fursoy_s1_alu.sv",
-    ROOT / "rtl/core/fursoy_s1_branch_unit.sv",
-    ROOT / "rtl/core/fursoy_s1_multiplier.sv",
-    ROOT / "rtl/core/fursoy_s1_divider.sv",
-    ROOT / "rtl/core/fursoy_s1_port1_buffers.sv",
-    ROOT / "rtl/core/fursoy_s1_int_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_agu.sv",
-    ROOT / "rtl/core/fursoy_s1_mem_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_trt.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu_queues.sv",
-    ROOT / "rtl/core/fursoy_s1_l1d.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu.sv",
-    ROOT / "rtl/core/fursoy_s1_fma.sv",
-    ROOT / "rtl/core/fursoy_s1_fdiv.sv",
-    ROOT / "rtl/core/fursoy_s1_fconv.sv",
-    ROOT / "rtl/core/fursoy_s1_fp_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_vrf.sv",
-    ROOT / "rtl/core/fursoy_s1_vec_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_backend.sv",
-    ROOT / "rtl/core/fursoy_s1_bpu.sv",
-    ROOT / "rtl/core/fursoy_s1_ptw.sv",
-    ROOT / "rtl/core/fursoy_s1_itlb.sv",
-    ROOT / "rtl/core/fursoy_s1_l1i.sv",
-    ROOT / "rtl/core/fursoy_s1_fetch_queue.sv",
-    ROOT / "rtl/core/fursoy_s1_decode.sv",
-    ROOT / "rtl/core/fursoy_s1_serialization.sv",
-    ROOT / "rtl/core/fursoy_s1_csr.sv",
-    ROOT / "rtl/core/fursoy_s1_hpm.sv",
-    ROOT / "rtl/core/fursoy_s1_frontend.sv",
-    ROOT / "rtl/core/fursoy_s1_core.sv",
-]
-
-SOC_RTL = CORE_RTL + [
-    ROOT / "rtl/platform/fursoy_s0_clint.sv",
-    ROOT / "rtl/platform/fursoy_s0_plic.sv",
-    ROOT / "rtl/platform/fursoy_s0_uart.sv",
-    ROOT / "rtl/platform/fursoy_s1_soc.sv",
-]
-
 FW_SOURCES = [
     ROOT / "software/firmware/fursoy_s1_sbi.h",
     ROOT / "software/firmware/fursoy_s1_sbi_link.ld",
@@ -79,20 +36,6 @@ FW_SOURCES = [
     ROOT / "software/firmware/fursoy_s1_sbi_trap.S",
     ROOT / "software/firmware/fursoy_s1_sbi_core.c",
 ]
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    h.update(path.read_bytes())
-    return h.hexdigest()
-
-
-def compute_manifest_sha256(files: list[Path]) -> str:
-    h = hashlib.sha256()
-    for f in sorted(files, key=lambda p: p.name):
-        h.update(f.name.encode("utf-8"))
-        h.update(f.read_bytes())
-    return h.hexdigest()
 
 
 def get_symbol_address(elf_path: Path, symbol_name: str) -> int:
@@ -130,8 +73,11 @@ def main() -> int:
     print("Gate G5: Full Single-Core Linux-Bootable Processor Sign-off")
     print(f"Specification: {SPEC_DOCUMENT} v{SPEC_VERSION}")
     print(f"Specification SHA-256: {SPEC_SHA256}")
-    print(f"Core RTL Manifest SHA-256 (40 files): {core_manifest_sha}")
-    print(f"SoC  RTL Manifest SHA-256 (44 files): {soc_manifest_sha}")
+    print(f"Core RTL Manifest SHA-256 ({len(CORE_RTL)} files): {core_manifest_sha}")
+    print(f"SoC  RTL Manifest SHA-256 ({len(SOC_RTL)} files): {soc_manifest_sha}")
+    if core_manifest_sha not in ACCEPTED_RTL_MANIFEST_SHA256S:
+        print(f"ERROR: Core RTL manifest {core_manifest_sha} not in ACCEPTED_RTL_MANIFEST_SHA256S!", file=sys.stderr)
+        return 1
     print("=============================================================================")
 
     # 1. Compile DTB

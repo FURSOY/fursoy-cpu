@@ -29,6 +29,7 @@
 // =============================================================================
 
 `include "fursoy_s1_pkg.sv"
+`include "fursoy_s1_ks_adder.sv"
 
 module fursoy_s1_csr
     import fursoy_s1_pkg::*;
@@ -186,8 +187,9 @@ module fursoy_s1_csr
     logic [1:0]  priv_mode_q;
 
     // M-mode registers
-    // mstatus: reset value 0x0000_000a_0000_1800 (UXL=2, SXL=2, MPP=M)
-    logic [63:0] mstatus_q;
+    // mstatus[62:0]: reset value 0x0000_000a_0000_1800 (UXL=2, SXL=2, MPP=M); bit 63 (SD) is derived
+    logic [62:0] mstatus_q;
+    logic [63:0] mstatus_i_prev_q;
     logic [63:0] medeleg_q;
     logic [63:0] mideleg_q;
     logic [63:0] mie_q;
@@ -210,9 +212,6 @@ module fursoy_s1_csr
     logic [63:0] stval_q;
     logic [63:0] satp_q;
 
-    // Free-running cycle counter
-    logic [63:0] cycle_q;
-
     // Milestone 8 Floating-Point CSR Registers
     logic [2:0] frm_q;
     logic [4:0] fflags_q;
@@ -224,15 +223,14 @@ module fursoy_s1_csr
     logic [1:0]  vxrm_q;
     logic        vxsat_q;
 
-    // Effective privilege mode and mstatus incorporating external injection
+    // Effective privilege mode and architectural mstatus state
+    // (mstatus_i is captured on reset and edge-triggered synchronously into mstatus_q;
+    // combinational cone reads mstatus_q directly)
     wire [1:0]  eff_priv    = (priv_mode_i != 2'b11) ? priv_mode_i : priv_mode_q;
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire [63:0] raw_mstatus = (mstatus_i != 64'd0) ? mstatus_i : mstatus_q;
-    /* verilator lint_on UNUSEDSIGNAL */
-    wire [1:0]  eff_fs      = raw_mstatus[14:13];
-    wire [1:0]  eff_vs      = raw_mstatus[10:9];
+    wire [1:0]  eff_fs      = mstatus_q[14:13];
+    wire [1:0]  eff_vs      = mstatus_q[10:9];
     wire        eff_sd      = (eff_fs == 2'b11) || (eff_vs == 2'b11);
-    wire [63:0] eff_mstatus = {eff_sd, raw_mstatus[62:15], eff_fs, raw_mstatus[12:11], eff_vs, raw_mstatus[8:0]};
+    wire [63:0] eff_mstatus = {eff_sd, mstatus_q[62:0]};
 
     // Connect architectural outputs
     assign priv_mode_o  = eff_priv;
@@ -487,7 +485,28 @@ module fursoy_s1_csr
         endcase
     end
 
-    // Privilege and Exception Check
+    // Privilege and Exception Check (flattened parallel decode cone)
+    wire       priv_is_u     = (eff_priv == 2'b00);
+    wire       priv_is_s     = (eff_priv == 2'b01);
+    wire       priv_is_m     = (eff_priv == 2'b11);
+    wire [1:0] csr_priv_lvl  = p0_sys_csr_addr_i[9:8];
+    wire       csr_priv_bad  = (csr_priv_lvl == 2'b10) || (eff_priv < csr_priv_lvl);
+    wire       csr_cnt_range = (p0_sys_csr_addr_i[11:5] == 7'b1100000); // 12'hc00..12'hc1f
+    wire [5:0] csr_cnt_idx   = {1'b0, p0_sys_csr_addr_i[4:0]};
+    wire       csr_cnt_bad   = csr_cnt_range &&
+                               ((priv_is_s && !mcounteren_q[csr_cnt_idx]) ||
+                                (priv_is_u && (!mcounteren_q[csr_cnt_idx] || !scounteren_q[csr_cnt_idx])));
+    wire       csr_tvm_bad   = (p0_sys_csr_addr_i == 12'h180) && priv_is_s && mstatus_q[20];
+    wire       csr_fp_addr   = (p0_sys_csr_addr_i[11:2] == 10'h000) && (p0_sys_csr_addr_i[1:0] != 2'b00);
+    wire       csr_vec_addr  = (p0_sys_csr_addr_i == 12'h008) || (p0_sys_csr_addr_i == 12'h009) ||
+                               (p0_sys_csr_addr_i == 12'h00a) || (p0_sys_csr_addr_i == 12'h00f) ||
+                               ((p0_sys_csr_addr_i[11:2] == 10'h308) && (p0_sys_csr_addr_i[1:0] != 2'b11));
+    wire       csr_fs_bad    = csr_fp_addr && (eff_fs == 2'b00);
+    wire       csr_vs_bad    = csr_vec_addr && (eff_vs == 2'b00);
+
+    wire       csr_access_illegal = csr_priv_bad || !csr_implemented || (csr_read_only && csr_write_intent) ||
+                                    csr_tvm_bad || csr_cnt_bad || csr_fs_bad || csr_vs_bad;
+
     logic sys_illegal;
 
     always_comb begin
@@ -495,62 +514,21 @@ module fursoy_s1_csr
 
         if (p0_sys_valid_i) begin
             case (p0_sys_subop_i)
-                SYS_MRET: begin
-                    if (eff_priv < 2'b11) sys_illegal = 1'b1;
-                end
-
-                SYS_SRET: begin
-                    if (eff_priv < 2'b01) sys_illegal = 1'b1;
-                    else if (eff_priv == 2'b01 && eff_mstatus[22]) sys_illegal = 1'b1; // TSR
-                end
-
-                SYS_WFI: begin
-                    if (eff_priv == 2'b00) sys_illegal = 1'b1;
-                    else if (eff_priv == 2'b01 && eff_mstatus[21]) sys_illegal = 1'b1; // TW
-                end
-
-                SYS_SFENCE_VMA: begin
-                    if (eff_priv < 2'b01) sys_illegal = 1'b1;
-                    else if (eff_priv == 2'b01 && eff_mstatus[20]) sys_illegal = 1'b1; // TVM
-                end
+                SYS_MRET:       sys_illegal = !priv_is_m;
+                SYS_SRET:       sys_illegal = (eff_priv < 2'b01) || (priv_is_s && mstatus_q[22]); // TSR
+                SYS_WFI:        sys_illegal = priv_is_u || (priv_is_s && mstatus_q[21]);        // TW
+                SYS_SFENCE_VMA: sys_illegal = (eff_priv < 2'b01) || (priv_is_s && mstatus_q[20]); // TVM
 
                 SYS_CSRRW, SYS_CSRRS, SYS_CSRRC,
                 SYS_CSRRWI, SYS_CSRRSI, SYS_CSRRCI: begin
-                    // Address bits [9:8] define privilege level
-                    if (p0_sys_csr_addr_i[9:8] == 2'b10) sys_illegal = 1'b1; // Hypervisor unsupported
-                    else if (eff_priv < p0_sys_csr_addr_i[9:8]) sys_illegal = 1'b1;
-                    else if (!csr_implemented) sys_illegal = 1'b1;
-                    else if (csr_read_only && csr_write_intent) sys_illegal = 1'b1;
-                    // TVM check: satp (0x180) in S-mode with mstatus.TVM == 1
-                    else if (p0_sys_csr_addr_i == 12'h180 && eff_priv == 2'b01 && eff_mstatus[20]) sys_illegal = 1'b1;
-                    // Counter access gates (cycle/time/instret + hpmcounter3..31)
-                    else if (p0_sys_csr_addr_i >= 12'hc00 && p0_sys_csr_addr_i <= 12'hc1f) begin
-                        if (eff_priv == 2'b01 && !mcounteren_q[{1'b0, p0_sys_csr_addr_i[4:0]}]) sys_illegal = 1'b1;
-                        else if (eff_priv == 2'b00 && (!mcounteren_q[{1'b0, p0_sys_csr_addr_i[4:0]}] || !scounteren_q[{1'b0, p0_sys_csr_addr_i[4:0]}])) sys_illegal = 1'b1;
-                    end
-                    // Milestone 8 Phase A: Floating-Point CSR Gating (fcsr, frm, fflags)
-                    // If mstatus.FS == 2'b00 (Off), ANY access from ANY mode raises Illegal Instruction (Cause 2)!
-                    else if ((p0_sys_csr_addr_i == 12'h001 || p0_sys_csr_addr_i == 12'h002 || p0_sys_csr_addr_i == 12'h003) && (eff_fs == 2'b00)) begin
-                        sys_illegal = 1'b1;
-                    end
-                    // Milestone 8 Phase D: Vector CSR Gating (vstart, vxsat, vxrm, vcsr, vl, vtype, vlenb)
-                    // If mstatus.VS == 2'b00 (Off), ANY access from ANY mode raises Illegal Instruction (Cause 2)!
-                    else if ((p0_sys_csr_addr_i == 12'h008 || p0_sys_csr_addr_i == 12'h009 ||
-                              p0_sys_csr_addr_i == 12'h00a || p0_sys_csr_addr_i == 12'h00f ||
-                              p0_sys_csr_addr_i == 12'hc20 || p0_sys_csr_addr_i == 12'hc21 ||
-                              p0_sys_csr_addr_i == 12'hc22) && (eff_vs == 2'b00)) begin
-                        sys_illegal = 1'b1;
-                    end
+                    sys_illegal = csr_access_illegal;
                 end
 
-                // Milestone 8 Phase D: Vector configuration instructions (vsetvli, vsetvl, vsetivli)
                 VEC_VSETVLI, VEC_VSETVL, VEC_VSETIVLI: begin
-                    if (eff_vs == 2'b00) sys_illegal = 1'b1;
+                    sys_illegal = (eff_vs == 2'b00);
                 end
 
-                default: begin
-                    sys_illegal = 1'b1;
-                end
+                default: sys_illegal = 1'b1;
             endcase
         end
     end
@@ -566,13 +544,21 @@ module fursoy_s1_csr
         logic [11:0]       csr_addr;
         logic [63:0]       write_val;
         logic              write_intent;
-        logic [63:0]       pc;
+        logic [63:0]       pc_p4;
         rob_idx_t          rob_idx;
         logic [63:0]       rs1_val;
         logic [63:0]       rs2_val;
     } sys_exec_entry_t;
 
     sys_exec_entry_t pending_sys_q;
+
+    logic [63:0] p0_sys_pc_p4;
+    fursoy_s1_ks_adder #(.WIDTH(64)) u_pc_p4_adder (
+        .a_i   (p0_sys_pc_i),
+        .b_i   (64'd4),
+        .cin_i (1'b0),
+        .sum_o (p0_sys_pc_p4)
+    );
 
     // Match retirement across both superscalar commit slots
     wire sys_retire_fire = pending_sys_q.valid && (
@@ -739,8 +725,9 @@ module fursoy_s1_csr
     // =========================================================================
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
-            priv_mode_q  <= priv_mode_i;
-            mstatus_q    <= (mstatus_i != 64'd0) ? mstatus_i : 64'h0000_000a_0000_1800;
+            priv_mode_q      <= priv_mode_i;
+            mstatus_i_prev_q <= mstatus_i;
+            mstatus_q        <= (mstatus_i != 64'd0) ? mstatus_i[62:0] : 63'h0000_000a_0000_1800;
             medeleg_q    <= '0;
             mideleg_q    <= '0;
             mie_q        <= '0;
@@ -761,8 +748,6 @@ module fursoy_s1_csr
             scause_q     <= '0;
             stval_q      <= '0;
             satp_q       <= '0;
-
-            cycle_q      <= '0;
 
             // Milestone 8 FP CSRs Reset
             frm_q        <= 3'd0;
@@ -791,8 +776,13 @@ module fursoy_s1_csr
             wfi_sleep_q           <= 1'b0;
             wfi_resume_pc_q       <= 64'd0;
         end else begin
-            // Free-running cycle counter
-            cycle_q <= cycle_q + 64'd1;
+            // Sample non-zero post-reset mstatus_i changes synchronously into mstatus_q so
+            // unit TBs driving mstatus_i after reset stay compatible without adding a
+            // combinational override mux on the CSR critical cone.
+            mstatus_i_prev_q <= mstatus_i;
+            if ((mstatus_i != 64'd0) && (mstatus_i != mstatus_i_prev_q)) begin
+                mstatus_q <= mstatus_i[62:0];
+            end
 
             // Default pulses
             sys_redirect_valid_o <= 1'b0;
@@ -829,7 +819,7 @@ module fursoy_s1_csr
                 pending_sys_q.csr_addr     <= p0_sys_csr_addr_i;
                 pending_sys_q.write_val    <= p0_is_vset ? p0_vcfg_new_vtype : csr_write_val;
                 pending_sys_q.write_intent <= csr_write_intent;
-                pending_sys_q.pc           <= p0_sys_pc_i;
+                pending_sys_q.pc_p4        <= p0_sys_pc_p4;
                 pending_sys_q.rob_idx      <= p0_sys_rob_idx_i;
                 pending_sys_q.rs1_val      <= p0_sys_rs1_val_i;
                 pending_sys_q.rs2_val      <= p0_is_vset ? p0_vcfg_new_vl : p0_sys_rs2_val_i;
@@ -1037,7 +1027,7 @@ module fursoy_s1_csr
 
                     SYS_SFENCE_VMA: begin
                         sys_redirect_valid_o   <= 1'b1;
-                        sys_redirect_target_o  <= pending_sys_q.pc + 64'd4;
+                        sys_redirect_target_o  <= pending_sys_q.pc_p4;
                         sys_flush_valid_o      <= 1'b1;
                         sfence_vma_valid_o     <= 1'b1;
                         sfence_vma_va_o        <= pending_sys_q.rs1_val;
@@ -1054,11 +1044,11 @@ module fursoy_s1_csr
                         if (mip_val != 64'd0) begin
                             wfi_sleep_q           <= 1'b0;
                             sys_redirect_valid_o  <= 1'b1;
-                            sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                            sys_redirect_target_o <= pending_sys_q.pc_p4;
                             sys_flush_valid_o     <= 1'b1;
                         end else begin
                             wfi_sleep_q     <= 1'b1;
-                            wfi_resume_pc_q <= pending_sys_q.pc + 64'd4;
+                            wfi_resume_pc_q <= pending_sys_q.pc_p4;
                         end
                     end
 
@@ -1075,7 +1065,7 @@ module fursoy_s1_csr
                                     frm_q <= pending_sys_q.write_val[2:0];
                                     mstatus_q[14:13] <= 2'b11; // Dirty
                                     sys_redirect_valid_o  <= 1'b1;
-                                    sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                                    sys_redirect_target_o <= pending_sys_q.pc_p4;
                                     sys_flush_valid_o     <= 1'b1;
                                 end
                                 12'h003: begin // fcsr
@@ -1083,7 +1073,7 @@ module fursoy_s1_csr
                                     frm_q    <= pending_sys_q.write_val[7:5];
                                     mstatus_q[14:13] <= 2'b11; // Dirty
                                     sys_redirect_valid_o  <= 1'b1;
-                                    sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                                    sys_redirect_target_o <= pending_sys_q.pc_p4;
                                     sys_flush_valid_o     <= 1'b1;
                                 end
 
@@ -1107,11 +1097,11 @@ module fursoy_s1_csr
                                 end
 
                                 12'h300: begin // mstatus
-                                    mstatus_q <= 64'h0000_000a_0000_0000 |
-                                                 (pending_sys_q.write_val & 64'h0000_0000_007e_7faa) |
-                                                 (pending_sys_q.write_val[12:11] == 2'b10 ? 64'h1800 : 64'd0);
+                                    mstatus_q <= 63'h0000_000a_0000_0000 |
+                                                 (pending_sys_q.write_val[62:0] & 63'h0000_0000_007e_7faa) |
+                                                 (pending_sys_q.write_val[12:11] == 2'b10 ? 63'h1800 : 63'd0);
                                     sys_redirect_valid_o  <= 1'b1;
-                                    sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                                    sys_redirect_target_o <= pending_sys_q.pc_p4;
                                     sys_flush_valid_o     <= 1'b1;
                                 end
                                 12'h302: medeleg_q    <= pending_sys_q.write_val & 64'hb3ff;
@@ -1137,7 +1127,7 @@ module fursoy_s1_csr
                                     mstatus_q[18]    <= pending_sys_q.write_val[18];    // SUM
                                     mstatus_q[19]    <= pending_sys_q.write_val[19];    // MXR
                                     sys_redirect_valid_o  <= 1'b1;
-                                    sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                                    sys_redirect_target_o <= pending_sys_q.pc_p4;
                                     sys_flush_valid_o     <= 1'b1;
                                 end
                                 12'h104: mie_q        <= (mie_q & ~(mideleg_q & 64'h222)) | (pending_sys_q.write_val & (mideleg_q & 64'h222));
@@ -1158,11 +1148,11 @@ module fursoy_s1_csr
                                         satp_q <= {4'h8, 16'd0, pending_sys_q.write_val[43:0]};
 
                                     sys_redirect_valid_o  <= 1'b1;
-                                    sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                                    sys_redirect_target_o <= pending_sys_q.pc_p4;
                                     sys_flush_valid_o     <= 1'b1;
                                 end
 
-                                12'hB00, 12'hB02: begin
+                                12'h320, 12'hB00, 12'hB02: begin
                                     hpm_we_o    <= 1'b1;
                                     hpm_waddr_o <= pending_sys_q.csr_addr;
                                     hpm_wdata_o <= pending_sys_q.write_val;
@@ -1185,7 +1175,7 @@ module fursoy_s1_csr
                         vl_q            <= pending_sys_q.rs2_val;
                         mstatus_q[10:9] <= 2'b11; // VS Dirty
                         sys_redirect_valid_o  <= 1'b1;
-                        sys_redirect_target_o <= pending_sys_q.pc + 64'd4;
+                        sys_redirect_target_o <= pending_sys_q.pc_p4;
                         sys_flush_valid_o     <= 1'b1;
                     end
 
@@ -1197,7 +1187,7 @@ module fursoy_s1_csr
             if (test_csr_we_i) begin
                 unique case (test_csr_addr_i)
                     12'h000: priv_mode_q <= test_csr_wdata_i[1:0];
-                    12'h300: mstatus_q   <= test_csr_wdata_i;
+                    12'h300: mstatus_q   <= test_csr_wdata_i[62:0];
                     12'h302: medeleg_q   <= test_csr_wdata_i & 64'hb3ff;
                     12'h303: mideleg_q   <= test_csr_wdata_i & 64'h222;
                     12'h304: mie_q       <= test_csr_wdata_i & 64'haaa;

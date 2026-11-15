@@ -318,19 +318,31 @@ module fursoy_s1_int_iq
         end
     endfunction
 
+    rob_dist_t             entry_dist [INT_IQ_DEPTH];
+    logic [INT_IQ_DEPTH-1:0] entry_is_br;
+    always_comb begin
+        for (int i = 0; i < INT_IQ_DEPTH; i++) begin
+            entry_dist[i]  = rob_dist(entries_q[i].rob_idx, rob_head_i);
+            entry_is_br[i] = entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH);
+        end
+    end
+
     always_comb begin
         // Find oldest ready uop across all categories (u0)
         iq_idx_t   u0_idx;
         logic      u0_valid;
         rob_dist_t u0_dist;
+        logic      u0_is_br;
 
         // Find second-oldest ready uop across all categories (u1)
         iq_idx_t   u1_idx;
         logic      u1_valid;
         rob_dist_t u1_dist;
+        logic      u1_is_br;
 
         rob_dist_t best_p1_dist;
         rob_dist_t best_p0_dist;
+        logic      best_p0_is_br;
         rob_dist_t d;
 
         sel_p0_idx   = '0;
@@ -341,21 +353,25 @@ module fursoy_s1_int_iq
         u0_idx   = '0;
         u0_valid = 1'b0;
         u0_dist  = rob_dist_t'(ROB_DEPTH - 1);
+        u0_is_br = 1'b0;
 
         u1_idx   = '0;
         u1_valid = 1'b0;
         u1_dist  = rob_dist_t'(ROB_DEPTH - 1);
+        u1_is_br = 1'b0;
 
-        best_p1_dist = rob_dist_t'(ROB_DEPTH - 1);
-        best_p0_dist = rob_dist_t'(ROB_DEPTH - 1);
-        d            = '0;
+        best_p1_dist  = rob_dist_t'(ROB_DEPTH - 1);
+        best_p0_dist  = rob_dist_t'(ROB_DEPTH - 1);
+        best_p0_is_br = 1'b0;
+        d             = '0;
 
         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
             if (ready_p0[i] || ready_p1[i]) begin
-                d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                if (!u0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), iq_idx_t'(i),
-                                                      u0_dist, entries_q[u0_idx].is_branch || (entries_q[u0_idx].uop_class == UOP_BRANCH), u0_idx)) begin
+                d = entry_dist[i];
+                if (!u0_valid || is_older_or_tiebreak(d, entry_is_br[i], iq_idx_t'(i),
+                                                      u0_dist, u0_is_br, u0_idx)) begin
                     u0_dist  = d;
+                    u0_is_br = entry_is_br[i];
                     u0_idx   = iq_idx_t'(i);
                     u0_valid = 1'b1;
                 end
@@ -365,10 +381,11 @@ module fursoy_s1_int_iq
         if (u0_valid) begin
             for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                 if ((iq_idx_t'(i) != u0_idx) && (ready_p0[i] || ready_p1[i])) begin
-                    d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                    if (!u1_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), iq_idx_t'(i),
-                                                          u1_dist, entries_q[u1_idx].is_branch || (entries_q[u1_idx].uop_class == UOP_BRANCH), u1_idx)) begin
+                    d = entry_dist[i];
+                    if (!u1_valid || is_older_or_tiebreak(d, entry_is_br[i], iq_idx_t'(i),
+                                                          u1_dist, u1_is_br, u1_idx)) begin
                         u1_dist  = d;
+                        u1_is_br = entry_is_br[i];
                         u1_idx   = iq_idx_t'(i);
                         u1_valid = 1'b1;
                     end
@@ -387,7 +404,7 @@ module fursoy_s1_int_iq
                 best_p1_dist = rob_dist_t'(ROB_DEPTH - 1);
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                     if ((iq_idx_t'(i) != u0_idx) && ready_p1[i]) begin
-                        d = rob_dist(entries_q[i].rob_idx, rob_head_i);
+                        d = entry_dist[i];
                         if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, iq_idx_t'(i),
                                                                   best_p1_dist, 1'b0, sel_p1_idx)) begin
                             best_p1_dist = d;
@@ -402,15 +419,17 @@ module fursoy_s1_int_iq
                 sel_p1_idx   = u0_idx;
 
                 // Port 0 picks oldest ready in P0-only or Flex
-                best_p0_dist = rob_dist_t'(ROB_DEPTH - 1);
+                best_p0_dist  = rob_dist_t'(ROB_DEPTH - 1);
+                best_p0_is_br = 1'b0;
                 for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                     if ((iq_idx_t'(i) != u0_idx) && ready_p0[i]) begin
-                        d = rob_dist(entries_q[i].rob_idx, rob_head_i);
-                        if (!sel_p0_valid || is_older_or_tiebreak(d, entries_q[i].is_branch || (entries_q[i].uop_class == UOP_BRANCH), iq_idx_t'(i),
-                                                                  best_p0_dist, entries_q[sel_p0_idx].is_branch || (entries_q[sel_p0_idx].uop_class == UOP_BRANCH), sel_p0_idx)) begin
-                            best_p0_dist = d;
-                            sel_p0_idx   = iq_idx_t'(i);
-                            sel_p0_valid = 1'b1;
+                        d = entry_dist[i];
+                        if (!sel_p0_valid || is_older_or_tiebreak(d, entry_is_br[i], iq_idx_t'(i),
+                                                                  best_p0_dist, best_p0_is_br, sel_p0_idx)) begin
+                            best_p0_dist  = d;
+                            best_p0_is_br = entry_is_br[i];
+                            sel_p0_idx    = iq_idx_t'(i);
+                            sel_p0_valid  = 1'b1;
                         end
                     end
                 end
@@ -447,7 +466,7 @@ module fursoy_s1_int_iq
                         best_p1_dist = rob_dist_t'(ROB_DEPTH - 1);
                         for (int i = 0; i < INT_IQ_DEPTH; i++) begin
                             if ((iq_idx_t'(i) != u0_idx) && ready_p1[i]) begin
-                                d = rob_dist(entries_q[i].rob_idx, rob_head_i);
+                                d = entry_dist[i];
                                 if (!sel_p1_valid || is_older_or_tiebreak(d, 1'b0, iq_idx_t'(i),
                                                                           best_p1_dist, 1'b0, sel_p1_idx)) begin
                                     best_p1_dist = d;
@@ -478,133 +497,122 @@ module fursoy_s1_int_iq
     wire uop0_squashed = recover_valid_i && (rob_dist(uop0_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
     wire uop1_squashed = recover_valid_i && (rob_dist(uop1_rob_idx_i, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
 
-    always_ff @(posedge clk_i) begin
-        if (rst_i || flush_valid_i) begin
-            for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                entries_q[i] <= '0;
-            end
-        end else begin
-            // 1. Deallocate issued uops
-            if (sel_p0_valid) begin
-                entries_q[sel_p0_idx].valid <= 1'b0;
-            end
-            if (sel_p1_valid) begin
-                entries_q[sel_p1_idx].valid <= 1'b0;
-            end
+    wire uop0_init_prs1_ready = uop0_prs1_ready_i || (uop0_prs1_i == preg_t'(0)) ||
+                                (wb0_wake && (uop0_prs1_i == wb0_pnew_i)) ||
+                                (wb1_wake && (uop0_prs1_i == wb1_pnew_i)) ||
+                                (wb2_wake && (uop0_prs1_i == wb2_pnew_i)) ||
+                                (wb3_wake && (uop0_prs1_i == wb3_pnew_i));
+    wire uop0_init_prs2_ready = (uop0_use_imm_i && (uop0_class_i != UOP_BRANCH)) || uop0_prs2_ready_i || (uop0_prs2_i == preg_t'(0)) ||
+                                (wb0_wake && (uop0_prs2_i == wb0_pnew_i)) ||
+                                (wb1_wake && (uop0_prs2_i == wb1_pnew_i)) ||
+                                (wb2_wake && (uop0_prs2_i == wb2_pnew_i)) ||
+                                (wb3_wake && (uop0_prs2_i == wb3_pnew_i));
+    wire uop1_init_prs1_ready = uop1_prs1_ready_i || (uop1_prs1_i == preg_t'(0)) ||
+                                (wb0_wake && (uop1_prs1_i == wb0_pnew_i)) ||
+                                (wb1_wake && (uop1_prs1_i == wb1_pnew_i)) ||
+                                (wb2_wake && (uop1_prs1_i == wb2_pnew_i)) ||
+                                (wb3_wake && (uop1_prs1_i == wb3_pnew_i));
+    wire uop1_init_prs2_ready = (uop1_use_imm_i && (uop1_class_i != UOP_BRANCH)) || uop1_prs2_ready_i || (uop1_prs2_i == preg_t'(0)) ||
+                                (wb0_wake && (uop1_prs2_i == wb0_pnew_i)) ||
+                                (wb1_wake && (uop1_prs2_i == wb1_pnew_i)) ||
+                                (wb2_wake && (uop1_prs2_i == wb2_pnew_i)) ||
+                                (wb3_wake && (uop1_prs2_i == wb3_pnew_i));
+    wire [1:0] uop0_port_mask = get_port_mask(uop0_class_i, uop0_exception_i);
+    wire [1:0] uop1_port_mask = get_port_mask(uop1_class_i, uop1_exception_i);
 
-            // 2. Squash invalidation of younger entries
-            if (recover_valid_i) begin
-                for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                    if (entries_q[i].valid && (rob_dist(entries_q[i].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i))) begin
-                        entries_q[i].valid <= 1'b0;
-                    end
-                end
-            end
+    // Per-slot clocked update avoids dynamic multi-port memory inference in synthesis
+    generate
+        for (genvar gi = 0; gi < INT_IQ_DEPTH; gi++) begin : gen_iq_slot
+            localparam iq_idx_t SLOT_IDX = iq_idx_t'(gi);
+            wire slot_dealloc = (sel_p0_valid && (sel_p0_idx == SLOT_IDX)) ||
+                                (sel_p1_valid && (sel_p1_idx == SLOT_IDX));
+            wire slot_squash  = recover_valid_i && entries_q[gi].valid &&
+                                (rob_dist(entries_q[gi].rob_idx, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i));
+            wire slot_alloc0  = alloc0_fire && slot0_found && !uop0_squashed && (alloc_slot0 == SLOT_IDX);
+            wire slot_alloc1  = alloc1_fire && !uop1_squashed && (alloc_slot1_eff == SLOT_IDX);
 
-            // 3. Wakeup update on surviving entries
-            for (int i = 0; i < INT_IQ_DEPTH; i++) begin
-                if (entries_q[i].valid && !(sel_p0_valid && (iq_idx_t'(i) == sel_p0_idx)) && !(sel_p1_valid && (iq_idx_t'(i) == sel_p1_idx))) begin
-                    if (wb0_wake) begin
-                        if (entries_q[i].prs1 == wb0_pnew_i) entries_q[i].prs1_ready <= 1'b1;
-                        if ((!entries_q[i].use_imm || (entries_q[i].uop_class == UOP_BRANCH)) && (entries_q[i].prs2 == wb0_pnew_i)) entries_q[i].prs2_ready <= 1'b1;
-                    end
-                    if (wb1_wake) begin
-                        if (entries_q[i].prs1 == wb1_pnew_i) entries_q[i].prs1_ready <= 1'b1;
-                        if ((!entries_q[i].use_imm || (entries_q[i].uop_class == UOP_BRANCH)) && (entries_q[i].prs2 == wb1_pnew_i)) entries_q[i].prs2_ready <= 1'b1;
-                    end
-                    if (wb2_wake) begin
-                        if (entries_q[i].prs1 == wb2_pnew_i) entries_q[i].prs1_ready <= 1'b1;
-                        if ((!entries_q[i].use_imm || (entries_q[i].uop_class == UOP_BRANCH)) && (entries_q[i].prs2 == wb2_pnew_i)) entries_q[i].prs2_ready <= 1'b1;
-                    end
-                    if (wb3_wake) begin
-                        if (entries_q[i].prs1 == wb3_pnew_i) entries_q[i].prs1_ready <= 1'b1;
-                        if ((!entries_q[i].use_imm || (entries_q[i].uop_class == UOP_BRANCH)) && (entries_q[i].prs2 == wb3_pnew_i)) entries_q[i].prs2_ready <= 1'b1;
-                    end
-                end
-            end
+            wire slot_wake_prs1 = (wb0_wake && (entries_q[gi].prs1 == wb0_pnew_i)) ||
+                                  (wb1_wake && (entries_q[gi].prs1 == wb1_pnew_i)) ||
+                                  (wb2_wake && (entries_q[gi].prs1 == wb2_pnew_i)) ||
+                                  (wb3_wake && (entries_q[gi].prs1 == wb3_pnew_i));
+            wire slot_need_prs2 = !entries_q[gi].use_imm || (entries_q[gi].uop_class == UOP_BRANCH);
+            wire slot_wake_prs2 = slot_need_prs2 && (
+                                  (wb0_wake && (entries_q[gi].prs2 == wb0_pnew_i)) ||
+                                  (wb1_wake && (entries_q[gi].prs2 == wb1_pnew_i)) ||
+                                  (wb2_wake && (entries_q[gi].prs2 == wb2_pnew_i)) ||
+                                  (wb3_wake && (entries_q[gi].prs2 == wb3_pnew_i)));
 
-            // 4. Allocate new uops (gated by M1 acceptance)
-            if (alloc0_fire && slot0_found) begin
-                if (!uop0_squashed) begin
-                    entries_q[alloc_slot0].valid       <= 1'b1;
-                    entries_q[alloc_slot0].uop_class   <= uop0_class_i;
-                    entries_q[alloc_slot0].sub_op      <= uop0_subop_i;
-                    entries_q[alloc_slot0].imm         <= uop0_imm_i;
-                    entries_q[alloc_slot0].use_imm     <= uop0_use_imm_i;
-                    entries_q[alloc_slot0].prs1        <= uop0_prs1_i;
-                    entries_q[alloc_slot0].prs1_ready  <= uop0_prs1_ready_i || (uop0_prs1_i == preg_t'(0)) ||
-                                                          (wb0_wake && (uop0_prs1_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop0_prs1_i == wb1_pnew_i)) ||
-                                                          (wb2_wake && (uop0_prs1_i == wb2_pnew_i)) ||
-                                                          (wb3_wake && (uop0_prs1_i == wb3_pnew_i));
-                    entries_q[alloc_slot0].prs2        <= uop0_prs2_i;
-                    entries_q[alloc_slot0].prs2_ready  <= (uop0_use_imm_i && (uop0_class_i != UOP_BRANCH)) || uop0_prs2_ready_i || (uop0_prs2_i == preg_t'(0)) ||
-                                                          (wb0_wake && (uop0_prs2_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop0_prs2_i == wb1_pnew_i)) ||
-                                                          (wb2_wake && (uop0_prs2_i == wb2_pnew_i)) ||
-                                                          (wb3_wake && (uop0_prs2_i == wb3_pnew_i));
-                    entries_q[alloc_slot0].pnew        <= uop0_pnew_i;
-                    entries_q[alloc_slot0].rob_idx     <= uop0_rob_idx_i;
-                    entries_q[alloc_slot0].rob_epoch   <= uop0_rob_epoch_i;
-                    entries_q[alloc_slot0].chkpt_id    <= uop0_chkpt_id_i;
-                    entries_q[alloc_slot0].pc          <= uop0_pc_i;
-                    entries_q[alloc_slot0].pred_taken  <= uop0_pred_taken_i;
-                    entries_q[alloc_slot0].pred_target <= uop0_pred_target_i;
-                    entries_q[alloc_slot0].is_branch   <= uop0_is_branch_i;
-                    entries_q[alloc_slot0].is_jal      <= uop0_is_jal_i;
-                    entries_q[alloc_slot0].is_jalr     <= uop0_is_jalr_i;
-                    entries_q[alloc_slot0].br_type     <= uop0_br_type_i;
-                    entries_q[alloc_slot0].pre_ghr     <= uop0_pre_ghr_i;
-                    entries_q[alloc_slot0].port_mask   <= get_port_mask(uop0_class_i, uop0_exception_i);
-                    entries_q[alloc_slot0].exception   <= uop0_exception_i;
-                    entries_q[alloc_slot0].exc_cause   <= uop0_exc_cause_i;
-                    entries_q[alloc_slot0].prd_fp      <= uop0_prd_fp_i;
-                    entries_q[alloc_slot0].fp_dest_valid <= uop0_fp_dest_valid_i;
-                    entries_q[alloc_slot0].frm         <= uop0_frm_i;
-                end
-            end
-
-            if (alloc1_fire) begin
-                if (!uop1_squashed) begin
-                    entries_q[alloc_slot1_eff].valid       <= 1'b1;
-                    entries_q[alloc_slot1_eff].uop_class   <= uop1_class_i;
-                    entries_q[alloc_slot1_eff].sub_op      <= uop1_subop_i;
-                    entries_q[alloc_slot1_eff].imm         <= uop1_imm_i;
-                    entries_q[alloc_slot1_eff].use_imm     <= uop1_use_imm_i;
-                    entries_q[alloc_slot1_eff].prs1        <= uop1_prs1_i;
-                    entries_q[alloc_slot1_eff].prs1_ready  <= uop1_prs1_ready_i || (uop1_prs1_i == preg_t'(0)) ||
-                                                          (wb0_wake && (uop1_prs1_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop1_prs1_i == wb1_pnew_i)) ||
-                                                          (wb2_wake && (uop1_prs1_i == wb2_pnew_i)) ||
-                                                          (wb3_wake && (uop1_prs1_i == wb3_pnew_i));
-                    entries_q[alloc_slot1_eff].prs2        <= uop1_prs2_i;
-                    entries_q[alloc_slot1_eff].prs2_ready  <= (uop1_use_imm_i && (uop1_class_i != UOP_BRANCH)) || uop1_prs2_ready_i || (uop1_prs2_i == preg_t'(0)) ||
-                                                          (wb0_wake && (uop1_prs2_i == wb0_pnew_i)) ||
-                                                          (wb1_wake && (uop1_prs2_i == wb1_pnew_i)) ||
-                                                          (wb2_wake && (uop1_prs2_i == wb2_pnew_i)) ||
-                                                          (wb3_wake && (uop1_prs2_i == wb3_pnew_i));
-                    entries_q[alloc_slot1_eff].pnew        <= uop1_pnew_i;
-                    entries_q[alloc_slot1_eff].rob_idx     <= uop1_rob_idx_i;
-                    entries_q[alloc_slot1_eff].rob_epoch   <= uop1_rob_epoch_i;
-                    entries_q[alloc_slot1_eff].chkpt_id    <= uop1_chkpt_id_i;
-                    entries_q[alloc_slot1_eff].pc          <= uop1_pc_i;
-                    entries_q[alloc_slot1_eff].pred_taken  <= uop1_pred_taken_i;
-                    entries_q[alloc_slot1_eff].pred_target <= uop1_pred_target_i;
-                    entries_q[alloc_slot1_eff].is_branch   <= uop1_is_branch_i;
-                    entries_q[alloc_slot1_eff].is_jal      <= uop1_is_jal_i;
-                    entries_q[alloc_slot1_eff].is_jalr     <= uop1_is_jalr_i;
-                    entries_q[alloc_slot1_eff].br_type     <= uop1_br_type_i;
-                    entries_q[alloc_slot1_eff].pre_ghr     <= uop1_pre_ghr_i;
-                    entries_q[alloc_slot1_eff].port_mask   <= get_port_mask(uop1_class_i, uop1_exception_i);
-                    entries_q[alloc_slot1_eff].exception   <= uop1_exception_i;
-                    entries_q[alloc_slot1_eff].exc_cause   <= uop1_exc_cause_i;
-                    entries_q[alloc_slot1_eff].prd_fp      <= uop1_prd_fp_i;
-                    entries_q[alloc_slot1_eff].fp_dest_valid <= uop1_fp_dest_valid_i;
-                    entries_q[alloc_slot1_eff].frm         <= uop1_frm_i;
+            always_ff @(posedge clk_i) begin
+                if (rst_i || flush_valid_i) begin
+                    entries_q[gi] <= '0;
+                end else if (slot_alloc1) begin
+                    entries_q[gi].valid         <= 1'b1;
+                    entries_q[gi].uop_class     <= uop1_class_i;
+                    entries_q[gi].sub_op        <= uop1_subop_i;
+                    entries_q[gi].imm           <= uop1_imm_i;
+                    entries_q[gi].use_imm       <= uop1_use_imm_i;
+                    entries_q[gi].prs1          <= uop1_prs1_i;
+                    entries_q[gi].prs1_ready    <= uop1_init_prs1_ready;
+                    entries_q[gi].prs2          <= uop1_prs2_i;
+                    entries_q[gi].prs2_ready    <= uop1_init_prs2_ready;
+                    entries_q[gi].pnew          <= uop1_pnew_i;
+                    entries_q[gi].rob_idx       <= uop1_rob_idx_i;
+                    entries_q[gi].rob_epoch     <= uop1_rob_epoch_i;
+                    entries_q[gi].chkpt_id      <= uop1_chkpt_id_i;
+                    entries_q[gi].pc            <= uop1_pc_i;
+                    entries_q[gi].pred_taken    <= uop1_pred_taken_i;
+                    entries_q[gi].pred_target   <= uop1_pred_target_i;
+                    entries_q[gi].is_branch     <= uop1_is_branch_i;
+                    entries_q[gi].is_jal        <= uop1_is_jal_i;
+                    entries_q[gi].is_jalr       <= uop1_is_jalr_i;
+                    entries_q[gi].br_type       <= uop1_br_type_i;
+                    entries_q[gi].pre_ghr       <= uop1_pre_ghr_i;
+                    entries_q[gi].port_mask     <= uop1_port_mask;
+                    entries_q[gi].exception     <= uop1_exception_i;
+                    entries_q[gi].exc_cause     <= uop1_exc_cause_i;
+                    entries_q[gi].prd_fp        <= uop1_prd_fp_i;
+                    entries_q[gi].fp_dest_valid <= uop1_fp_dest_valid_i;
+                    entries_q[gi].frm           <= uop1_frm_i;
+                end else if (slot_alloc0) begin
+                    entries_q[gi].valid         <= 1'b1;
+                    entries_q[gi].uop_class     <= uop0_class_i;
+                    entries_q[gi].sub_op        <= uop0_subop_i;
+                    entries_q[gi].imm           <= uop0_imm_i;
+                    entries_q[gi].use_imm       <= uop0_use_imm_i;
+                    entries_q[gi].prs1          <= uop0_prs1_i;
+                    entries_q[gi].prs1_ready    <= uop0_init_prs1_ready;
+                    entries_q[gi].prs2          <= uop0_prs2_i;
+                    entries_q[gi].prs2_ready    <= uop0_init_prs2_ready;
+                    entries_q[gi].pnew          <= uop0_pnew_i;
+                    entries_q[gi].rob_idx       <= uop0_rob_idx_i;
+                    entries_q[gi].rob_epoch     <= uop0_rob_epoch_i;
+                    entries_q[gi].chkpt_id      <= uop0_chkpt_id_i;
+                    entries_q[gi].pc            <= uop0_pc_i;
+                    entries_q[gi].pred_taken    <= uop0_pred_taken_i;
+                    entries_q[gi].pred_target   <= uop0_pred_target_i;
+                    entries_q[gi].is_branch     <= uop0_is_branch_i;
+                    entries_q[gi].is_jal        <= uop0_is_jal_i;
+                    entries_q[gi].is_jalr       <= uop0_is_jalr_i;
+                    entries_q[gi].br_type       <= uop0_br_type_i;
+                    entries_q[gi].pre_ghr       <= uop0_pre_ghr_i;
+                    entries_q[gi].port_mask     <= uop0_port_mask;
+                    entries_q[gi].exception     <= uop0_exception_i;
+                    entries_q[gi].exc_cause     <= uop0_exc_cause_i;
+                    entries_q[gi].prd_fp        <= uop0_prd_fp_i;
+                    entries_q[gi].fp_dest_valid <= uop0_fp_dest_valid_i;
+                    entries_q[gi].frm           <= uop0_frm_i;
+                end else begin
+                    if (slot_dealloc || slot_squash) begin
+                        entries_q[gi].valid <= 1'b0;
+                    end
+                    if (entries_q[gi].valid && !slot_dealloc) begin
+                        if (slot_wake_prs1) entries_q[gi].prs1_ready <= 1'b1;
+                        if (slot_wake_prs2) entries_q[gi].prs2_ready <= 1'b1;
+                    end
                 end
             end
         end
-    end
+    endgenerate
 
     // -------------------------------------------------------------------------
     // Simulation Assertions

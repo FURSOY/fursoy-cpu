@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build and run Fursoy Slice-1 Milestone 9 Phase C (SoC Interconnect & Peripherals Integration) Verification Suite."""
 from datetime import datetime, timezone
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -9,7 +8,13 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[1]
+from s1_rtl_manifest import (
+    CORE_RTL,
+    ROOT,
+    SOC_RTL,
+    compute_manifest_sha256,
+)
+
 BUILD_DIR = ROOT / "build/s1_m9_phase_c"
 REPORT = ROOT / "results/s1-m9-phase-c.json"
 RTL_SOC = ROOT / "rtl/platform/fursoy_s1_soc.sv"
@@ -18,70 +23,6 @@ TB_SOC = ROOT / "verification/s1_m9_phase_c_tb.cpp"
 SPEC_DOCUMENT = "docs/architecture/slice1-m9-soc-linux-v1.md"
 SPEC_VERSION = "1.1"
 SPEC_SHA256 = "bb353f632ec909b3270522e289d994cc90a34f18ab323705a9010e1070181347"
-
-CORE_RTL = [
-    ROOT / "rtl/core/fursoy_s1_pkg.sv",
-    ROOT / "rtl/core/fursoy_s1_freelist.sv",
-    ROOT / "rtl/core/fursoy_s1_rat.sv",
-    ROOT / "rtl/core/fursoy_s1_prf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_frat.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_rob.sv",
-    ROOT / "rtl/core/fursoy_s1_substrate.sv",
-    ROOT / "rtl/core/fursoy_s1_prf.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf.sv",
-    ROOT / "rtl/core/fursoy_s1_alu.sv",
-    ROOT / "rtl/core/fursoy_s1_branch_unit.sv",
-    ROOT / "rtl/core/fursoy_s1_multiplier.sv",
-    ROOT / "rtl/core/fursoy_s1_divider.sv",
-    ROOT / "rtl/core/fursoy_s1_port1_buffers.sv",
-    ROOT / "rtl/core/fursoy_s1_int_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_agu.sv",
-    ROOT / "rtl/core/fursoy_s1_mem_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_trt.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu_queues.sv",
-    ROOT / "rtl/core/fursoy_s1_l1d.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu.sv",
-    ROOT / "rtl/core/fursoy_s1_fma.sv",
-    ROOT / "rtl/core/fursoy_s1_fdiv.sv",
-    ROOT / "rtl/core/fursoy_s1_fconv.sv",
-    ROOT / "rtl/core/fursoy_s1_fp_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_vrf.sv",
-    ROOT / "rtl/core/fursoy_s1_vec_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_backend.sv",
-    ROOT / "rtl/core/fursoy_s1_bpu.sv",
-    ROOT / "rtl/core/fursoy_s1_ptw.sv",
-    ROOT / "rtl/core/fursoy_s1_itlb.sv",
-    ROOT / "rtl/core/fursoy_s1_l1i.sv",
-    ROOT / "rtl/core/fursoy_s1_fetch_queue.sv",
-    ROOT / "rtl/core/fursoy_s1_decode.sv",
-    ROOT / "rtl/core/fursoy_s1_serialization.sv",
-    ROOT / "rtl/core/fursoy_s1_csr.sv",
-    ROOT / "rtl/core/fursoy_s1_hpm.sv",
-    ROOT / "rtl/core/fursoy_s1_frontend.sv",
-    ROOT / "rtl/core/fursoy_s1_core.sv",
-]
-
-SOC_RTL = CORE_RTL + [
-    ROOT / "rtl/platform/fursoy_s0_clint.sv",
-    ROOT / "rtl/platform/fursoy_s0_plic.sv",
-    ROOT / "rtl/platform/fursoy_s0_uart.sv",
-    ROOT / "rtl/platform/fursoy_s1_soc.sv",
-]
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    h.update(path.read_bytes())
-    return h.hexdigest()
-
-
-def compute_manifest_sha256(files: list[Path]) -> str:
-    h = hashlib.sha256()
-    for f in sorted(files, key=lambda p: p.name):
-        h.update(f.name.encode("utf-8"))
-        h.update(f.read_bytes())
-    return h.hexdigest()
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:

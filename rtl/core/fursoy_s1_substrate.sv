@@ -6,10 +6,10 @@
 // =============================================================================
 // Integrates:
 // - 2-wide Rename stage with intra-group RAW/WAW resolution and backpressure
-// - 48-entry Free List with circular FIFO wrap, commit Pold & squash Pnew reclamation
-// - Architectural & Speculative RATs (ARAT & SRAT) + 8 Branch Checkpoints
-// - 80-entry Physical Register File (PRF) readiness metadata
-// - 48-entry circular Reorder Buffer (ROB) with backwards squash recovery walk
+// - 128-entry Free List (PRF160 - 32 architectural) with circular FIFO wrap, commit Pold & squash Pnew reclamation
+// - Architectural & Speculative RATs (ARAT & SRAT) + 8 Branch Checkpoints (plus FRAT & FPRF readiness)
+// - 160-entry Physical Register File (PRF160) readiness metadata
+// - 128-entry circular Reorder Buffer (ROB128) with backwards squash recovery walk
 // - Deterministic arbitration: Flush > Misprediction Recovery > In-Order Retirement > Rename
 // - Comprehensive hardware ownership and state invariant assertions
 // Reference: docs/architecture/slice1-core-v1.md
@@ -26,9 +26,9 @@
 module fursoy_s1_substrate
     import fursoy_s1_pkg::*;
 #(
-    parameter int unsigned PRF_COUNT   = PRF_SIZE,       // 80
+    parameter int unsigned PRF_COUNT   = PRF_SIZE,        // 160
     parameter int unsigned AREG_NUM    = AREG_COUNT,      // 32
-    parameter int unsigned ROB_NUM     = ROB_DEPTH,       // 48
+    parameter int unsigned ROB_NUM     = ROB_DEPTH,       // 128
     parameter int unsigned CHKPT_NUM   = NUM_CHECKPOINTS  // 8
 ) (
     input  logic                   clk_i,

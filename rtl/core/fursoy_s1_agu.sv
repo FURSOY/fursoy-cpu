@@ -11,6 +11,7 @@
 // =============================================================================
 
 `include "fursoy_s1_pkg.sv"
+`include "fursoy_s1_ks_adder.sv"
 
 module fursoy_s1_agu
     import fursoy_s1_pkg::*;
@@ -35,8 +36,16 @@ module fursoy_s1_agu
     output logic [4:0]        exc_cause_o
 );
 
-    // 64-bit Effective Address Adder
-    wire [63:0] ea = base_i + imm_i;
+    // 64-bit Effective Address Adder (shared Kogge-Stone parallel-prefix tree)
+    logic [63:0] ea;
+    fursoy_s1_ks_adder #(
+        .WIDTH (64)
+    ) u_ea_adder (
+        .a_i   (base_i),
+        .b_i   (imm_i),
+        .cin_i (1'b0),
+        .sum_o (ea)
+    );
 
     // Natural Alignment Check
     wire align_ok = check_nat_alignment(ea[2:0], size_i);

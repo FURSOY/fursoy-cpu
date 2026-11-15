@@ -241,6 +241,7 @@ module fursoy_s1_soc
     // Interrupt Wires
     logic                   clint_irq_software;
     logic                   clint_irq_timer;
+    logic [63:0]            clint_mtime;
     logic                   plic_irq_meip;
     logic                   plic_irq_seip;
     logic                   uart_irq;
@@ -432,7 +433,8 @@ module fursoy_s1_soc
         .rsp_error_o      (clint_rsp_error),
         .access_error_o   (clint_access_error),
         .irq_software_o   (clint_irq_software),
-        .irq_timer_o      (clint_irq_timer)
+        .irq_timer_o      (clint_irq_timer),
+        .mtime_o          (clint_mtime)
     );
 
     // PLIC Instance (Source 1 owned by UART)
@@ -974,6 +976,7 @@ module fursoy_s1_soc
         .irq_software_i           (core_irq_software),
         .irq_external_i           (core_irq_external),
         .irq_seip_i               (core_irq_seip),
+        .mtime_i                  (clint_mtime),
 
         .wfi_sleep_o              (wfi_sleep_o),
         .irq_pending_valid_o      (),
@@ -1024,6 +1027,7 @@ module fursoy_s1_soc
         .cpi_category_o           (cpi_category_o),
         .cpi_active_owner_o       (),
         .raw_event_pulse_o        (raw_event_pulse_o),
+        .raw_event_ext_pulse_o    (),
 
         // Uncached MMIO channel
         .mmio_req_valid_o         (mmio_req_valid),

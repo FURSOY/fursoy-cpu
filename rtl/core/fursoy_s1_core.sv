@@ -2,22 +2,23 @@
 `define FURSOY_S1_CORE_SV
 
 // =============================================================================
-// Fursoy Slice-1 Core Top-Level — Milestone 4 (Integrated Frontend & Backend)
+// Fursoy Slice-1 Core Top-Level — Integrated 2-Wide Out-of-Order RV64IMAFDV
 // =============================================================================
 // Integrates:
-// - Milestone 1 Architectural Substrate: Rename, Free List, RATs, PRF Readiness,
-//   ROB48, Epoch Tracking, In-Order Retirement, and Checkpoint Recovery.
-// - Milestone 2 Integer Execution Backend: IntIQ 16-entry, wrap-safe ROB age arbiter,
-//   64-bit 80-entry PRF data array, Port 0 (ALU0/Branch), Port 1 (ALU1/MUL/DIV),
+// - Architectural Substrate: Rename, Free List, RATs, PRF Readiness, ROB128,
+//   Epoch Tracking, In-Order Retirement, and 8-Checkpoint Recovery.
+// - Execution Backend: IntIQ32 + MemIQ32, wrap-safe ROB age arbiter, 64-bit
+//   PRF160 + FPRF96 data arrays, Port 0 (ALU0/Branch/Sys), Port 1 (ALU1/MUL/DIV),
+//   FP pipelines (FMA/FDIV/FCONV), Vector engine (VIQ8 + sequential memory unit),
 //   lossless Port 1 completion buffers, writeback validation, and lifetime-gated recovery.
-// - Milestone 3 Out-of-Order Memory Subsystem: MemIQ, Port 2 AGU, TRT, LQ16, SQ16,
-//   Non-blocking L1D Cache (16 KiB 4-way, 4 MSHRs, 2 WBBs), LR/SC & FENCE.
-// - Milestone 4 Complete Frontend Subsystem: F0-D0 64-bit fetch pipeline, 512-entry
-//   2-way BTB, 4096-entry Gshare direction predictor with 12-bit GHR, 16-entry circular
-//   RAS with full 16x64-bit checkpointing, 12-entry Decoupled Fetch Queue, 16 KiB 4-way
-//   VIPT L1I with dual I-MSHRs, F2 skid buffer, 72-entry ITLB (64 base + 8 superpage CAM),
-//   persistent 2-entry ITRT, centralized shared Sv39 3-level PTW with 4:1 bounded fairness,
-//   real FENCE.I system serialization controller with L1D clean-all maintenance sweep.
+// - Memory Subsystem: Dual-AGU Out-of-Order LSU, TRT, LQ16, SQ16,
+//   4-Bank Non-blocking L1D Cache (16 KiB 4-way, 4 MSHRs, 2 WBBs), LR/SC & FENCE.
+// - Frontend Subsystem: F0-D0 64-bit fetch pipeline, 512-entry 2-way BTB,
+//   TAGE-Lite direction predictor with 108-bit folded GHR, 16-entry circular RAS
+//   with compact 73-bit undo checkpointing, 16-entry Decoupled Fetch Queue,
+//   16 KiB 4-way VIPT L1I with dual I-MSHRs, F2 skid buffer, 72-entry ITLB
+//   (64 base + 8 superpage CAM), persistent 2-entry ITRT, centralized shared
+//   Sv39 3-level PTW with 4:1 bounded fairness, and FENCE.I serialization controller.
 // Reference: docs/architecture/slice1-core-v1.md
 //            docs/architecture/slice1-m2-backend-v1.md
 //            docs/architecture/slice1-m3-memory-v1.md
@@ -404,6 +405,7 @@ module fursoy_s1_core
     input  logic                   irq_software_i,
     input  logic                   irq_external_i,
     input  logic                   irq_seip_i,
+    input  logic [63:0]            mtime_i,
 
     output logic                   wfi_sleep_o,
     output logic                   irq_pending_valid_o,
@@ -467,6 +469,7 @@ module fursoy_s1_core
     output logic [63:0]            cpi_category_o        [8],
     output logic [7:0]             cpi_active_owner_o,
     output logic [64:1]            raw_event_pulse_o,
+    output logic [74:65]           raw_event_ext_pulse_o,
 
     // -------------------------------------------------------------------------
     // Dedicated Uncached MMIO Channel (Core Master -> SoC Crossbar, §4.1)
@@ -645,7 +648,7 @@ module fursoy_s1_core
     rob_idx_t          backend_p0_sys_rob_idx;
 
     wire [1:0]  eff_priv_mode    = (priv_mode_i != 2'b11) ? priv_mode_i : csr_priv_mode;
-    wire [63:0] eff_mstatus      = (mstatus_i != 64'd0) ? mstatus_i : csr_mstatus;
+    wire [63:0] eff_mstatus      = csr_mstatus;
     wire [63:0] eff_satp         = (satp_i != 64'd0) ? satp_i : csr_satp;
 
     assign csr_priv_mode_o = eff_priv_mode;
@@ -694,11 +697,11 @@ module fursoy_s1_core
     logic         fe_uop1_valid;
     uop_decoded_t fe_uop0;
     ghr_t             fe_uop0_pre_ghr;
-    ras_chkpt_t       fe_uop0_ras_chkpt;
+    ras_chkpt_id_t    fe_uop0_ras_chkpt;
     tage_csr_bundle_t fe_uop0_csr_chkpt;
     uop_decoded_t     fe_uop1;
     ghr_t             fe_uop1_pre_ghr;
-    ras_chkpt_t       fe_uop1_ras_chkpt;
+    ras_chkpt_id_t    fe_uop1_ras_chkpt;
     tage_csr_bundle_t fe_uop1_csr_chkpt;
     /* verilator lint_on UNUSEDSIGNAL */
 
@@ -1319,6 +1322,13 @@ module fursoy_s1_core
         .event_load_speculative_o(be_event_load_speculative),
         .event_l1d_hits_o        (be_event_l1d_hits),
         .event_l1d_misses_o      (be_event_l1d_misses),
+        .event_l1d_miss_cold_o   (be_event_l1d_miss_cold),
+        .event_l1d_miss_conflict_o(be_event_l1d_miss_conflict),
+        .event_l1d_dirty_evict_o (be_event_l1d_dirty_evict),
+        .event_bpu_miss_btb_o    (be_event_bpu_miss_btb),
+        .event_bpu_miss_tage_o   (be_event_bpu_miss_tage),
+        .event_bpu_miss_ras_o    (be_event_bpu_miss_ras),
+        .event_bpu_miss_jalr_o   (be_event_bpu_miss_jalr),
         .event_l1d_mshr_occ_o    (be_event_l1d_mshr_occ),
         .event_l1d_wbb_full_o    (be_event_l1d_wbb_full),
         .event_dtlb_misses_o     (be_event_dtlb_misses),
@@ -1446,6 +1456,13 @@ module fursoy_s1_core
     logic              be_event_load_fwd_partial;
     logic              be_event_l1d_hits;
     logic              be_event_l1d_misses;
+    logic [1:0]        be_event_l1d_miss_cold;
+    logic [1:0]        be_event_l1d_miss_conflict;
+    logic [1:0]        be_event_l1d_dirty_evict;
+    logic              be_event_bpu_miss_btb;
+    logic              be_event_bpu_miss_tage;
+    logic              be_event_bpu_miss_ras;
+    logic              be_event_bpu_miss_jalr;
     logic [2:0]        be_event_l1d_mshr_occ;
     logic              be_event_l1d_wbb_full;
     logic              be_event_dtlb_misses;
@@ -2464,6 +2481,7 @@ module fursoy_s1_core
         .event_bpu_cond_pred_o   (fe_event_bpu_cond_pred),
         .event_ras_call_push_o   (fe_event_ras_call_push),
         .event_ras_ret_pop_o     (fe_event_ras_ret_pop),
+        .event_early_jal_o       (fe_event_early_jal),
         .fe_pc_o                 (fe_pc),
         .fence_i_at_head_o       (fe_fence_i_at_head),
         .fence_i_flush_o         (fe_fence_i_flush)
@@ -2484,6 +2502,7 @@ module fursoy_s1_core
     logic              fe_event_bpu_cond_pred;
     logic              fe_event_ras_call_push;
     logic              fe_event_ras_ret_pop;
+    logic              fe_event_early_jal;
 
     // =========================================================================
     // 4. Milestone 5 Hardware Performance Monitoring (HPM) Subsystem
@@ -2501,26 +2520,43 @@ module fursoy_s1_core
     wire ev_stall_sq_full    = rename_stalled && uop0_is_store_type && !backend_sq_ready[0];
     wire ev_stall_chkpt_full = rename_stalled && (chkpt_free_count_o == 4'd0) && (sub_uop0_is_branch || sub_uop1_is_branch);
     wire ev_stall_recovery   = rename_stalled && int_recovering;
+    wire ev_stall_freelist   = (rename_stalled && (freelist_count_o == FL_CNT_W'(0)) &&
+                                !sub_uop0_is_fp && !sub_uop0_is_vec && (sub_uop0_rd != 5'd0)) ||
+                               (sub_uop1_valid && (int_rename_ack[1] == 1'b0) &&
+                                !sub_uop1_is_fp && !sub_uop1_is_vec && (sub_uop1_rd != 5'd0) &&
+                                ((freelist_count_o == FL_CNT_W'(0)) ||
+                                 ((freelist_count_o == FL_CNT_W'(1)) && !sub_uop0_is_fp && !sub_uop0_is_vec && (sub_uop0_rd != 5'd0))));
 
     // Retire Density and Serialization Events
     wire ev_retire_cycles_0  = (rob_count_o > ROB_CNT_W'(0)) && (retire_valid_o == 2'b00);
     wire ev_retire_cycles_1  = (retire_valid_o[0] ^ retire_valid_o[1]);
     wire ev_retire_cycles_2  = (retire_valid_o[0] && retire_valid_o[1]);
     wire ev_serialize_cycles = !fe_retire_ready || csr_flush_valid || csr_sfence_active || (frontend_en_i && fe_fence_i_flush);
+    wire ev_stall_serialize  = ev_serialize_cycles && !fe_fetch_queue_empty_o && (int_rename_ack == 2'b00);
+
+    wire rename_fp_stall  = (sub_uop0_valid && sub_uop0_is_fp &&
+                             ((int_rename_ack[0] == 1'b0) || (fl_fp_ready_o == 2'b00) || !int_dispatch_ready[0])) ||
+                            (sub_uop1_valid && sub_uop1_is_fp &&
+                             ((int_rename_ack[1] == 1'b0) || (fl_fp_ready_o == 2'b00) ||
+                              (sub_uop0_is_fp && !fl_fp_ready_o[1]) || !int_dispatch_ready[1]));
+    wire rename_vec_stall = (sub_uop0_valid && sub_uop0_is_vec &&
+                             ((int_rename_ack[0] == 1'b0) || viq_full_o)) ||
+                            (sub_uop1_valid && sub_uop1_is_vec &&
+                             ((int_rename_ack[1] == 1'b0) || viq_full_o));
 
     // CPI Single-Owner Deterministic Accounting Predicates (Section 9.1)
-    wire cpi_serialize   = !fe_retire_ready || csr_flush_valid || csr_sfence_active || (frontend_en_i && fe_fence_i_flush);
+    wire cpi_serialize   = ev_serialize_cycles;
     wire cpi_br_recover  = int_recovering || retire_replay;
     wire cpi_productive  = (retire_valid_o != 2'b00);
     wire cpi_mem_stall   = be_rob_head_is_mem_stall;
-    wire cpi_be_rename   = !fe_fetch_queue_empty_o && ((int_rename_ack == 2'b00) || (fl_fp_ready_o == 2'b00) || viq_full_o);
+    wire cpi_be_rename   = !fe_fetch_queue_empty_o && ((int_rename_ack == 2'b00) || rename_fp_stall || rename_vec_stall);
     wire cpi_be_sched    = (rob_count_o > ROB_CNT_W'(0)) && be_event_intiq_empty && be_event_memiq_empty;
     wire cpi_fe_starve   = fe_fetch_queue_empty_o && frontend_en_i && !rst_i;
 
     // Milestone 8 FP & Vector Event Declarations
-    wire ev_fp_rename_stall     = !fe_fetch_queue_empty_o && ((fl_fp_ready_o == 2'b00) || !backend_int_dispatch_ready[0]);
+    wire ev_fp_rename_stall     = rename_fp_stall;
     wire ev_vec_uop_commit      = (retire_valid_o[0] && retire_is_vec_o[0]) || (retire_valid_o[1] && retire_is_vec_o[1]);
-    wire ev_vec_mem_traffic     = bus_rd_req_valid_o && bus_rd_req_ready_i;
+    wire ev_vec_mem_traffic     = (vec_state_q == VEC_MEM_STEP) && vec_elem_mask_en && vec_mem_rsp_valid;
     wire ev_vec_viq_full        = viq_full_o;
     wire ev_vec_fof_trunc       = (vec_fof_fault_valid && (vec_fof_fault_elem > 64'd0)) || (test_fof_fault_valid_i && (test_fof_fault_elem_i > 64'd0));
 
@@ -2616,6 +2652,18 @@ module fursoy_s1_core
         .ev_vec_viq_full_i       (hpm_ev_vec_viq_full),
         .ev_vec_fof_trunc_i      (hpm_ev_vec_fof_trunc),
 
+        .mtime_i                 (mtime_i),
+        .ev_l1d_miss_cold_i      (be_event_l1d_miss_cold),
+        .ev_l1d_miss_conflict_i  (be_event_l1d_miss_conflict),
+        .ev_l1d_dirty_evict_i    (be_event_l1d_dirty_evict),
+        .ev_bpu_miss_btb_i       (be_event_bpu_miss_btb),
+        .ev_bpu_miss_tage_i      (be_event_bpu_miss_tage),
+        .ev_bpu_miss_ras_i       (be_event_bpu_miss_ras),
+        .ev_bpu_miss_jalr_i      (be_event_bpu_miss_jalr),
+        .ev_stall_freelist_i     (ev_stall_freelist),
+        .ev_bpu_early_jal_i      (fe_event_early_jal),
+        .ev_stall_serialize_i    (ev_stall_serialize),
+
         .cpi_serialize_i         (cpi_serialize),
         .cpi_br_recover_i        (cpi_br_recover),
         .cpi_productive_i        (cpi_productive),
@@ -2629,7 +2677,8 @@ module fursoy_s1_core
         .mhpmcounter_o           (mhpmcounter_o),
         .cpi_category_o          (cpi_category_o),
         .cpi_active_owner_o      (cpi_active_owner_o),
-        .raw_event_pulse_o       (raw_event_pulse_o)
+        .raw_event_pulse_o       (raw_event_pulse_o),
+        .raw_event_ext_pulse_o   (raw_event_ext_pulse_o)
     );
 
 endmodule

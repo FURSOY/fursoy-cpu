@@ -283,8 +283,8 @@ package fursoy_s1_pkg;
     localparam int unsigned L1D_LINE_BITS    = 512;
 
     // Physical Memory Map Classification (Milestone 5 Phase B1)
-    localparam logic [55:0] DRAM_BASE_PA  = 56'h0000_0000_8000_0000;
-    localparam logic [55:0] DRAM_LIMIT_PA = 56'h0000_0000_8FFF_FFFF;
+    localparam logic [55:0] DRAM_BASE_PA  = 56'h00_0000_8000_0000;
+    localparam logic [55:0] DRAM_LIMIT_PA = 56'h00_0000_8FFF_FFFF;
 
     function automatic logic is_dram_pa(input logic [55:0] pa);
         return (pa[55:32] == 24'h0) && (pa[31:0] >= 32'h8000_0000) && (pa[31:0] <= 32'h8FFF_FFFF);
@@ -1040,22 +1040,30 @@ package fursoy_s1_pkg;
         logic [4:0]        depth;
     } ras_chkpt_t;
 
+    // BPU-Side Indexed RAS Checkpoint Table Configuration (Section 6)
+    // Slot 0 is reserved for post-reset / post-flush / post-recover baseline;
+    // slots 1..31 (31 slots > FETCH_QUEUE_DEPTH + BPU_FIFO_DEPTH = 24) cycle
+    // monotonically so Rename backpressure cannot wrap and overwrite an active ID.
+    localparam int unsigned RAS_CHKPT_ENTRIES = 32;
+    localparam int unsigned RAS_CHKPT_IDX_W   = $clog2(RAS_CHKPT_ENTRIES);
+    typedef logic [RAS_CHKPT_IDX_W-1:0] ras_chkpt_id_t;
+
     // Fetch Queue Entry Structure (Section 5)
     typedef struct packed {
-        logic        valid;
-        logic [63:0] pc;
-        logic [31:0] inst;
-        logic        exception_valid;
-        logic [4:0]  exception_cause;
-        logic [63:0] fault_addr;
-        logic        pred_taken;
-        logic [63:0] pred_target;
-        logic        is_branch;
-        logic        is_jal;
-        logic        is_jalr;
-        branch_type_t br_type;
-        ghr_t        pre_branch_ghr;
-        ras_chkpt_t  ras_chkpt;
+        logic             valid;
+        logic [63:0]      pc;
+        logic [31:0]      inst;
+        logic             exception_valid;
+        logic [4:0]       exception_cause;
+        logic [63:0]      fault_addr;
+        logic             pred_taken;
+        logic [63:0]      pred_target;
+        logic             is_branch;
+        logic             is_jal;
+        logic             is_jalr;
+        branch_type_t     br_type;
+        ghr_t             pre_branch_ghr;
+        ras_chkpt_id_t    ras_chkpt;
         tage_csr_bundle_t csr_chkpt;
     } fetch_queue_entry_t;
 

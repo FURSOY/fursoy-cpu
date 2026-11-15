@@ -1,3 +1,6 @@
+`ifndef FURSOY_S0_PLIC_SV
+`define FURSOY_S0_PLIC_SV
+
 // Platform-Level Interrupt Controller (PLIC) v1 for Fursoy CPU (Slice-0 single-core)
 // Specification authority: docs/architecture/plic-v1.md (frozen v1)
 // - 31 physical external level-sensitive interrupt sources (IDs 1..31; ID 0 reserved RO0)
@@ -345,3 +348,5 @@ module fursoy_s0_plic #(
     // pragma translate_on
 
 endmodule
+
+`endif // FURSOY_S0_PLIC_SV

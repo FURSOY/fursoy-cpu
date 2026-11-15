@@ -10,7 +10,7 @@
 // - Up to 2 enqueues / cycle (Slot 0 and Slot 1 from Stage F3).
 // - Up to 2 dequeues / cycle (Slot 0 and Slot 1 to Stage D0).
 // - Support for partial enqueue (1 uop when 1 slot free) and partial dequeue.
-// - Full metadata preservation (carried pre_branch_ghr, full RAS checkpoint, exceptions).
+// - Full metadata preservation (carried pre_branch_ghr, compact RAS undo checkpoint, exceptions).
 // - Single-cycle synchronous clear on pipeline flush / redirect.
 // Reference: docs/architecture/slice1-m5-performance-v1.md Section 7.2
 // =============================================================================

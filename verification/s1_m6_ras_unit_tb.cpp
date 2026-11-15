@@ -32,6 +32,8 @@
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include <utility>
+#include <algorithm>
 #include <cstdint>
 #include <cassert>
 #include <memory>
@@ -139,8 +141,10 @@ public:
     // Case 3: Return / POP
     uint64_t do_pop() {
         uint64_t target = peek_top();
-        snap.tos = (snap.tos - 1) & 0x0F;
-        if (snap.depth > 0) snap.depth--;
+        if (snap.depth > 0) {
+            snap.tos = (snap.tos - 1) & 0x0F;
+            snap.depth--;
+        }
         return target;
     }
 
@@ -182,12 +186,15 @@ public:
         dut->fetch_pc_i = 0;
         dut->early_jal_valid_i = 0;
         for (int i = 0; i < 33; i++) dut->early_jal_restore_ras_i[i] = 0;
+        dut->early_jal_restore_ras_id_i = 0;
         dut->chkpt_alloc_valid0_i = 0;
         dut->chkpt_alloc_id0_i = 0;
         for (int i = 0; i < 33; i++) dut->chkpt_alloc_ras0_i[i] = 0;
+        dut->chkpt_alloc_ras_id0_i = 0;
         dut->chkpt_alloc_valid1_i = 0;
         dut->chkpt_alloc_id1_i = 0;
         for (int i = 0; i < 33; i++) dut->chkpt_alloc_ras1_i[i] = 0;
+        dut->chkpt_alloc_ras_id1_i = 0;
         dut->recover_valid_i = 0;
         dut->recover_chkpt_id_i = 0;
         dut->recover_actual_taken_i = 0;
@@ -236,7 +243,19 @@ public:
     }
 
     GoldenRASSnapshot get_current_snapshot() {
+#ifdef TEST_INDEXED_RAS_CHKPT
+        GoldenRASSnapshot snap;
+        snap.tos   = dut->rootp->fursoy_s1_bpu__DOT__ras_tos_q & 0x0F;
+        snap.depth = dut->rootp->fursoy_s1_bpu__DOT__ras_depth_q & 0x1F;
+        for (int i = 0; i < 16; i++) {
+            uint64_t lo = (uint64_t)dut->rootp->fursoy_s1_bpu__DOT__ras_array[2 * i];
+            uint64_t hi = (uint64_t)dut->rootp->fursoy_s1_bpu__DOT__ras_array[2 * i + 1];
+            snap.array[i] = lo | (hi << 32);
+        }
+        return snap;
+#else
         return unpack_ras_chkpt(dut->slot0_ras_chkpt_o);
+#endif
     }
 };
 
@@ -589,7 +608,11 @@ int main(int argc, char** argv) {
             // Allocate checkpoint
             tb.dut->chkpt_alloc_valid0_i = 1;
             tb.dut->chkpt_alloc_id0_i    = chkpt_id;
+#ifdef TEST_INDEXED_RAS_CHKPT
+            tb.dut->chkpt_alloc_ras_id0_i = tb.dut->slot0_ras_id_o;
+#else
             pack_ras_chkpt(saved_chkpts[chkpt_id], tb.dut->chkpt_alloc_ras0_i);
+#endif
             tb.tick();
             tb.dut->chkpt_alloc_valid0_i = 0;
         }
@@ -646,6 +669,9 @@ int main(int argc, char** argv) {
         tb.dut->fetch_lookup_valid_i = 0;
 
         GoldenRASSnapshot pre_jal = tb.get_current_snapshot();
+#ifdef TEST_INDEXED_RAS_CHKPT
+        uint8_t pre_jal_id = tb.dut->slot0_ras_id_o;
+#endif
 
         // Mutate RAS state speculatively
         for (int k = 0; k < 3; k++) {
@@ -659,13 +685,22 @@ int main(int argc, char** argv) {
 
         // Early JAL restore
         tb.dut->early_jal_valid_i = 1;
+#ifdef TEST_INDEXED_RAS_CHKPT
+        tb.dut->early_jal_restore_ras_id_i = pre_jal_id;
+#else
         pack_ras_chkpt(pre_jal, tb.dut->early_jal_restore_ras_i);
+#endif
         tb.tick();
         tb.dut->early_jal_valid_i = 0;
         tb.dut->eval();
 
         GoldenRASSnapshot post_jal = tb.get_current_snapshot();
+#ifdef TEST_INDEXED_RAS_CHKPT
+        test_check(post_jal == pre_jal && tb.dut->slot0_ras_id_o == pre_jal_id,
+                   "Stage F3 Early JAL: Clean 1-cycle restoration of TOS pointer, depth, ID, and RAS contents");
+#else
         test_check(post_jal == pre_jal, "Stage F3 Early JAL: Clean 1-cycle restoration of TOS pointer, depth, and RAS contents");
+#endif
     }
 
     // Reset
@@ -738,6 +773,82 @@ int main(int argc, char** argv) {
                    "Dual-Slot Taken Suppression: Only Slot 0 CALL updated RAS");
     }
 
+#ifdef TEST_INDEXED_RAS_CHKPT
+    // =========================================================================
+    // PART 7B: RENAME-BACKPRESSURE STRESS (>= 24 IN-FLIGHT RAS MUTATIONS)
+    // =========================================================================
+    std::cout << "\n--- Executing Indexed RAS Rename-Backpressure & Wrap Protection Stress ---" << std::endl;
+    {
+        tb.reset_dut();
+        golden.reset();
+
+        std::vector<std::pair<uint8_t, GoldenRASSnapshot>> inflight;
+        inflight.push_back({tb.dut->slot0_ras_id_o, tb.get_current_snapshot()}); // slot 0 baseline
+
+        bool monotonic_ok = (inflight[0].first == 0);
+        // Simulate 26 un-renamed consecutive CALL/CORO/RET mutations (> FETCH_QUEUE_DEPTH+BPU_FIFO_DEPTH = 24)
+        for (int step = 0; step < 26; step++) {
+            uint64_t pc = 0x80040000 + step * 8;
+            uint8_t br_type = (step < 14) ? 3 /* CALL */ : ((step < 20) ? 6 /* CORO */ : 4 /* RET */);
+            tb.train_btb(pc, br_type, 0x80050000);
+            tb.dut->fetch_pc_i = pc;
+            tb.dut->fetch_lookup_valid_i = 1;
+            tb.dut->eval();
+            if (br_type == 3) golden.do_push(pc + 4);
+            else if (br_type == 6) golden.do_coroutine_swap(pc + 4);
+            else golden.do_pop();
+            tb.tick();
+            tb.dut->fetch_lookup_valid_i = 0;
+
+            uint8_t cur_id = tb.dut->slot0_ras_id_o;
+            if (cur_id != (uint8_t)(step + 1)) monotonic_ok = false;
+            inflight.push_back({cur_id, golden.snap});
+        }
+        test_check(monotonic_ok, "Backpressure Stress: 26 consecutive un-renamed mutations assigned unique IDs 1..26 without wrapping slot 0");
+
+        // Advance 10 more mutations so allocator wraps 31 -> 1..5 while keeping slot 0 intact
+        bool wrap_skips_zero = true;
+        for (int step = 26; step < 36; step++) {
+            uint64_t pc = 0x80040000 + step * 8;
+            tb.train_btb(pc, 3 /* CALL */, 0x80050000);
+            tb.dut->fetch_pc_i = pc;
+            tb.dut->fetch_lookup_valid_i = 1;
+            tb.tick();
+            tb.dut->fetch_lookup_valid_i = 0;
+            if (tb.dut->slot0_ras_id_o == 0 || tb.dut->slot0_ras_id_o > 31) wrap_skips_zero = false;
+        }
+        test_check(wrap_skips_zero, "Backpressure Stress: Allocator wrap across 31->1 never overwrites reserved slot 0");
+
+        // Verify delayed Rename checkpoint capture across slot 0 and slots 12, 18, 25, 26 + recovery
+        const int sample_indices[5] = {0, 12, 18, 25, 26};
+        for (int c = 0; c < 5; c++) {
+            tb.dut->chkpt_alloc_valid0_i   = 1;
+            tb.dut->chkpt_alloc_id0_i      = c;
+            tb.dut->chkpt_alloc_ras_id0_i  = inflight[sample_indices[c]].first;
+            tb.tick();
+            tb.dut->chkpt_alloc_valid0_i   = 0;
+        }
+
+        bool bp_recover_ok = true;
+        for (int c = 4; c >= 0; c--) {
+            tb.dut->recover_valid_i        = 1;
+            tb.dut->recover_chkpt_id_i     = c;
+            tb.dut->recover_actual_taken_i = 1;
+            tb.dut->recover_actual_target_i = 0x8000F000;
+            tb.tick();
+            tb.dut->recover_valid_i = 0;
+            tb.dut->eval();
+
+            GoldenRASSnapshot restored = tb.get_current_snapshot();
+            if (restored != inflight[sample_indices[c]].second || tb.dut->slot0_ras_id_o != 0) {
+                bp_recover_ok = false;
+                break;
+            }
+        }
+        test_check(bp_recover_ok, "Backpressure Stress: Delayed Rename allocation & recovery exact for baseline slot 0 and IDs 12/18/25/26");
+    }
+#endif
+
     // Reset
     tb.reset_dut();
     golden.reset();
@@ -761,6 +872,10 @@ int main(int argc, char** argv) {
 
         int seed_accepted_ops = 0;
         int seed_mismatches = 0;
+#ifdef TEST_INDEXED_RAS_CHKPT
+        std::vector<std::pair<uint8_t, GoldenRASSnapshot>> id_history;
+        id_history.push_back({tb.dut->slot0_ras_id_o, golden.snap});
+#endif
 
         while (seed_accepted_ops < target_ops_per_seed) {
             uint32_t op_type = rng() % 100;
@@ -778,6 +893,12 @@ int main(int argc, char** argv) {
                 golden.do_push(pc + 4);
                 tb.tick();
                 tb.dut->fetch_lookup_valid_i = 0;
+#ifdef TEST_INDEXED_RAS_CHKPT
+                if (tb.dut->slot0_ras_id_o != id_history.back().first) {
+                    id_history.push_back({tb.dut->slot0_ras_id_o, golden.snap});
+                    if (id_history.size() > 24) id_history.erase(id_history.begin());
+                }
+#endif
                 seed_accepted_ops++;
 
             } else if (op_type < 60) {
@@ -796,6 +917,12 @@ int main(int argc, char** argv) {
 
                 tb.tick();
                 tb.dut->fetch_lookup_valid_i = 0;
+#ifdef TEST_INDEXED_RAS_CHKPT
+                if (tb.dut->slot0_ras_id_o != id_history.back().first) {
+                    id_history.push_back({tb.dut->slot0_ras_id_o, golden.snap});
+                    if (id_history.size() > 24) id_history.erase(id_history.begin());
+                }
+#endif
                 seed_accepted_ops++;
 
             } else if (op_type < 85) {
@@ -814,6 +941,12 @@ int main(int argc, char** argv) {
 
                 tb.tick();
                 tb.dut->fetch_lookup_valid_i = 0;
+#ifdef TEST_INDEXED_RAS_CHKPT
+                if (tb.dut->slot0_ras_id_o != id_history.back().first) {
+                    id_history.push_back({tb.dut->slot0_ras_id_o, golden.snap});
+                    if (id_history.size() > 24) id_history.erase(id_history.begin());
+                }
+#endif
                 seed_accepted_ops++;
 
             } else if (op_type < 93) {
@@ -823,7 +956,11 @@ int main(int argc, char** argv) {
 
                 tb.dut->chkpt_alloc_valid0_i = 1;
                 tb.dut->chkpt_alloc_id0_i    = chkpt_id;
+#ifdef TEST_INDEXED_RAS_CHKPT
+                tb.dut->chkpt_alloc_ras_id0_i = tb.dut->slot0_ras_id_o;
+#else
                 pack_ras_chkpt(golden.snap, tb.dut->chkpt_alloc_ras0_i);
+#endif
                 tb.tick();
                 tb.dut->chkpt_alloc_valid0_i = 0;
 
@@ -836,11 +973,29 @@ int main(int argc, char** argv) {
                     tb.dut->recover_actual_target_i = 0x8000F000;
                     tb.tick();
                     tb.dut->recover_valid_i         = 0;
+#ifdef TEST_INDEXED_RAS_CHKPT
+                    id_history.clear();
+                    id_history.push_back({tb.dut->slot0_ras_id_o, golden.snap});
+                    if (tb.dut->slot0_ras_id_o != 0) seed_mismatches++;
+#endif
                     seed_accepted_ops++;
                 }
 
             } else {
                 // Operation: Early JAL Restore
+#ifdef TEST_INDEXED_RAS_CHKPT
+                size_t pick = rng() % id_history.size();
+                uint8_t target_id = id_history[pick].first;
+                GoldenRASSnapshot target_snap = id_history[pick].second;
+                id_history.resize(pick + 1);
+
+                golden.restore_early(target_snap);
+                tb.dut->early_jal_valid_i = 1;
+                tb.dut->early_jal_restore_ras_id_i = target_id;
+                tb.tick();
+                tb.dut->early_jal_valid_i = 0;
+                if (tb.dut->slot0_ras_id_o != target_id) seed_mismatches++;
+#else
                 GoldenRASSnapshot rand_snap;
                 rand_snap.tos   = rng() % 16;
                 rand_snap.depth = rng() % 17;
@@ -851,6 +1006,7 @@ int main(int argc, char** argv) {
                 pack_ras_chkpt(rand_snap, tb.dut->early_jal_restore_ras_i);
                 tb.tick();
                 tb.dut->early_jal_valid_i = 0;
+#endif
                 seed_accepted_ops++;
             }
 

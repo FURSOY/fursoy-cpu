@@ -18,86 +18,20 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parent.parent
+from s1_rtl_manifest import (
+    ACCEPTED_RTL_MANIFEST_SHA256S,
+    CORE_RTL as ALL_RTL,
+    ROOT,
+    compute_manifest_sha256,
+    sha256_file,
+)
+
 BUILD_DIR = ROOT / "build/s1_m8_closeout"
 REPORT = ROOT / "results/s1-m8-closeout.json"
 
-EXPECTED_RTL_MANIFEST_SHA256 = "4d6fc54a6efb0d0deb94d4416926bd769c0783871499075f5de434959206d7cb"
-ACCEPTED_RTL_MANIFEST_SHA256S = {
-    "4d6fc54a6efb0d0deb94d4416926bd769c0783871499075f5de434959206d7cb",  # M8 Closeout Freeze
-    "e7ff340ce1cd422951fd24c45a537f280948eb7c1e9bb942120b4462a075546a",  # M9 Phase A
-    "128c675f924dc208bc73026b8263aab90583173855c87d47a316907c83460912",  # M9 Phase B
-    "e39bd500b2587dbc64351a9d5cfe115a602aed91cb5d2dac401739dd29f86100",  # M9 Phase D
-    "7c7b86ccfce14735c8bdf985cf7c07682b36b41cbdd5eabd15c1b9a795883167",  # M9 Closeout
-    "8297a6370982ee81b02177fdd88f060bae09f055034ed73aa414bcc99061f6d8",  # Stage 3 Pre-CSR-fix
-    "bf5e9b7bced04d4ad464144e959378a55166129cb0ab5986efc1d3ed58641291",  # Stage 3 Single-Core Closure Final
-    "d14fc6aec206c120786f5865b60154a56efded9e8aae10c94fdb121166112420",  # Post-Issue #1/#2/#3 RTL Fixes (40-file manifest)
-    "0729a82a815597a51578e67ee068241fd179e2ec59eba5e9d3e38806f4763600",  # Post-Issue #4 Fetched FP/Vec & Zbb Fixes (40-file manifest)
-    "46dffaacd8a27e4d8dd9d395fddfeac6fe3abbc8697eba3c0cd79c22978750d4",  # FCONV FCVT variants + FMA/FDIV recovery squash fix
-    "77ef60fb0e250641aab40a3c03989678f799f409de3e13b2f2b2c52e94d2c3c3",  # Sail Cosim + FMA/FDIV/FCONV/CSR Closure (40-file manifest)
-    "0889e47e98000b4c9f41e8a7d8682d26490bc34b5b9971a2c39db40249cc625b",  # Post-Review P1/P2 Fixes + Sail Cosim Closure (40-file manifest)
-}
 SPEC_DOCUMENT = "docs/architecture/slice1-m8-fp-vector-v1.md"
 SPEC_VERSION = "1.1"
 SPEC_SHA256 = "55a4fa1623c073d9b06d7384f7ea3ce0ad0824b7f240819179962994b68d92e6"
-
-ALL_RTL = [
-    ROOT / "rtl/core/fursoy_s1_pkg.sv",
-    ROOT / "rtl/core/fursoy_s1_freelist.sv",
-    ROOT / "rtl/core/fursoy_s1_rat.sv",
-    ROOT / "rtl/core/fursoy_s1_prf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_frat.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf_status.sv",
-    ROOT / "rtl/core/fursoy_s1_rob.sv",
-    ROOT / "rtl/core/fursoy_s1_substrate.sv",
-    ROOT / "rtl/core/fursoy_s1_prf.sv",
-    ROOT / "rtl/core/fursoy_s1_fprf.sv",
-    ROOT / "rtl/core/fursoy_s1_vrf.sv",
-    ROOT / "rtl/core/fursoy_s1_alu.sv",
-    ROOT / "rtl/core/fursoy_s1_branch_unit.sv",
-    ROOT / "rtl/core/fursoy_s1_multiplier.sv",
-    ROOT / "rtl/core/fursoy_s1_divider.sv",
-    ROOT / "rtl/core/fursoy_s1_port1_buffers.sv",
-    ROOT / "rtl/core/fursoy_s1_int_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_mem_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_agu.sv",
-    ROOT / "rtl/core/fursoy_s1_trt.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu_queues.sv",
-    ROOT / "rtl/core/fursoy_s1_l1d.sv",
-    ROOT / "rtl/core/fursoy_s1_lsu.sv",
-    ROOT / "rtl/core/fursoy_s1_fma.sv",
-    ROOT / "rtl/core/fursoy_s1_fdiv.sv",
-    ROOT / "rtl/core/fursoy_s1_fconv.sv",
-    ROOT / "rtl/core/fursoy_s1_fp_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_vec_iq.sv",
-    ROOT / "rtl/core/fursoy_s1_backend.sv",
-    ROOT / "rtl/core/fursoy_s1_bpu.sv",
-    ROOT / "rtl/core/fursoy_s1_ptw.sv",
-    ROOT / "rtl/core/fursoy_s1_itlb.sv",
-    ROOT / "rtl/core/fursoy_s1_l1i.sv",
-    ROOT / "rtl/core/fursoy_s1_fetch_queue.sv",
-    ROOT / "rtl/core/fursoy_s1_decode.sv",
-    ROOT / "rtl/core/fursoy_s1_serialization.sv",
-    ROOT / "rtl/core/fursoy_s1_csr.sv",
-    ROOT / "rtl/core/fursoy_s1_hpm.sv",
-    ROOT / "rtl/core/fursoy_s1_frontend.sv",
-    ROOT / "rtl/core/fursoy_s1_core.sv",
-]
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    h.update(path.read_bytes())
-    return h.hexdigest()
-
-
-def compute_manifest_sha256(files: list[Path]) -> str:
-    h = hashlib.sha256()
-    for f in sorted(files, key=lambda p: p.name):
-        h.update(f.name.encode("utf-8"))
-        h.update(f.read_bytes())
-    return h.hexdigest()
-
 
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
     res = subprocess.run(cmd, cwd=cwd or ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -112,7 +46,7 @@ def main() -> int:
     print("=============================================================================")
     print("Fursoy Slice-1 Milestone 8 Integrated Verification & Closeout Engine")
     print(f"Specification: {SPEC_DOCUMENT} v{SPEC_VERSION}")
-    print(f"Production RTL manifest SHA-256 (40 files): {manifest_sha}")
+    print(f"Production RTL manifest SHA-256 ({len(ALL_RTL)} files): {manifest_sha}")
     print("=============================================================================\n")
 
     if manifest_sha not in ACCEPTED_RTL_MANIFEST_SHA256S:

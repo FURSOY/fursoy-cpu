@@ -77,15 +77,12 @@ def run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
     return res.returncode, res.stdout
 
 
-def main() -> int:
-    start_time = time.time()
-    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+def run_ras_mode(indexed: int) -> dict | None:
+    mode_dir = BUILD_DIR if indexed == 0 else (ROOT / "build/s1_m6_ras_unit_indexed")
+    bin_name = "Vfursoy_s1_ras_unit" if indexed == 0 else "Vfursoy_s1_ras_unit_indexed"
+    mode_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest_sha = compute_manifest_sha256(ALL_RTL)
-    print(f"[M6-PHASE-B] Production RTL manifest SHA-256 (31 files): {manifest_sha}")
-
-    # Step 1: Verilate fursoy_s1_bpu with s1_m6_ras_unit_tb.cpp
-    print("[M6-PHASE-B] Verilating RAS Unit Testbench...")
+    print(f"\n[M6-PHASE-B] Verilating RAS Unit Testbench (INDEXED_RAS_CHKPT={indexed})...")
     verilate_cmd = [
         "verilator",
         "--cc",
@@ -99,51 +96,73 @@ def main() -> int:
         "-Wno-WIDTHEXPAND",
         "-Wno-WIDTHTRUNC",
         "-Wno-BLKSEQ",
+        f"-GINDEXED_RAS_CHKPT={indexed}",
+    ]
+    if indexed:
+        verilate_cmd.extend(["-CFLAGS", "-DTEST_INDEXED_RAS_CHKPT=1"])
+    verilate_cmd.extend([
         "--top-module", "fursoy_s1_bpu",
         f"-I{ROOT / 'rtl/core'}",
-        "--Mdir", str(BUILD_DIR),
-        "-o", "Vfursoy_s1_ras_unit",
+        "--Mdir", str(mode_dir),
+        "-o", bin_name,
         str(RTL_PKG),
         str(RTL_BPU),
         str(TB_RAS_UNIT),
-    ]
+    ])
     rc, out = run_cmd(verilate_cmd)
     if rc != 0:
-        print("[M6-PHASE-B] Verilation failed:")
+        print(f"[M6-PHASE-B] Verilation failed (INDEXED_RAS_CHKPT={indexed}):")
         print(out)
-        return 1
+        return None
 
-    # Step 2: Compile C++ Model
-    print("[M6-PHASE-B] Compiling Vfursoy_s1_ras_unit binary...")
+    print(f"[M6-PHASE-B] Compiling {bin_name} binary...")
     make_cmd = [
         "make",
-        "-C", str(BUILD_DIR),
+        "-C", str(mode_dir),
         "-j4",
         "-f", "Vfursoy_s1_bpu.mk",
-        "Vfursoy_s1_ras_unit",
+        bin_name,
     ]
     rc, out = run_cmd(make_cmd)
     if rc != 0:
-        print("[M6-PHASE-B] Compilation failed:")
+        print(f"[M6-PHASE-B] Compilation failed (INDEXED_RAS_CHKPT={indexed}):")
         print(out)
-        return 1
+        return None
 
-    # Step 3: Run RAS Unit Binary
-    print("[M6-PHASE-B] Running RAS Unit Testbench...")
-    bin_path = BUILD_DIR / "Vfursoy_s1_ras_unit"
+    print(f"[M6-PHASE-B] Running {bin_name}...")
+    bin_path = mode_dir / bin_name
     rc, out = run_cmd([str(bin_path)])
     print(out)
     if rc != 0:
-        print("[M6-PHASE-B] RAS Unit Testbench execution failed.")
-        return 1
+        print(f"[M6-PHASE-B] RAS Unit Testbench execution failed (INDEXED_RAS_CHKPT={indexed}).")
+        return None
 
-    # Parse Unit Test Output
     json_match = re.search(r"--- BEGIN JSON UNIT RESULTS ---\s*(\{.*?\})\s*--- END JSON UNIT RESULTS ---", out, re.DOTALL)
     if not json_match:
-        print("[M6-PHASE-B] Could not parse unit test JSON output.")
-        return 1
+        print(f"[M6-PHASE-B] Could not parse unit test JSON output (INDEXED_RAS_CHKPT={indexed}).")
+        return None
 
     unit_results = json.loads(json_match.group(1))
+    unit_results["indexed_ras_chkpt"] = bool(indexed)
+    return unit_results
+
+
+def main() -> int:
+    start_time = time.time()
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+
+    manifest_sha = compute_manifest_sha256(ALL_RTL)
+    print(f"[M6-PHASE-B] Production RTL manifest SHA-256 (31 files): {manifest_sha}")
+
+    mode_results = {}
+    for indexed in (0, 1):
+        res = run_ras_mode(indexed)
+        if res is None:
+            return 1
+        mode_results[f"indexed_{indexed}"] = res
+
+    unit_results = dict(mode_results["indexed_0"])
+    unit_results["modes"] = mode_results
 
     # Assemble Final Report
     report_data = {

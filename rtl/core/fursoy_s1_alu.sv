@@ -19,6 +19,8 @@
 // - Balanced nibble-LUT + tree adder implements CPOP without ripple chains.
 // =============================================================================
 
+`include "fursoy_s1_ks_adder.sv"
+
 module fursoy_s1_alu
     import fursoy_s1_pkg::*;
 (
@@ -53,70 +55,16 @@ module fursoy_s1_alu
         endcase
     end
 
-    wire [63:0] add_p0 = add_a ^ add_b;
-    wire [62:0] add_g0_raw = add_a[62:0] & add_b[62:0];
-    wire [62:0] add_g0 = {add_g0_raw[62:1], add_g0_raw[0] | (add_p0[0] & add_cin)};
+    logic [63:0] add_sum;
+    fursoy_s1_ks_adder #(
+        .WIDTH (64)
+    ) u_ks_adder (
+        .a_i   (add_a),
+        .b_i   (add_b),
+        .cin_i (add_cin),
+        .sum_o (add_sum)
+    );
 
-    logic [62:0] ks_p1, ks_g1;
-    (* keep = "true" *) logic [62:0] ks_p2, ks_g2;
-    logic [62:0] ks_p3, ks_g3;
-    (* keep = "true" *) logic [62:0] ks_p4, ks_g4;
-    logic [62:0] ks_p5, ks_g5;
-    logic [62:0] ks_g6;
-
-    always_comb begin
-        ks_p1[0] = add_p0[0];
-        ks_g1[0] = add_g0[0];
-        for (int i = 1; i < 63; i++) begin
-            ks_p1[i] = add_p0[i] & add_p0[i-1];
-            ks_g1[i] = add_g0[i] | (add_p0[i] & add_g0[i-1]);
-        end
-
-        for (int i = 0; i < 2; i++) begin
-            ks_p2[i] = ks_p1[i];
-            ks_g2[i] = ks_g1[i];
-        end
-        for (int i = 2; i < 63; i++) begin
-            ks_p2[i] = ks_p1[i] & ks_p1[i-2];
-            ks_g2[i] = ks_g1[i] | (ks_p1[i] & ks_g1[i-2]);
-        end
-
-        for (int i = 0; i < 4; i++) begin
-            ks_p3[i] = ks_p2[i];
-            ks_g3[i] = ks_g2[i];
-        end
-        for (int i = 4; i < 63; i++) begin
-            ks_p3[i] = ks_p2[i] & ks_p2[i-4];
-            ks_g3[i] = ks_g2[i] | (ks_p2[i] & ks_g2[i-4]);
-        end
-
-        for (int i = 0; i < 8; i++) begin
-            ks_p4[i] = ks_p3[i];
-            ks_g4[i] = ks_g3[i];
-        end
-        for (int i = 8; i < 63; i++) begin
-            ks_p4[i] = ks_p3[i] & ks_p3[i-8];
-            ks_g4[i] = ks_g3[i] | (ks_p3[i] & ks_g3[i-8]);
-        end
-
-        for (int i = 0; i < 16; i++) begin
-            ks_p5[i] = ks_p4[i];
-            ks_g5[i] = ks_g4[i];
-        end
-        for (int i = 16; i < 63; i++) begin
-            ks_p5[i] = ks_p4[i] & ks_p4[i-16];
-            ks_g5[i] = ks_g4[i] | (ks_p4[i] & ks_g4[i-16]);
-        end
-
-        for (int i = 0; i < 32; i++) begin
-            ks_g6[i] = ks_g5[i];
-        end
-        for (int i = 32; i < 63; i++) begin
-            ks_g6[i] = ks_g5[i] | (ks_p5[i] & ks_g5[i-32]);
-        end
-    end
-
-    wire [63:0] add_sum = add_p0 ^ {ks_g6[62:0], add_cin};
     wire [63:0] add_res = add_is_w ? {{32{add_sum[31]}}, add_sum[31:0]} : add_sum;
 
     // -------------------------------------------------------------------------

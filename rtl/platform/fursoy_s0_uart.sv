@@ -1,3 +1,6 @@
+`ifndef FURSOY_S0_UART_SV
+`define FURSOY_S0_UART_SV
+
 // Lite-16550A MMIO UART for Fursoy CPU (Slice-0 single-hart platform)
 // Normative specification: docs/architecture/platform-sbi-v1.md (frozen v1)
 // - Base Address: 0x1000_0000, Aperture: 4 KiB (0x1000_0000 - 0x1000_0FFF)
@@ -235,3 +238,5 @@ module fursoy_s0_uart #(
     // pragma translate_on
 
 endmodule
+
+`endif // FURSOY_S0_UART_SV

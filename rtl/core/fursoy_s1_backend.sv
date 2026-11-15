@@ -2,14 +2,15 @@
 `define FURSOY_S1_BACKEND_SV
 
 // =============================================================================
-// Fursoy Slice-1 Integer Out-of-Order Execution Backend — Milestone 2
+// Fursoy Slice-1 Out-of-Order Execution Backend
 // =============================================================================
 // Integrates:
-// - 64-bit 80-entry Physical Register File (PRF) data storage.
-// - 16-entry Integer Issue Queue (IntIQ) with wrap-safe age & port-aware arbiter.
+// - 64-bit 160-entry Physical Register File (PRF160) & 96-entry FP PRF (FPRF96) data storage.
+// - 32-entry Integer Issue Queue (IntIQ32) & 16-entry FP Issue Queue with wrap-safe age & port-aware arbiter.
 // - Authoritative pipeline staging: DS -> IS -> RF -> EX -> validated WB -> CMT.
-// - Port 0: 64-bit Integer ALU0 + Branch Resolution Unit.
+// - Port 0: 64-bit Integer ALU0 + Branch Resolution Unit + FCONV F2I arbitration.
 // - Port 1: ALU1 + Pipelined Multiplier (K=3) + Iterative Radix-4 Divider.
+// - Port 4: Pipelined FMA + FDIV/FSQRT + FCONV FP execution pipelines.
 // - Provably lossless Port 1 completion buffers (div_buf, mul_fifo, alu1_fifo).
 // - Validated writeback gating & lifetime-gated branch recovery.
 // Reference: docs/architecture/slice1-m2-backend-v1.md
@@ -257,6 +258,13 @@ module fursoy_s1_backend
     output logic              event_load_speculative_o,
     output logic              event_l1d_hits_o,
     output logic              event_l1d_misses_o,
+    output logic [1:0]        event_l1d_miss_cold_o,
+    output logic [1:0]        event_l1d_miss_conflict_o,
+    output logic [1:0]        event_l1d_dirty_evict_o,
+    output logic              event_bpu_miss_btb_o,
+    output logic              event_bpu_miss_tage_o,
+    output logic              event_bpu_miss_ras_o,
+    output logic              event_bpu_miss_jalr_o,
     output logic [2:0]        event_l1d_mshr_occ_o,
     output logic              event_l1d_wbb_full_o,
     output logic              event_dtlb_misses_o,
@@ -1023,6 +1031,8 @@ module fursoy_s1_backend
     branch_type_t p0_wb_br_type;
     ghr_t        p0_wb_ghr;
     logic        p0_wb_is_ctrl;
+    logic        p0_wb_pred_taken;
+    uop_class_t  p0_wb_uop_class;
 
     always_ff @(posedge clk_i) begin
         if (rst_i || flush_valid_i) begin
@@ -1041,6 +1051,8 @@ module fursoy_s1_backend
             p0_wb_br_type      <= BR_TYPE_COND;
             p0_wb_ghr          <= '0;
             p0_wb_is_ctrl      <= 1'b0;
+            p0_wb_pred_taken   <= 1'b0;
+            p0_wb_uop_class    <= UOP_ALU_INT;
         end else begin
             if (rf0_valid_q && !ex0_squashed && !p0_is_int2fp) begin
                 p0_wb_valid        <= 1'b1;
@@ -1055,6 +1067,8 @@ module fursoy_s1_backend
                 p0_wb_br_type      <= rf0_uop_q.br_type;
                 p0_wb_ghr          <= rf0_uop_q.pre_ghr;
                 p0_wb_is_ctrl      <= p0_is_ctrl;
+                p0_wb_pred_taken   <= rf0_uop_q.pred_taken;
+                p0_wb_uop_class    <= rf0_uop_q.uop_class;
 
                 if (cause0_fire) begin
                     p0_wb_exception  <= 1'b1;
@@ -1089,6 +1103,8 @@ module fursoy_s1_backend
                 p0_wb_br_type      <= BR_TYPE_COND;
                 p0_wb_ghr          <= '0;
                 p0_wb_is_ctrl      <= 1'b0;
+                p0_wb_pred_taken   <= 1'b0;
+                p0_wb_uop_class    <= UOP_ALU_INT;
             end else begin
                 p0_wb_valid   <= 1'b0;
                 p0_wb_is_ctrl <= 1'b0;
@@ -1425,6 +1441,9 @@ module fursoy_s1_backend
         .event_load_speculative_o(event_load_speculative_o),
         .event_l1d_hit_o         (event_l1d_hits_o),
         .event_l1d_miss_o        (event_l1d_misses_o),
+        .event_l1d_miss_cold_o   (event_l1d_miss_cold_o),
+        .event_l1d_miss_conflict_o(event_l1d_miss_conflict_o),
+        .event_l1d_dirty_evict_o (event_l1d_dirty_evict_o),
         .event_l1d_mshr_occ_o    (event_l1d_mshr_occ_o),
         .event_l1d_wbb_full_o    (event_l1d_wbb_full_o),
         .event_dtlb_miss_o       (event_dtlb_misses_o),
@@ -1869,6 +1888,16 @@ module fursoy_s1_backend
     assign recover_chkpt_id_o        = p0_wb_chkpt_id;
     assign recover_target_o          = p0_wb_target;
     assign recover_actual_taken_o    = p0_wb_actual_taken;
+
+    wire bpu_rec_is_branch = (p0_wb_uop_class == UOP_BRANCH);
+    wire bpu_rec_is_jalr   = (p0_wb_uop_class == UOP_JALR);
+    wire bpu_rec_is_ras    = (p0_wb_br_type == BR_TYPE_RET) || (p0_wb_br_type == BR_TYPE_CORO);
+    assign event_bpu_miss_btb_o  = recover_fire &&
+                                   ((bpu_rec_is_branch && (p0_wb_pred_taken == p0_wb_actual_taken)) ||
+                                    (bpu_rec_is_jalr && !p0_wb_pred_taken));
+    assign event_bpu_miss_tage_o = recover_fire && bpu_rec_is_branch && (p0_wb_pred_taken != p0_wb_actual_taken);
+    assign event_bpu_miss_ras_o  = recover_fire && bpu_rec_is_jalr && p0_wb_pred_taken && bpu_rec_is_ras;
+    assign event_bpu_miss_jalr_o = recover_fire && bpu_rec_is_jalr && p0_wb_pred_taken && !bpu_rec_is_ras;
 
     assign internal_recover_valid    = recover_fire;
     assign internal_recover_rob_idx  = p0_wb_rob_idx;

@@ -26,7 +26,9 @@
 /* verilator lint_off UNUSEDSIGNAL */
 module fursoy_s1_bpu
     import fursoy_s1_pkg::*;
-(
+#(
+    parameter bit INDEXED_RAS_CHKPT = 1'b0
+) (
     input  logic              clk_i,
     input  logic              rst_i,
 
@@ -48,6 +50,7 @@ module fursoy_s1_bpu
     output branch_type_t      slot0_br_type_o,
     output ghr_t              slot0_pre_ghr_o,
     output ras_chkpt_t        slot0_ras_chkpt_o,
+    output ras_chkpt_id_t     slot0_ras_id_o,
     output tage_csr_bundle_t  slot0_csr_chkpt_o,
 
     // Slot 1 Metadata
@@ -57,6 +60,7 @@ module fursoy_s1_bpu
     output branch_type_t      slot1_br_type_o,
     output ghr_t              slot1_pre_ghr_o,
     output ras_chkpt_t        slot1_ras_chkpt_o,
+    output ras_chkpt_id_t     slot1_ras_id_o,
     output tage_csr_bundle_t  slot1_csr_chkpt_o,
 
     // -------------------------------------------------------------------------
@@ -65,6 +69,7 @@ module fursoy_s1_bpu
     input  logic              early_jal_valid_i,
     input  ghr_t              early_jal_restore_ghr_i,
     input  ras_chkpt_t        early_jal_restore_ras_i,
+    input  ras_chkpt_id_t     early_jal_restore_ras_id_i,
     input  tage_csr_bundle_t  early_jal_restore_csr_i,
 
     // -------------------------------------------------------------------------
@@ -74,12 +79,14 @@ module fursoy_s1_bpu
     input  chkpt_idx_t        chkpt_alloc_id0_i,
     input  ghr_t              chkpt_alloc_ghr0_i,
     input  ras_chkpt_t        chkpt_alloc_ras0_i,
+    input  ras_chkpt_id_t     chkpt_alloc_ras_id0_i,
     input  tage_csr_bundle_t  chkpt_alloc_csr0_i,
 
     input  logic              chkpt_alloc_valid1_i,
     input  chkpt_idx_t        chkpt_alloc_id1_i,
     input  ghr_t              chkpt_alloc_ghr1_i,
     input  ras_chkpt_t        chkpt_alloc_ras1_i,
+    input  ras_chkpt_id_t     chkpt_alloc_ras_id1_i,
     input  tage_csr_bundle_t  chkpt_alloc_csr1_i,
 
     // -------------------------------------------------------------------------
@@ -194,11 +201,10 @@ module fursoy_s1_bpu
     wire [63:0] ras_top_val = ras_array[ras_tos_q];
 
     // Checkpoint Tables for 8 M1 Branch Checkpoints
-    ras_chkpt_t       chkpt_ras_table [NUM_CHECKPOINTS];
     ghr_t             chkpt_ghr_table [NUM_CHECKPOINTS];
     tage_csr_bundle_t chkpt_csr_table [NUM_CHECKPOINTS];
 
-    // Current full RAS logical snapshot
+    // Snapshot of current RAS state (used directly when INDEXED_RAS_CHKPT == 0)
     ras_chkpt_t cur_ras_chkpt;
     always_comb begin
         cur_ras_chkpt.ras_array = ras_array;
@@ -206,8 +212,92 @@ module fursoy_s1_bpu
         cur_ras_chkpt.depth     = ras_depth_q;
     end
 
-    assign slot0_ras_chkpt_o = cur_ras_chkpt;
-    assign slot1_ras_chkpt_o = cur_ras_chkpt;
+    // Next speculative RAS state shared between live RAS registers and indexed snapshot table
+    logic [15:0][63:0] spec_next_ras_array;
+    logic [3:0]        spec_next_ras_tos;
+    logic [4:0]        spec_next_ras_depth;
+    logic              spec_ras_mutated;
+
+    ras_chkpt_t rec_ras_full;
+    ras_chkpt_t ejal_ras_full;
+
+    generate
+        if (INDEXED_RAS_CHKPT) begin : gen_indexed_ras
+            ras_chkpt_t    ras_chkpt_table [RAS_CHKPT_ENTRIES];
+            ras_chkpt_t    chkpt_ras_table [NUM_CHECKPOINTS];
+            ras_chkpt_id_t ras_cur_id_q;
+            ras_chkpt_id_t ras_alloc_ptr_q;
+
+            // Slot 0 is reserved for reset/flush/recover baseline; speculative allocations cycle 1..31.
+            function automatic ras_chkpt_id_t next_ras_alloc_id(input ras_chkpt_id_t id);
+                if (id == RAS_CHKPT_IDX_W'(RAS_CHKPT_ENTRIES - 1)) begin
+                    return RAS_CHKPT_IDX_W'(1);
+                end else begin
+                    return id + RAS_CHKPT_IDX_W'(1);
+                end
+            endfunction
+
+            always_ff @(posedge clk_i) begin
+                if (rst_i) begin
+                    for (int k = 0; k < RAS_CHKPT_ENTRIES; k++) begin
+                        ras_chkpt_table[k] <= '0;
+                    end
+                    for (int k = 0; k < NUM_CHECKPOINTS; k++) begin
+                        chkpt_ras_table[k] <= '0;
+                    end
+                    ras_cur_id_q    <= '0;
+                    ras_alloc_ptr_q <= RAS_CHKPT_IDX_W'(1);
+                end else begin
+                    if (chkpt_alloc_valid0_i) chkpt_ras_table[chkpt_alloc_id0_i] <= ras_chkpt_table[chkpt_alloc_ras_id0_i];
+                    if (chkpt_alloc_valid1_i) chkpt_ras_table[chkpt_alloc_id1_i] <= ras_chkpt_table[chkpt_alloc_ras_id1_i];
+
+                    if (flush_valid_i) begin
+                        ras_chkpt_table[0] <= '0;
+                        ras_cur_id_q       <= '0;
+                        ras_alloc_ptr_q    <= RAS_CHKPT_IDX_W'(1);
+                    end else if (recover_valid_i) begin
+                        ras_chkpt_table[0] <= rec_ras_full;
+                        ras_cur_id_q       <= '0;
+                        ras_alloc_ptr_q    <= RAS_CHKPT_IDX_W'(1);
+                    end else if (early_jal_valid_i) begin
+                        ras_cur_id_q    <= early_jal_restore_ras_id_i;
+                        ras_alloc_ptr_q <= next_ras_alloc_id(early_jal_restore_ras_id_i);
+                    end else if (fetch_lookup_valid_i && spec_ras_mutated) begin
+                        ras_chkpt_table[ras_alloc_ptr_q].ras_array <= spec_next_ras_array;
+                        ras_chkpt_table[ras_alloc_ptr_q].tos_ptr   <= spec_next_ras_tos;
+                        ras_chkpt_table[ras_alloc_ptr_q].depth     <= spec_next_ras_depth;
+                        ras_cur_id_q                               <= ras_alloc_ptr_q;
+                        ras_alloc_ptr_q                            <= next_ras_alloc_id(ras_alloc_ptr_q);
+                    end
+                end
+            end
+
+            assign rec_ras_full      = chkpt_ras_table[recover_chkpt_id_i];
+            assign ejal_ras_full     = ras_chkpt_table[early_jal_restore_ras_id_i];
+            assign slot0_ras_id_o    = ras_cur_id_q;
+            assign slot1_ras_id_o    = ras_cur_id_q;
+            assign slot0_ras_chkpt_o = '0;
+            assign slot1_ras_chkpt_o = '0;
+        end else begin : gen_full_ras
+            ras_chkpt_t chkpt_ras_table [NUM_CHECKPOINTS];
+            always_ff @(posedge clk_i) begin
+                if (rst_i) begin
+                    for (int k = 0; k < NUM_CHECKPOINTS; k++) begin
+                        chkpt_ras_table[k] <= '0;
+                    end
+                end else begin
+                    if (chkpt_alloc_valid0_i) chkpt_ras_table[chkpt_alloc_id0_i] <= chkpt_alloc_ras0_i;
+                    if (chkpt_alloc_valid1_i) chkpt_ras_table[chkpt_alloc_id1_i] <= chkpt_alloc_ras1_i;
+                end
+            end
+            assign rec_ras_full      = chkpt_ras_table[recover_chkpt_id_i];
+            assign ejal_ras_full     = early_jal_restore_ras_i;
+            assign slot0_ras_id_o    = '0;
+            assign slot1_ras_id_o    = '0;
+            assign slot0_ras_chkpt_o = cur_ras_chkpt;
+            assign slot1_ras_chkpt_o = cur_ras_chkpt;
+        end
+    endgenerate
 
     // =========================================================================
     // 3. TAGE-Lite Direction Predictor Structures & Geometry (§5.1, §5.2)
@@ -622,7 +712,7 @@ module fursoy_s1_bpu
                     slot0_target = slot0_entry.target;
                 end
                 BR_TYPE_RET, BR_TYPE_CORO: begin
-                    slot0_taken  = (ras_top_val != 64'd0);
+                    slot0_taken  = (ras_depth_q > 5'd0) && (ras_top_val != 64'd0);
                     slot0_target = ras_top_val;
                 end
                 BR_TYPE_JALR, BR_TYPE_IND: begin
@@ -649,10 +739,8 @@ module fursoy_s1_bpu
                     slot1_target = slot1_entry.target;
                 end
                 BR_TYPE_RET, BR_TYPE_CORO: begin
-                    slot1_target = (slot0_hit && (slot0_entry.br_type == BR_TYPE_CALL))
-                                 ? (pc_slot0 + 64'd4)
-                                 : ras_top_val;
-                    slot1_taken  = (slot1_target != 64'd0);
+                    slot1_target = ras_top_val;
+                    slot1_taken  = (ras_depth_q > 5'd0) && (ras_top_val != 64'd0);
                 end
                 BR_TYPE_JALR, BR_TYPE_IND: begin
                     slot1_taken  = 1'b1;
@@ -805,6 +893,45 @@ module fursoy_s1_bpu
         end
     end
 
+    // Precompute speculative RAS next-state for both live RAS and indexed checkpoint table
+    always_comb begin
+        spec_next_ras_array = ras_array;
+        spec_next_ras_tos   = ras_tos_q;
+        spec_next_ras_depth = ras_depth_q;
+        spec_ras_mutated    = 1'b0;
+
+        if (slot0_hit && (slot0_entry.br_type == BR_TYPE_CALL)) begin
+            spec_next_ras_tos                      = 4'(ras_tos_q + 4'd1);
+            spec_next_ras_array[spec_next_ras_tos] = pc_slot0 + 64'd4;
+            if (ras_depth_q < 5'd16) spec_next_ras_depth = ras_depth_q + 5'd1;
+            spec_ras_mutated = 1'b1;
+        end else if (slot0_hit && (slot0_entry.br_type == BR_TYPE_RET) && (ras_depth_q > 5'd0)) begin
+            spec_next_ras_tos   = 4'(ras_tos_q - 4'd1);
+            spec_next_ras_depth = ras_depth_q - 5'd1;
+            spec_ras_mutated    = 1'b1;
+        end else if (slot0_hit && (slot0_entry.br_type == BR_TYPE_CORO)) begin
+            // Case 4: Coroutine Swap (POP then PUSH)
+            // In-place overwrite at current TOS; TOS and depth strictly invariant
+            spec_next_ras_array[ras_tos_q] = pc_slot0 + 64'd4;
+            spec_ras_mutated               = 1'b1;
+        end else if (!slot0_taken && slot1_hit) begin
+            if (slot1_entry.br_type == BR_TYPE_CALL) begin
+                spec_next_ras_tos                      = 4'(ras_tos_q + 4'd1);
+                spec_next_ras_array[spec_next_ras_tos] = pc_slot1 + 64'd4;
+                if (ras_depth_q < 5'd16) spec_next_ras_depth = ras_depth_q + 5'd1;
+                spec_ras_mutated = 1'b1;
+            end else if ((slot1_entry.br_type == BR_TYPE_RET) && (ras_depth_q > 5'd0)) begin
+                spec_next_ras_tos   = 4'(ras_tos_q - 4'd1);
+                spec_next_ras_depth = ras_depth_q - 5'd1;
+                spec_ras_mutated    = 1'b1;
+            end else if (slot1_entry.br_type == BR_TYPE_CORO) begin
+                // Case 4: Coroutine Swap (POP then PUSH)
+                spec_next_ras_array[ras_tos_q] = pc_slot1 + 64'd4;
+                spec_ras_mutated               = 1'b1;
+            end
+        end
+    end
+
     // Sequential Clocked Logic
     always_ff @(posedge clk_i) begin
         if (rst_i) begin
@@ -847,7 +974,6 @@ module fursoy_s1_bpu
             end
 
             for (int k = 0; k < NUM_CHECKPOINTS; k++) begin
-                chkpt_ras_table[k] <= '0;
                 chkpt_ghr_table[k] <= '0;
                 chkpt_csr_table[k] <= '0;
             end
@@ -858,12 +984,10 @@ module fursoy_s1_bpu
             // -----------------------------------------------------------------
             if (chkpt_alloc_valid0_i) begin
                 chkpt_ghr_table[chkpt_alloc_id0_i] <= chkpt_alloc_ghr0_i;
-                chkpt_ras_table[chkpt_alloc_id0_i] <= chkpt_alloc_ras0_i;
                 chkpt_csr_table[chkpt_alloc_id0_i] <= chkpt_alloc_csr0_i;
             end
             if (chkpt_alloc_valid1_i) begin
                 chkpt_ghr_table[chkpt_alloc_id1_i] <= chkpt_alloc_ghr1_i;
-                chkpt_ras_table[chkpt_alloc_id1_i] <= chkpt_alloc_ras1_i;
                 chkpt_csr_table[chkpt_alloc_id1_i] <= chkpt_alloc_csr1_i;
             end
 
@@ -883,16 +1007,16 @@ module fursoy_s1_bpu
                 csr_q <= update_csr_bundle(chkpt_csr_table[recover_chkpt_id_i],
                                            recover_actual_taken_i,
                                            chkpt_ghr_table[recover_chkpt_id_i]);
-                ras_array   <= chkpt_ras_table[recover_chkpt_id_i].ras_array;
-                ras_tos_q   <= chkpt_ras_table[recover_chkpt_id_i].tos_ptr;
-                ras_depth_q <= chkpt_ras_table[recover_chkpt_id_i].depth;
+                ras_array   <= rec_ras_full.ras_array;
+                ras_tos_q   <= rec_ras_full.tos_ptr;
+                ras_depth_q <= rec_ras_full.depth;
             end else if (early_jal_valid_i) begin
                 // Early F3 JAL Correction: Exact pre-rename restore
                 ghr_q       <= early_jal_restore_ghr_i;
                 csr_q       <= early_jal_restore_csr_i;
-                ras_array   <= early_jal_restore_ras_i.ras_array;
-                ras_tos_q   <= early_jal_restore_ras_i.tos_ptr;
-                ras_depth_q <= early_jal_restore_ras_i.depth;
+                ras_array   <= ejal_ras_full.ras_array;
+                ras_tos_q   <= ejal_ras_full.tos_ptr;
+                ras_depth_q <= ejal_ras_full.depth;
             end else if (fetch_lookup_valid_i) begin
                 // Speculative live GHR and CSR advancement
                 if (slot0_hit && (slot0_entry.br_type == BR_TYPE_COND)) begin
@@ -917,29 +1041,10 @@ module fursoy_s1_bpu
                 end
 
                 // Speculative RAS push / pop / coroutine swap (§6.3)
-                if (slot0_hit && (slot0_entry.br_type == BR_TYPE_CALL)) begin
-                    ras_tos_q <= 4'(ras_tos_q + 4'd1);
-                    ras_array[4'(ras_tos_q + 4'd1)] <= pc_slot0 + 64'd4;
-                    if (ras_depth_q < 5'd16) ras_depth_q <= ras_depth_q + 1'b1;
-                end else if (slot0_hit && (slot0_entry.br_type == BR_TYPE_RET)) begin
-                    ras_tos_q <= 4'(ras_tos_q - 4'd1);
-                    if (ras_depth_q > 5'd0) ras_depth_q <= ras_depth_q - 1'b1;
-                end else if (slot0_hit && (slot0_entry.br_type == BR_TYPE_CORO)) begin
-                    // Case 4: Coroutine Swap (POP then PUSH)
-                    // In-place overwrite at current TOS; TOS and depth strictly invariant
-                    ras_array[ras_tos_q] <= pc_slot0 + 64'd4;
-                end else if (!slot0_taken && slot1_hit) begin
-                    if (slot1_entry.br_type == BR_TYPE_CALL) begin
-                        ras_tos_q <= 4'(ras_tos_q + 4'd1);
-                        ras_array[4'(ras_tos_q + 4'd1)] <= pc_slot1 + 64'd4;
-                        if (ras_depth_q < 5'd16) ras_depth_q <= ras_depth_q + 1'b1;
-                    end else if (slot1_entry.br_type == BR_TYPE_RET) begin
-                        ras_tos_q <= 4'(ras_tos_q - 4'd1);
-                        if (ras_depth_q > 5'd0) ras_depth_q <= ras_depth_q - 1'b1;
-                    end else if (slot1_entry.br_type == BR_TYPE_CORO) begin
-                        // Case 4: Coroutine Swap (POP then PUSH)
-                        ras_array[ras_tos_q] <= pc_slot1 + 64'd4;
-                    end
+                if (spec_ras_mutated) begin
+                    ras_array   <= spec_next_ras_array;
+                    ras_tos_q   <= spec_next_ras_tos;
+                    ras_depth_q <= spec_next_ras_depth;
                 end
             end
 
