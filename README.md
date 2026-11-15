@@ -45,26 +45,26 @@ Fursoy Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`) is a clean-slate 64-bit out-
 |  [2-Wide Rename / SRAT / ARAT] <====== 8 Branch Checkpoints (Single-Cycle Speculative Rollback)   |
 |  [128-Entry ROB (2W Alloc / 2W Retire, 4-bit Epoch Tags)]                                         |
 |  Register Files:  Int PRF: 160 x 64b (32 arch + 128 spec) | FP PRF: 64 x 64b | VRF: 48 x 256b     |
-+--------+-------------------------+-------------------------+------------------------+-------------+
-         |                         |                         |                        |
-         v                         v                         v                        v
-+------------------+     +-------------------+     +-------------------+    +-----------------------+
-| IntIQ (32 ent)   |     | MemIQ (32 ent)    |     | FPIQ (16 ent)     |    | Fetched RVV Engine    |
-| 2W Dispatch      |     | 2W Dispatch       |     | 2W Dispatch       |    | vecq_q[8] (core FSM)  |
-+----+--------+----+     +----+---------+----+     +---------+---------+    +-----------+-----------+
-     |        |               |         |                    |                          |
-     v        v               v         v                    v                          v
-  [Port 0] [Port 1]       [Port 2]  [Port 3]             [Port 4]                 [Vector FSM]
-  - ALU0   - ALU1         - AGU0    - AGU1               - FMA (3c/4c)            - Element-by-element
-    (1c)     (1c FIFO)      (Ld/St/   (Loads             - FDIV/FSQRT               scalar ALU/mem ops
-  - BR     - MUL (3c)        AMO/      only)               (12/21/15/28c)           over 4-banked VRF
-    (1c)   - DIV (~34c)      FENCE)                      - FCONV/FCMP             - (Standalone VIQ8
-  - CSR/                   - 16 LQ / 16 SQ                                          in testbench harness)
-    I2F                    - 32 TRT
-     |        |               |         |                    |                          |
-     +---+----+---------------+---------+--------------------+--------------------------+
-         |                    |         |                                               |
-         v                    v         v                                               v
++-----------+-------------------------+--------------------------+--------------------+-------------+
+            |                         |                          |                    |
+            v                         v                          v                    v
++-----------------------+ +-----------------------+ +--------------------+ +------------------------+
+| IntIQ (32 entries)    | | MemIQ (32 entries)    | | FPIQ (16 entries)  | | Vector FSM (8-op q)    |
+| 2W Issue (P0 + P1)    | | 2W Issue (P2 + P3)    | | 1W Issue (P4)      | | 1-op Seq (vecq_q[8])   |
++-----+-----------+-----+ +------+----------+-----+ +---------+----------+ +-----------+------------+
+      |           |              |          |                 |                        |
+      v           v              v          v                 v                        v
++-----------+ +----------+ +-------------+ +-----------+ +----------------+ +-----------------------+
+| [Port 0]  | | [Port 1] | | [Port 2]    | | [Port 3]  | | [Port 4 (FP)]  | | [Vector FSM]          |
+| ALU0 (1c) | | ALU1(1c*)| | AGU0 (1c)   | | AGU1 (1c) | | FMA (3c / 4c)  | | Elem-by-elem scalar   |
+| BR (1c)   | | MUL (3c) | | Ld/St/AMO   | | Loads     | | FDIV (12..28c) | | ALU/mem over 4-bk VRF |
+| CSR / I2F | | DIV(~34c)| | FENCE       | | only      | | FCONV / FCMP   | | (Standalone VIQ8      |
+|           | |          | | 16LQ/16SQ   | | (-> 8-bk) | | (8-ent f2i_q)  | |  in testbench harness)|
++-----+-----+ +----+-----+ +------+------+ +-----+-----+ +-------+--------+ +----------+------------+
+      |            |              |              |               |                     |
+      +------------+--------------+--------------+---------------+---------------------+
+                                                 |
+                                                 v
 +---------------------------------------------------------------------------------------------------+
 |                                  MEMORY & COHERENT SUBSYSTEM                                      |
 |                                                                                                   |
