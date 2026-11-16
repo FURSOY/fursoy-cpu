@@ -115,7 +115,7 @@ The encoding format is standard R-type with atomic ordering bits:
 **Choice**: The reservation address is tracked strictly using the **Physical Address (PA)** resulting from address translation (or bare physical address), rather than the Virtual Address (VA).
 
 **Rationale**:
-1. **Virtual Aliasing**: Multiple distinct virtual addresses ($VA_1 \neq VA_2$) may map to the same physical address ($PA$). Tracking PA guarantees that an intervening store through an alias address $VA_2$ correctly invalidates a reservation registered through $VA_1$.
+1. **Virtual Aliasing**: Multiple distinct virtual addresses (`VA_1 ≠ VA_2`) may map to the same physical address (`PA`). Tracking PA guarantees that an intervening store through an alias address `VA_2` correctly invalidates a reservation registered through `VA_1`.
 2. **Translation Context Modifications**: Virtual-to-physical mappings can change dynamically via page table updates or ASID/SATP switches. A VA-based reservation would become stale or dissociated from physical memory.
 3. **Coherent Physical Address Space**: External snoop/invalidation buses operate in physical address space; tracking PA keeps the reservation model clean and alias-free.
 
@@ -136,7 +136,7 @@ A Store-Conditional (`SC.W` or `SC.D`) evaluates success strictly by comparing:
 - Exact physical address match (`sc_pa[55:0] == res_exact_pa`);
 - Exact access width match (`sc_size == res_size`).
 
-$$\text{reservation\_matches} = \text{res\_valid} \land (\text{sc\_pa} == \text{res\_exact\_pa}) \land (\text{sc\_size} == \text{res\_size})$$
+`reservation_matches = res_valid && (sc_pa == res_exact_pa) && (sc_size == res_size)`
 
 **Architectural Consequences**:
 - `LR.W @ A` followed by `SC.W @ A` may succeed.
@@ -150,19 +150,19 @@ $$\text{reservation\_matches} = \text{res\_valid} \land (\text{sc\_pa} == \text{
 `LR.W` and `LR.D` execute with the following lifecycle:
 
 1. **Address Calculation & Alignment Check**:
-   - Compute effective virtual address: $VA = \text{rs1}$.
+   - Compute effective virtual address: `VA = rs1`.
    - Check natural alignment:
-     - `LR.W`: $VA[1:0] == 2'b00$. If misaligned, raise **Load address misaligned exception (cause 4)** with $mtval/stval = VA$.
-     - `LR.D`: $VA[2:0] == 3'b000$. If misaligned, raise **Load address misaligned exception (cause 4)** with $mtval/stval = VA$.
+     - `LR.W`: `VA[1:0] == 2'b00`. If misaligned, raise **Load address misaligned exception (cause 4)** with `mtval/stval = VA`.
+     - `LR.D`: `VA[2:0] == 3'b000`. If misaligned, raise **Load address misaligned exception (cause 4)** with `mtval/stval = VA`.
 2. **MMU Translation & PMP Check**:
    - Perform address translation as a **LOAD** operation (`req_op = 2'b01`).
-   - Evaluate Sv39 leaf PTE permissions ($R=1$ or ($MXR=1 \land X=1$); $U/S$ permissions; $A=1$ under Svade).
-   - Evaluate PMP matching entry for read permission ($R=1$).
-   - If translation fails, raise **Load page fault (cause 13)** with $mtval/stval = VA$.
-   - If PMP fails, raise **Load access fault (cause 5)** with $mtval/stval = VA$.
+   - Evaluate Sv39 leaf PTE permissions (`R=1` or (`MXR=1 && X=1`); `U/S` permissions; `A=1` under Svade).
+   - Evaluate PMP matching entry for read permission (`R=1`).
+   - If translation fails, raise **Load page fault (cause 13)** with `mtval/stval = VA`.
+   - If PMP fails, raise **Load access fault (cause 5)** with `mtval/stval = VA`.
 3. **Memory Access & Registration**:
    - Issue physical read to memory adapter.
-   - If memory adapter returns bus error, raise **Load access fault (cause 5)** with $mtval/stval = VA$.
+   - If memory adapter returns bus error, raise **Load access fault (cause 5)** with `mtval/stval = VA`.
    - On successful read data return:
      - Register active reservation:
        - `res_valid <= 1'b1`;
@@ -170,49 +170,49 @@ $$\text{reservation\_matches} = \text{res\_valid} \land (\text{sc\_pa} == \text{
        - `res_size <= (insn[12] ? 2'b11 : 2'b10)`; // D: 2'b11, W: 2'b10
        - `res_granule_pa <= pa[55:6]`.
      - Write loaded data to destination register `rd`:
-       - `LR.W`: 32-bit data is **sign-extended** to 64 bits: $rd \Leftarrow \{\{32\{\text{data}[31]\}\}, \text{data}[31:0]\}$.
-       - `LR.D`: 64-bit data is loaded directly: $rd \Leftarrow \text{data}[63:0]$.
-     - If $rd == x0$, register update is suppressed per RV64I base rules, but the reservation **is still registered**.
+       - `LR.W`: 32-bit data is **sign-extended** to 64 bits: `rd ← {{32{data[31]}}, data[31:0]}`.
+       - `LR.D`: 64-bit data is loaded directly: `rd ← data[63:0]`.
+     - If `rd == x0`, register update is suppressed per RV64I base rules, but the reservation **is still registered**.
 
 ### 3.5 SC operation semantics
 
 `SC.W` and `SC.D` execute with the following lifecycle:
 
 1. **Address Calculation & Alignment Check**:
-   - Compute effective virtual address: $VA = \text{rs1}$.
+   - Compute effective virtual address: `VA = rs1`.
    - Check natural alignment:
-     - `SC.W`: $VA[1:0] == 2'b00$. If misaligned, raise **Store/AMO address misaligned exception (cause 6)** with $mtval/stval = VA$.
-     - `SC.D`: $VA[2:0] == 3'b000$. If misaligned, raise **Store/AMO address misaligned exception (cause 6)** with $mtval/stval = VA$.
+     - `SC.W`: `VA[1:0] == 2'b00`. If misaligned, raise **Store/AMO address misaligned exception (cause 6)** with `mtval/stval = VA`.
+     - `SC.D`: `VA[2:0] == 3'b000`. If misaligned, raise **Store/AMO address misaligned exception (cause 6)** with `mtval/stval = VA`.
    - *Crucial Rule*: Alignment check occurs unconditionally. A misaligned SC raises cause 6 regardless of whether a valid reservation exists.
 2. **MMU Translation & PMP Check**:
    - Perform address translation as a **STORE** operation (`req_op = 2'b10`).
-   - Evaluate Sv39 leaf PTE permissions ($W=1 \land D=1 \land A=1$; $U/S$ permissions).
-   - Evaluate PMP matching entry for write permission ($W=1$).
-   - If translation fails, raise **Store/AMO page fault (cause 15)** with $mtval/stval = VA$.
-   - If PMP fails, raise **Store/AMO access fault (cause 7)** with $mtval/stval = VA$.
+   - Evaluate Sv39 leaf PTE permissions (`W=1 && D=1 && A=1`; `U/S` permissions).
+   - Evaluate PMP matching entry for write permission (`W=1`).
+   - If translation fails, raise **Store/AMO page fault (cause 15)** with `mtval/stval = VA`.
+   - If PMP fails, raise **Store/AMO access fault (cause 7)** with `mtval/stval = VA`.
    - *Crucial Rule*: Address translation and PMP checks occur before reservation success evaluation. An SC to an unmapped or write-protected page raises cause 15 or cause 7, even if no reservation exists or the address mismatches.
 3. **Reservation Match Evaluation**:
-   - Evaluate $\text{reservation\_matches} = \text{res\_valid} \land (\text{sc\_pa} == \text{res\_exact\_pa}) \land (\text{sc\_size} == \text{res\_size})$.
+   - Evaluate `reservation_matches = res_valid && (sc_pa == res_exact_pa) && (sc_size == res_size)`.
 4. **Conditional Execution**:
-   - **Case A: Successful SC** ($\text{reservation\_matches} == 1$):
+   - **Case A: Successful SC** (`reservation_matches == 1`):
      - Atomically issue physical store to memory:
        - `SC.W`: writes `rs2[31:0]` (size 32-bit word, `req_size = 3'b010`).
        - `SC.D`: writes `rs2[63:0]` (size 64-bit doubleword, `req_size = 3'b011`).
      - If memory adapter returns a store error:
        - Suppress `rd` writeback.
        - Do not commit the instruction.
-       - Take precise **Store/AMO access fault (cause 7)** with $mtval/stval = VA$.
+       - Take precise **Store/AMO access fault (cause 7)** with `mtval/stval = VA`.
        - Clear reservation (`res_valid <= 1'b0`).
      - On successful store completion:
        - Clear reservation: `res_valid <= 1'b0`.
-       - Write status **`0`** (success) to destination register `rd` ($rd \Leftarrow 0$).
-       - If $rd == x0$, register write is suppressed, but memory is updated and reservation is cleared.
+       - Write status **`0`** (success) to destination register `rd` (`rd ← 0`).
+       - If `rd == x0`, register write is suppressed, but memory is updated and reservation is cleared.
        - Instruction retires with commit.
-   - **Case B: Failed SC** ($\text{reservation\_matches} == 0$):
+   - **Case B: Failed SC** (`reservation_matches == 0`):
      - **CRITICAL**: **Zero physical memory request is emitted.** Memory is completely untouched.
      - Clear reservation: `res_valid <= 1'b0`.
-     - Write status **`1`** (failure) to destination register `rd` ($rd \Leftarrow 1$).
-     - If $rd == x0$, register write is suppressed, but memory remains completely unmodified.
+     - Write status **`1`** (failure) to destination register `rd` (`rd ← 1`).
+     - If `rd == x0`, register write is suppressed, but memory remains completely unmodified.
      - Instruction retires with commit.
 
 ---
@@ -229,13 +229,13 @@ When translating an AMO address, the hardware page table walker and leaf permiss
 - **`W == 1`** (Write permission);
 - **`A == 1`** (Accessed bit set under Svade);
 - **`D == 1`** (Dirty bit set under Svade);
-- Standard User/Supervisor privilege checks ($U/S$, $SUM$).
-- **`MXR` Strict Exclusion**: `mstatus.MXR` makes execute-only pages readable *only for loads*. `MXR` **must never make an execute-only page valid for AMO**. An execute-only page ($R=0, W=0, X=1$) or any page with $R=0$ or $W=0$ unconditionally raises a **Store/AMO page fault (cause 15)**.
+- Standard User/Supervisor privilege checks (`U/S`, `SUM`).
+- **`MXR` Strict Exclusion**: `mstatus.MXR` makes execute-only pages readable *only for loads*. `MXR` **must never make an execute-only page valid for AMO**. An execute-only page (`R=0, W=0, X=1`) or any page with `R=0` or `W=0` unconditionally raises a **Store/AMO page fault (cause 15)**.
 
 #### 4.1.2 PMP validation for AMO
 The matching PMP entry must grant **both Read and Write permissions**:
-- Requires **PMP Read ($R=1$)**;
-- Requires **PMP Write ($W=1$)**.
+- Requires **PMP Read (`R=1`)**;
+- Requires **PMP Write (`W=1`)**.
 - If either permission is missing, the core raises a **Store/AMO access fault (cause 7)**.
 
 **Invariant**: Both Sv39 and PMP validations must succeed **before** any physical memory read phase is issued.
@@ -282,22 +282,22 @@ An AMO is a single indivisible architectural instruction executed through an int
 
 1. **`AMO_TRANSLATE`**:
    - Checks natural alignment (misaligned raises cause 6).
-   - Validates Sv39 dual-permission ($R=1, W=1, A=1, D=1$) and PMP dual-permission ($R=1, W=1$).
+   - Validates Sv39 dual-permission (`R=1, W=1, A=1, D=1`) and PMP dual-permission (`R=1, W=1`).
    - On fault, transitions directly to `AMO_TRAP` (cause 15 or cause 7) with zero bus requests emitted.
 2. **`AMO_READ_REQ` & `AMO_READ_WAIT`**:
-   - Issues physical read transaction to address $PA$ with operation width.
+   - Issues physical read transaction to address `PA` with operation width.
    - Waits for memory response. If bus returns error, transitions to `AMO_TRAP` (cause 7) with write phase suppressed.
-   - On valid response, captures $\text{mem\_orig}$.
+   - On valid response, captures `mem_orig`.
 3. **`AMO_COMPUTE`**:
-   - Performs ALU operation between $\text{mem\_orig}$ and `rs2` to produce $\text{mem\_new}$.
+   - Performs ALU operation between `mem_orig` and `rs2` to produce `mem_new`.
    - For `.W`: operation is performed on 32-bit words with 32-bit wrap.
    - For `.D`: operation is performed on 64-bit doublewords.
 4. **`AMO_WRITE_REQ` & `AMO_WRITE_WAIT`**:
-   - Issues physical write transaction of $\text{mem\_new}$ to address $PA$.
+   - Issues physical write transaction of `mem_new` to address `PA`.
    - Waits for store completion. If bus returns error, transitions to `AMO_TRAP` (cause 7); `rd` writeback is suppressed and commit is aborted.
 5. **`AMO_COMPLETE`**:
    - Inactive/clears any active reservation (`res_valid <= 1'b0`).
-   - Writes $\text{mem\_orig}$ (sign-extended for `.W`) to destination register `rd` (unless $rd == x0$).
+   - Writes `mem_orig` (sign-extended for `.W`) to destination register `rd` (unless `rd == x0`).
    - Asserts `commit_valid_o` for exactly one cycle and retires.
 
 ### 4.3 Pipeline isolation, non-preemption, and reset rules
@@ -312,27 +312,27 @@ During an in-progress AMO:
 
 ### 4.4 AMO ALU operations definition
 
-Let $A$ be the original memory value loaded in Phase 1, and $B = \text{rs2}$.
+Let `A` be the original memory value loaded in Phase 1, and `B = rs2`.
 
 | Operation | 32-bit Word Semantics (`.W`) | 64-bit Doubleword Semantics (`.D`) |
 |---|---|---|
-| `AMOSWAP` | $\text{new}[31:0] = B[31:0]$ | $\text{new} = B$ |
-| `AMOADD` | $\text{new}[31:0] = A[31:0] + B[31:0]$ | $\text{new} = A + B$ |
-| `AMOXOR` | $\text{new}[31:0] = A[31:0] \oplus B[31:0]$ | $\text{new} = A \oplus B$ |
-| `AMOAND` | $\text{new}[31:0] = A[31:0] \land B[31:0]$ | $\text{new} = A \land B$ |
-| `AMOOR` | $\text{new}[31:0] = A[31:0] \lor B[31:0]$ | $\text{new} = A \lor B$ |
-| `AMOMIN` | $\text{new}[31:0] = (\text{signed}(A[31:0]) < \text{signed}(B[31:0])) \mathbin{?} A[31:0] : B[31:0]$ | $\text{new} = (\text{signed}(A) < \text{signed}(B)) \mathbin{?} A : B$ |
-| `AMOMAX` | $\text{new}[31:0] = (\text{signed}(A[31:0]) > \text{signed}(B[31:0])) \mathbin{?} A[31:0] : B[31:0]$ | $\text{new} = (\text{signed}(A) > \text{signed}(B)) \mathbin{?} A : B$ |
-| `AMOMINU` | $\text{new}[31:0] = (\text{unsigned}(A[31:0]) < \text{unsigned}(B[31:0])) \mathbin{?} A[31:0] : B[31:0]$ | $\text{new} = (\text{unsigned}(A) < \text{unsigned}(B)) \mathbin{?} A : B$ |
-| `AMOMAXU` | $\text{new}[31:0] = (\text{unsigned}(A[31:0]) > \text{unsigned}(B[31:0])) \mathbin{?} A[31:0] : B[31:0]$ | $\text{new} = (\text{unsigned}(A) > \text{unsigned}(B)) \mathbin{?} A : B$ |
+| `AMOSWAP` | `new[31:0] = B[31:0]` | `new = B` |
+| `AMOADD` | `new[31:0] = A[31:0] + B[31:0]` | `new = A + B` |
+| `AMOXOR` | `new[31:0] = A[31:0] ^ B[31:0]` | `new = A ^ B` |
+| `AMOAND` | `new[31:0] = A[31:0] && B[31:0]` | `new = A && B` |
+| `AMOOR` | `new[31:0] = A[31:0] || B[31:0]` | `new = A || B` |
+| `AMOMIN` | `new[31:0] = (signed(A[31:0]) < signed(B[31:0])) ? A[31:0] : B[31:0]` | `new = (signed(A) < signed(B)) ? A : B` |
+| `AMOMAX` | `new[31:0] = (signed(A[31:0]) > signed(B[31:0])) ? A[31:0] : B[31:0]` | `new = (signed(A) > signed(B)) ? A : B` |
+| `AMOMINU` | `new[31:0] = (unsigned(A[31:0]) < unsigned(B[31:0])) ? A[31:0] : B[31:0]` | `new = (unsigned(A) < unsigned(B)) ? A : B` |
+| `AMOMAXU` | `new[31:0] = (unsigned(A[31:0]) > unsigned(B[31:0])) ? A[31:0] : B[31:0]` | `new = (unsigned(A) > unsigned(B)) ? A : B` |
 
 ### 4.5 Return value and `rd == x0` semantics
 
 - **Architectural Return Value**:
-  - For `.W`: $rd \Leftarrow \{\{32\{A[31]\}\}, A[31:0]\}$.
-  - For `.D`: $rd \Leftarrow A[63:0]$.
+  - For `.W`: `rd ← {{32{A[31]}}, A[31:0]}`.
+  - For `.D`: `rd ← A[63:0]`.
 - **Destination Register `x0`**:
-  - If $rd == x0$, register writeback is suppressed.
+  - If `rd == x0`, register writeback is suppressed.
   - **Crucial Rule**: The memory Read-Modify-Write operation **is still executed in its entirety**. Software uses `amoswap.w x0, rs2, (rs1)` or `amoadd.w x0, rs2, (rs1)` as atomic memory updates without requiring a temporary register.
 
 ---
@@ -368,7 +368,7 @@ The reservation flag `res_valid` is deterministically updated according to the f
 
 | Triggering Event | Next `res_valid` | Justification & Architectural Rule |
 |---|---|---|
-| **Successful `LR.W` / `LR.D`** | `1'b1` | Registers new reservation on exact $PA$, size, and 64-byte granule |
+| **Successful `LR.W` / `LR.D`** | `1'b1` | Registers new reservation on exact `PA`, size, and 64-byte granule |
 | **Successful `SC.W` / `SC.D`** | `1'b0` | Atomically consumed upon successful store |
 | **Failed `SC.W` / `SC.D`** | `1'b0` | Standard RISC-V rule: SC clears reservation regardless of success/failure |
 | **Normal Store (`SB`, `SH`, `SW`, `SD`) by Hart 0** | `1'b0` | **Conservative Invalidation**: Any local store clears reservation |
@@ -379,7 +379,7 @@ The reservation flag `res_valid` is deterministically updated according to the f
 | **`SFENCE.VMA` Execution** | `1'b0` | Address translation synchronization; invalidates active reservations |
 | **`satp` CSR Write** | `1'b0` | Address space switch; virtual address mappings change |
 | **Platform Reset (`rst_i == 1`)** | `1'b0` | Clears all internal architectural and microarchitectural state |
-| **External Interconnect / DMA Write (Future)** | `1'b0` (if $PA \in \text{granule}$) | Coherence snoop invalidation on matching 64-byte granule |
+| **External Interconnect / DMA Write (Future)** | `1'b0` (if `PA ∈ granule`) | Coherence snoop invalidation on matching 64-byte granule |
 
 ---
 
@@ -405,7 +405,7 @@ For:
 the core guarantees:
 1. Destination register `rd` writeback is suppressed.
 2. The instruction is not committed (`commit_valid_o = 0`).
-3. Precise **Store/AMO access fault (cause 7)** is taken with $mepc/sepc = \text{PC}$ and $mtval/stval = VA$.
+3. Precise **Store/AMO access fault (cause 7)** is taken with `mepc/sepc = PC` and `mtval/stval = VA`.
 4. Internal atomic state and reservations are cleared.
 
 **Explicit Scope Limitation**: The core **does not and cannot guarantee external memory or peripheral rollback** once a store request has been accepted by the platform interconnect. The state of external memory or device registers following a faulting issued store is governed entirely by platform/bus slave behavior.
@@ -427,7 +427,7 @@ The Slice-0 memory interface (`dmem_req_*`, `dmem_rsp_*`) remains a single-outst
 If extending to coherent cached or multi-hart topologies:
 1. **Coherent L1 D-Cache Line Locking**: AMOs will execute in L1 cache by acquiring exclusive line ownership (M state in MESI) and completing the read-modify-write atomically before releasing the line.
 2. **Interconnect Atomics**: For uncached MMIO regions, the bus interface will support atomic read-modify-write commands (e.g., AXI5 Atomic Transactions or TileLink Atomic operations).
-3. **Multi-Hart SNOOP Invalidation**: Stores from Hart $A$ will snoop and invalidate matching reservations held by Hart $B$.
+3. **Multi-Hart SNOOP Invalidation**: Stores from Hart `A` will snoop and invalidate matching reservations held by Hart `B`.
 
 ---
 
@@ -444,7 +444,7 @@ If extending to coherent cached or multi-hart topologies:
 | **A-LRSC-05** | `LR.W @ A` followed by `SC.W @ A+4` (same 64-byte granule) | SC fails: `rd=1`, memory untouched (exact address mismatch) |
 | **A-LRSC-06** | `LR.W @ A` followed by `SC.D @ A` (same address, size mismatch) | SC fails: `rd=1`, memory untouched (size mismatch) |
 | **A-LRSC-07** | `LR.D @ A` followed by `SC.W @ A` (same address, size mismatch) | SC fails: `rd=1`, memory untouched (size mismatch) |
-| **A-LRSC-08** | Virtual alias: `LR.W` via $VA_1 \to PA$, conflicting store via $VA_2 \to PA$, then `SC.W` via $VA_1$ | SC fails: `rd=1`, PA-based conflict invalidates reservation |
+| **A-LRSC-08** | Virtual alias: `LR.W` via `VA_1 → PA`, conflicting store via `VA_2 → PA`, then `SC.W` via `VA_1` | SC fails: `rd=1`, PA-based conflict invalidates reservation |
 | **A-LRSC-09** | Invalid reservation + `SC.W` to unmapped virtual page | Store/AMO page fault (cause 15); not simple SC failure |
 | **A-LRSC-10** | `LR.W` followed by normal store `SW` to same address, then `SC.W` | SC fails: `rd=1`, memory untouched |
 | **A-LRSC-11** | `LR.W` followed by normal store `SW` to *different* address, then `SC.W` | SC fails (conservative invalidation policy) |
@@ -454,13 +454,13 @@ If extending to coherent cached or multi-hart topologies:
 | **A-LRSC-15** | `LR.W` followed by `SFENCE.VMA`, then `SC.W` | SC fails: fence invalidates reservation |
 | **A-LRSC-16** | `LR.W` followed by `satp` CSR write, then `SC.W` | SC fails: context change invalidates reservation |
 | **A-LRSC-17** | `LR.W` with negative 32-bit value (bit 31=1) | Destination `rd` is sign-extended to 64 bits |
-| **A-LRSC-18** | `LR.W` with $rd == x0$ | Reservation registered; `x0` remains 0; subsequent SC succeeds |
-| **A-LRSC-19** | `SC.W` with $rd == x0$ (successful matching reservation) | Memory updated; `x0` remains 0; reservation cleared |
+| **A-LRSC-18** | `LR.W` with `rd == x0` | Reservation registered; `x0` remains 0; subsequent SC succeeds |
+| **A-LRSC-19** | `SC.W` with `rd == x0` (successful matching reservation) | Memory updated; `x0` remains 0; reservation cleared |
 | **A-LRSC-20** | `LR.W` with non-zero `rs2` field | Illegal instruction exception (cause 2), `mtval = insn` |
-| **A-LRSC-21** | Misaligned `LR.W` ($addr[1:0] \neq 0$) | Load address misaligned (cause 4), `mtval = addr` |
-| **A-LRSC-22** | Misaligned `SC.W` ($addr[1:0] \neq 0$) | Store address misaligned (cause 6), `mtval = addr` |
-| **A-LRSC-23** | Misaligned `LR.D` ($addr[2:0] \neq 0$) | Load address misaligned (cause 4), `mtval = addr` |
-| **A-LRSC-24** | Misaligned `SC.D` ($addr[2:0] \neq 0$) | Store address misaligned (cause 6), `mtval = addr` |
+| **A-LRSC-21** | Misaligned `LR.W` (`addr[1:0] ≠ 0`) | Load address misaligned (cause 4), `mtval = addr` |
+| **A-LRSC-22** | Misaligned `SC.W` (`addr[1:0] ≠ 0`) | Store address misaligned (cause 6), `mtval = addr` |
+| **A-LRSC-23** | Misaligned `LR.D` (`addr[2:0] ≠ 0`) | Load address misaligned (cause 4), `mtval = addr` |
+| **A-LRSC-24** | Misaligned `SC.D` (`addr[2:0] ≠ 0`) | Store address misaligned (cause 6), `mtval = addr` |
 | **A-AMO-01** | `AMOSWAP.W` and `AMOSWAP.D` | Original value returned; memory updated with `rs2` |
 | **A-AMO-02** | `AMOADD.W` and `AMOADD.D` with positive and negative values | Correct arithmetic sum; `.W` 32-bit wrap verified |
 | **A-AMO-03** | `AMOXOR.W` and `AMOXOR.D` | Correct bitwise XOR |
@@ -471,13 +471,13 @@ If extending to coherent cached or multi-hart topologies:
 | **A-AMO-08** | `AMOMINU.W` and `AMOMINU.D` (unsigned comparison) | Minimum unsigned operand selected; unsigned boundary test |
 | **A-AMO-09** | `AMOMAXU.W` and `AMOMAXU.D` (unsigned comparison) | Maximum unsigned operand selected |
 | **A-AMO-10** | `AMO*.W` with bit 31 set | Original value sign-extended to 64 bits in `rd` |
-| **A-AMO-11** | `AMO*.W/D` with $rd == x0$ | Memory updated atomically; `x0` remains 0 |
-| **A-AMO-12** | Misaligned `AMO.W` ($addr[1:0] \neq 0$) | Store address misaligned (cause 6); no read or write |
-| **A-AMO-13** | Misaligned `AMO.D` ($addr[2:0] \neq 0$) | Store address misaligned (cause 6); no read or write |
-| **A-SYS-01** | Sv39 Page Fault: AMO on read-only page ($R=1, W=0$) | Store/AMO page fault (cause 15); memory untouched |
+| **A-AMO-11** | `AMO*.W/D` with `rd == x0` | Memory updated atomically; `x0` remains 0 |
+| **A-AMO-12** | Misaligned `AMO.W` (`addr[1:0] ≠ 0`) | Store address misaligned (cause 6); no read or write |
+| **A-AMO-13** | Misaligned `AMO.D` (`addr[2:0] ≠ 0`) | Store address misaligned (cause 6); no read or write |
+| **A-SYS-01** | Sv39 Page Fault: AMO on read-only page (`R=1, W=0`) | Store/AMO page fault (cause 15); memory untouched |
 | **A-SYS-02** | Sv39 Page Fault: AMO on execute-only page with `MXR=1` | Store/AMO page fault (cause 15); `MXR` cannot validate AMO |
-| **A-SYS-03** | Sv39 Page Fault: AMO on Svade un-dirty page ($D=0$) | Store/AMO page fault (cause 15); memory untouched |
-| **A-SYS-04** | PMP Denial: AMO on PMP read-only region ($R=1, W=0$) | Store/AMO access fault (cause 7); no physical read/store |
+| **A-SYS-03** | Sv39 Page Fault: AMO on Svade un-dirty page (`D=0`) | Store/AMO page fault (cause 15); memory untouched |
+| **A-SYS-04** | PMP Denial: AMO on PMP read-only region (`R=1, W=0`) | Store/AMO access fault (cause 7); no physical read/store |
 | **A-SYS-05** | PMP Denial: SC on PMP denied region | Store/AMO access fault (cause 7); no physical store |
 | **A-SYS-06** | Platform Bus Error: Read phase error during AMO | Store/AMO access fault (cause 7); write phase suppressed |
 | **A-SYS-07** | Platform Bus Error: Write phase error during AMO | Store/AMO access fault (cause 7); `rd` writeback suppressed; no rollback guarantee |

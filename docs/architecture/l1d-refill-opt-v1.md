@@ -39,11 +39,11 @@
 This document specifies the authoritative hardware architecture contract for **L1 Data Cache Load Critical-Word Early Restart v1 (L1D-ER v1)** for the Fursoy Slice-0 processor.
 
 The sole optimization objective in v1 is:
-$$\textbf{Early completion and retirement of the original ordinary demand load instruction only}$$
+`Early completion and retirement of the original ordinary demand load instruction only`
 
 Under the baseline architecture, an ordinary demand load instruction that misses in L1D stalls Stage E across the entire miss lifecycle:
 1. Dirty victim eviction burst (8 beats, if victim line is valid and dirty),
-2. Demand line refill burst (8 beats from DRAM in fixed sequential $0 \to 7$ order),
+2. Demand line refill burst (8 beats from DRAM in fixed sequential `0 → 7` order),
 3. Final 1-cycle cache line installation into SRAM arrays (`INSTALL`).
 
 Under L1D-ER v1, as soon as the specific requested 64-bit critical doubleword arrives from the memory interconnect and is captured into registered refill storage, the ordinary load receives its formatted data via a persistent handshake and retires to the architectural register file, allowing Stage E to resume execution of independent non-memory instructions while the remaining trailing beats of the 64-byte line refill continue in the background.
@@ -62,7 +62,7 @@ To preserve the frozen Store Buffer, Core pipeline, and single-port SRAM array c
 - **No L1D Dual-Porting:** Directory and data SRAM arrays remain strictly single-ported (1 Read/Write port).
 - **No Store-to-Load Forwarding (STLF):** STLF CAM comparators and byte-forwarding muxes remain deferred.
 - **No Store Buffer (SB) Depth Expansion:** SB depth remains 4 entries in this milestone.
-- **No Critical-Word-First (CWF) Bus Protocol Changes:** The memory bus protocol remains fixed ascending sequential ($0 \to 7$).
+- **No Critical-Word-First (CWF) Bus Protocol Changes:** The memory bus protocol remains fixed ascending sequential (`0 → 7`).
 - **No Asynchronous Dirty Eviction Buffer:** Dirty victim writeback remains strictly synchronous prior to demand refill issue.
 
 ### 1.4 Strict Architectural Invariants
@@ -143,15 +143,15 @@ When `l1d_retire_valid` asserts, `!l1d_retire_valid` deasserts, clearing `lsu_lo
 
 ### 3.1 Mathematical Definition
 For the 64-byte cache line and 8-beat 64-bit refill geometry, the critical beat index is defined strictly by physical address bits `[5:3]`:
-$$b_{\text{crit}} = \text{target\_pa\_q}[5:3] \in [0 \dots 7]$$
+`b_crit = target_pa_q[5:3] ∈ [0 ... 7]`
 Subword byte offset within that 64-bit beat is governed by:
-$$\text{byte\_offset} = \text{target\_pa\_q}[2:0] \in [0 \dots 7]$$
+`byte_offset = target_pa_q[2:0] ∈ [0 ... 7]`
 
-### 3.2 Bus Refill Ordering: Fixed Ascending ($0 \to 7$) Preserved
-L1D-ER v1 strictly preserves **Fixed Sequential ($0 \to 7$) Refill**:
-- Refill requests issue in strictly ascending order: $0, 1, 2, 3, 4, 5, 6, 7$.
+### 3.2 Bus Refill Ordering: Fixed Ascending (`0 → 7`) Preserved
+L1D-ER v1 strictly preserves **Fixed Sequential (`0 → 7`) Refill**:
+- Refill requests issue in strictly ascending order: `0, 1, 2, 3, 4, 5, 6, 7`.
 - Zero modifications to the external memory bus, memory controller, or interconnect.
-- Critical beat arrival occurs at Cycle $(2 \times b_{\text{crit}} + 2)$ of the refill phase.
+- Critical beat arrival occurs at Cycle `(2 × b_crit + 2)` of the refill phase.
 
 ---
 
@@ -200,8 +200,8 @@ Beat 7  (target_pa[5:3] == 111)          2,074 (8.62%)            2,178 (2.50%) 
 
 ### 4.3 Key Empirical Conclusions
 1. **Dirty Victims Dominate (78.37%):** 87,211 of 111,285 load misses require a dirty victim eviction. Because dirty eviction strictly precedes demand refill, the 857,809 cycles of dirty eviction latency are strictly on the critical path and **unremovable** by Early Restart.
-2. **True Weighted Average Trailing Latency is 9.5552 Cycles:** Across all 111,285 misses, the weighted average trailing latency under sequential $0 \to 7$ refill is 9.5552 cycles per miss, not the 12.0 cycles hypothesized before measurement.
-3. **Mathematical Upper Ceiling:** The absolute theoretical upper bound for trailing latency across the workload is **1,063,351 cycles** (burst + 1-cycle install). The burst-only ceiling is **952,066 cycles** ($1,063,351 - 111,285$).
+2. **True Weighted Average Trailing Latency is 9.5552 Cycles:** Across all 111,285 misses, the weighted average trailing latency under sequential `0 → 7` refill is 9.5552 cycles per miss, not the 12.0 cycles hypothesized before measurement.
+3. **Mathematical Upper Ceiling:** The absolute theoretical upper bound for trailing latency across the workload is **1,063,351 cycles** (burst + 1-cycle install). The burst-only ceiling is **952,066 cycles** (`1,063,351 - 111,285`).
 
 ---
 
@@ -264,9 +264,9 @@ logic        refill_poisoned_q;          // Latched upon bus error (P1-1)
 The single-cycle retirement pulse (`er_retire_pulse_q`) is completely eliminated. Load retirement is governed by the persistent valid register `er_retire_valid_q`.
 
 **Handshake Rules:**
-1. **Assertion:** `er_retire_valid_q` asserts on clock edge $T \to T+1$ if and only if:
+1. **Assertion:** `er_retire_valid_q` asserts on clock edge `T → T+1` if and only if:
    - State is `L1D_REFILL_RSP`,
-   - Beat $b = \text{target\_crit\_beat\_q}$ has completed handshake: `dmem_rsp_valid_i && dmem_rsp_ready_o`,
+   - Beat `b = target_crit_beat_q` has completed handshake: `dmem_rsp_valid_i && dmem_rsp_ready_o`,
    - `dmem_rsp_error_i == 1'b0` and `refill_poisoned_q == 1'b0`,
    - `target_is_ordinary_load_q == 1'b1` (strictly ordinary load),
    - `rfb_crit_consumed_q == 1'b0` (has not already been consumed).
@@ -307,10 +307,10 @@ assign l1d_redirect   = redirect_any_e;
 **Combinational Loop Freedom Proof:**
 - `er_retire_valid_q` is a sequential register output from L1D.
 - `l1d_retire_valid` drives into Core Stage E combinational stall logic:
-  $$\text{lsu\_load\_stall} = \text{is\_stage\_e\_load} \land \neg\text{l1d\_retire\_valid} \land \dots$$
+  `lsu_load_stall = is_stage_e_load && !l1d_retire_valid && ...`
 - When `er_retire_valid_q` is 1, `lsu_load_stall` becomes 0, and `stall_e` becomes 0.
 - Core combinational signal `commit_fire` evaluates to 1:
-  $$\text{commit\_fire} = \text{fe\_q.valid} \land \neg\text{stall\_e} \land \neg\text{sync\_trap\_e} \land \dots$$
+  `commit_fire = fe_q.valid && !stall_e && !sync_trap_e && ...`
 - Core drives `l1d_retire_ack = commit_fire && is_stage_e_load`.
 - Inside L1D, `l1d_retire_ack` is connected strictly to the synchronous D-flip-flop inputs of `er_retire_valid_q` and `rfb_crit_consumed_q`:
   ```systemverilog
@@ -438,7 +438,7 @@ or floating substitute that can affect behavior.
 
 ### 7.1 Normative Sequence
 For a dirty victim miss, the sequence is strictly ordered:
-$$\text{Victim Capture} \to \text{Atomic Invalidation} \to \text{Synchronous Eviction Burst} \to \text{Demand Refill} \to \text{Critical Early Restart} \to \text{Trailing Refill} \to \text{Install}$$
+`Victim Capture → Atomic Invalidation → Synchronous Eviction Burst → Demand Refill → Critical Early Restart → Trailing Refill → Install`
 
 ```mermaid
 sequenceDiagram
@@ -471,7 +471,7 @@ sequenceDiagram
 
 ### 7.2 Non-Removable Eviction Latency
 Because dirty writeback must complete before the DRAM controller accepts demand refill requests, early restart **cannot remove any of the 857,809 dirty eviction cycles**:
-$$\text{Removable}_{\text{dirty}}(b) = \max\left(0, 2 \times (7 - b) - 1\right) \text{ cycles}$$
+`Removable_dirty(b) = max(0, 2 × (7 - b) - 1) cycles`
 All eviction latency remains strictly on the critical execution path in v1.
 
 ---
@@ -516,7 +516,7 @@ Under the conservative v1 policy:
 ### 10.1 Interconnect Mutual Exclusion
 The Store Refill Buffer (`srb`) and L1D Load Refill engine share the single 64-bit DRAM bus:
 - **Invariant:** L1D Load Refill and SRB Refill are **strictly mutually exclusive**:
-  $$\text{DRAM Bus Master} \in \{\text{NONE}, \text{PTW}, \text{SRB}, \text{L1D\_LOAD}, \text{L1I}\}$$
+  `DRAM Bus Master ∈ {NONE, PTW, SRB, L1D_LOAD, L1I}`
 - If an L1D load misses while `srb_busy_o == 1`, Stage E asserts `srb_sec_load_stall` until SRB completes installation.
 - While an L1D load trailing refill is active, `srb_capture` cannot fire because SB drains are suspended.
 - Existing SRB victim snapshot, dirty accounting, and atomic way invalidation contracts remain 100% unchanged.
@@ -528,7 +528,7 @@ The Store Refill Buffer (`srb`) and L1D Load Refill engine share the single 64-b
 ### 11.1 RAW Hazard Interlock Preservation
 Before an L1D load miss can initiate in `L1D_IDLE`:
 - Frozen SB logic inspects all 4 entries for physical doubleword match:
-  $$\text{sb\_raw\_hazard} = \bigvee_{i=0}^{3} \left(\text{sb\_valid}[i] \land (\text{sb\_paddr}[i] == \text{target\_pa\_q}[55:3])\right)$$
+  `sb_raw_hazard = OR_i=0^3 (sb_valid[i] && (sb_paddr[i] == target_pa_q[55:3]))`
 - If a RAW hazard is detected, the load **stalls Stage E** until the Store Buffer drains to L1D.
 - Early restart does not modify this check: any load that initiates refill has zero uncommitted stores pending in the Store Buffer for its requested address.
 - Store-to-Load Forwarding (STLF) is strictly excluded from v1.
@@ -786,7 +786,7 @@ new L1D use even if the refill FSM has returned to `L1D_IDLE` after protocol cle
 ### 17.1 Analytical Framework & Modeling Constraints
 Under the conservative v1 interface policy (P0-2) and registered data staging (P1-4):
 1. **Registered Staging Cost:** +1 cycle per early restart (Cycle T capture into `refill_buf_q`, Cycle T+1 valid assertion).
-2. **Trailing Burst Available:** $2 \times (7 - b) - 1$ cycles of potential execution overlap.
+2. **Trailing Burst Available:** `2 × (7 - b) - 1` cycles of potential execution overlap.
 3. **Subsequent Memory Stalls:** Any subsequent load or store buffer saturation stalls Stage E until `L1D_INSTALL`.
 4. **Non-Hideable Eviction Latency:** 857,809 cycles of dirty eviction latency remain strictly unremovable.
 5. **Non-Hideable Install Bubble:** The 1-cycle `L1D_INSTALL` array write requires single-port ownership.
@@ -827,7 +827,7 @@ Upper Ceiling           (all burst + 1-cycle install hidden)
 ## 18. PPA Assessment
 
 ### 18.1 Silicon Area & Storage Overhead
-- `refill_buf_q`: 8 $\times$ 64-bit = 512 flip-flops (already present in baseline `fursoy_s0_l1d.sv`).
+- `refill_buf_q`: 8 `×` 64-bit = 512 flip-flops (already present in baseline `fursoy_s0_l1d.sv`).
 - `er_retire_rd_data_q`: 64 flip-flops (registered staging to isolate timing).
 - `er_retire_valid_q`: 1 flip-flop (persistent handshake).
 - `rfb_crit_consumed_q`: 1 flip-flop.

@@ -26,7 +26,7 @@ Following the freeze of L1D Load Critical-Word Early Restart (L1D-ER v1), the au
 - **Third Bottleneck**: SRB RAW load stalls (1,158,598 cycles, 4.7821%).
 
 ### 1.2 Mandatory Architectural Guardrails
-1. **Single Optimization Variable**: The only optimization parameter investigated in this study is **Store Buffer entry depth** ($N \in \{4, 8, 12\}$).
+1. **Single Optimization Variable**: The only optimization parameter investigated in this study is **Store Buffer entry depth** (`N ∈ {4, 8, 12}`).
 2. **Zero Production RTL Modification**: This is strictly an architectural and performance evaluation. Production RTL remains bit-for-bit identical to the frozen L1D-ER v1 baseline.
 3. **Drop-In Semantic Replacement**: The candidate architecture must preserve 100% of frozen Store Buffer v1 architectural contracts, memory visibility boundaries, and precise exception rules without requiring functional interface redesign of L1D, SRB, or SoC.
 4. **Historical Correctness Lesson**: Architectural side effects (CSR, MRET, SRET, PMP, reservation invalidation) must remain strictly coupled to the authoritative `commit_fire` event, eliminating multi-cycle stall leakage.
@@ -40,7 +40,7 @@ From the repository architecture documents (`docs/architecture/store-buffer-v1.m
 ### 2.1 Enqueue Eligibility, `commit_fire`, and Full-Buffer Release Timing
 - **Eligibility Predicate**:
   An instruction in Stage E is an ordinary DRAM store if and only if:
-  $$\text{is\_ordinary\_dram\_store} = \text{fe\_q.valid} \land \neg\text{fe\_q.fetch\_error} \land \text{lsu\_valid} \land \text{lsu\_store} \land \neg\text{lsu\_sc} \land \neg\text{lsu\_amo} \land \neg\text{lsu\_misaligned} \land \neg\text{insn\_illegal} \land \text{dtrans\_valid} \land \neg\text{dtrans\_busy} \land \neg\text{dtrans\_page\_fault} \land \text{dtrans\_pmp\_allow} \land \text{is\_dram}$$
+  `is_ordinary_dram_store = fe_q.valid && !fe_q.fetch_error && lsu_valid && lsu_store && !lsu_sc && !lsu_amo && !lsu_misaligned && !insn_illegal && dtrans_valid && !dtrans_busy && !dtrans_page_fault && dtrans_pmp_allow && is_dram`
   All synchronous exceptions (misaligned address, illegal instruction, page fault, PMP fault) and all MMIO transactions are evaluated in Stage E *before* enqueue eligibility. Faulting instructions never enter the Store Buffer.
 - **Enqueue & Commit Handshake**:
   - `enqueue_stall_o` is asserted when `count_q == SB_DEPTH` and tail merging is not possible.
@@ -58,27 +58,27 @@ From the repository architecture documents (`docs/architecture/store-buffer-v1.m
     - The incoming store is held in Stage E; it **must not** enqueue.
     - All architectural side effects and reservation invalidation remain suppressed.
     - `l1d_store_ack_i == 1` authoritatively pops the current head on the clock edge.
-    - `count_q` transitions $\text{SB\_DEPTH} \to \text{SB\_DEPTH} - 1$ (e.g. $8 \to 7$).
+    - `count_q` transitions `SB_DEPTH → SB_DEPTH - 1` (e.g. `8 → 7`).
   - **Cycle N+1 (Stall-Release Enqueue)**:
     - SB is no longer full (`count_q < SB_DEPTH`).
     - `enqueue_stall_o = 0` (assuming no other stall condition).
     - Stage E commits and enqueues the held store exactly once.
-    - `count_q` transitions back $\text{SB\_DEPTH} - 1 \to \text{SB\_DEPTH}$ (e.g. $7 \to 8$).
+    - `count_q` transitions back `SB_DEPTH - 1 → SB_DEPTH` (e.g. `7 → 8`).
   - **Prohibition of Combinational Pop Shortcut**:
     Optimizing `enqueue_stall_o` to include `!l1d_store_ack_i` is strictly forbidden. Such a term would inject a critical combinational path from L1D memory response through SB stall logic directly into `stall_e` and `commit_fire`, violating the frozen SB-v1 timing contract. The intentional 1-cycle full-buffer release bubble is a preserved, frozen architectural invariant.
 
 ### 2.2 Strict Tail-Only Merging Rule (P0-1)
 - Merging is permitted **strictly into the youngest unissued tail entry** (`tail_prev_idx = tail_q - 1`):
-  $$\text{can\_merge\_tail} = (\text{count\_q} > 0) \land \text{valid\_q}[T] \land \neg\text{issued\_q}[T] \land \neg(\text{grant\_sb\_drain\_o} \land (T == \text{head\_q})) \land (\text{paddr\_q}[T] == \text{enqueue\_pa\_i}[55:3])$$
+  `can_merge_tail = (count_q > 0) && valid_q[T] && !issued_q[T] && !(grant_sb_drain_o && (T == head_q)) && (paddr_q[T] == enqueue_pa_i[55:3])`
 - Merging into older entries, middle entries, or the active/draining head is strictly forbidden.
 - On merge, byte-mask accumulation and younger-byte overwrite precedence occur combinationally:
-  $$\text{data\_q}[T][8b+7:8b] \leftarrow \text{in\_byte\_mask}[b] \,?\, \text{in\_fmt\_data}[8b+7:8b] : \text{data\_q}[T][8b+7:8b]$$
-  $$\text{byte\_mask\_q}[T] \leftarrow \text{byte\_mask\_q}[T] \lor \text{in\_byte\_mask}$$
+  `data_q[T][8b+7:8b] ← in_byte_mask[b] ? in_fmt_data[8b+7:8b] : data_q[T][8b+7:8b]`
+  `byte_mask_q[T] ← byte_mask_q[T] || in_byte_mask`
 - `tail_q` does not advance; `count_q` does not increment.
 
 ### 2.3 Immediate Reservation Invalidation (P0-2)
 - Ordinary stores invalidate the LR/SC reservation (`res_invalidate_o`) on the **exact cycle of accepted enqueue/retirement**:
-  $$\text{res\_invalidate\_o} = \text{enqueue\_valid\_i} \land \neg\text{enqueue\_stall\_o} \land \text{res\_valid\_i} \land (\text{enqueue\_pa\_i}[55:6] == \text{res\_granule\_pa\_i})$$
+  `res_invalidate_o = enqueue_valid_i && !enqueue_stall_o && res_valid_i && (enqueue_pa_i[55:6] == res_granule_pa_i)`
 - It is never deferred to drain time, and never asserted during stall cycles.
 
 ### 2.4 Ghost Window Elimination (P0-3)
@@ -87,9 +87,9 @@ From the repository architecture documents (`docs/architecture/store-buffer-v1.m
 
 ### 2.5 Conservative Stall-on-RAW
 - Stage-E loads compare 53-bit physical doubleword address `load_check_pa_i[55:3]` against all valid entries in the Store Buffer:
-  $$\text{sb\_raw\_hazard\_comb} = \text{load\_check\_valid\_i} \land \bigvee_{i=0}^{\text{SB\_DEPTH}-1} (\text{valid\_q}[i] \land (\text{paddr\_q}[i] == \text{load\_check\_pa\_i}[55:3]))$$
+  `sb_raw_hazard_comb = load_check_valid_i && OR_i=0^SB_DEPTH-1 (valid_q[i] && (paddr_q[i] == load_check_pa_i[55:3]))`
 - In parallel, loads check coarse 64-byte line hazard against SRB:
-  $$\text{srb\_raw\_hazard\_comb} = \text{load\_check\_valid\_i} \land \text{srb\_busy\_i} \land (\text{load\_check\_pa\_i}[55:6] == \text{srb\_line\_pa\_i})$$
+  `srb_raw_hazard_comb = load_check_valid_i && srb_busy_i && (load_check_pa_i[55:6] == srb_line_pa_i)`
 - If either hazard is active, the load stalls Stage E until all matching entries have drained and acknowledged.
 
 ### 2.6 Deterministic Single-Port Arbitration (P1-1)
@@ -122,11 +122,11 @@ Diagnostic breakdown of the blocker state during these 2,681,368 full cycles:
 The overwhelming root cause (94.27%) of Store Buffer full stalls is **downstream backpressure from the single-entry Store Refill Buffer (SRB)**:
 1. When a drained store misses in L1D, it is captured into the SRB.
 2. The SRB asserts `srb_busy_q = 1` for the duration of:
-   - 64-byte dirty victim writeback to DRAM (8 beats $\approx 8 \dots 14$ cycles).
-   - 64-byte line refill from DRAM (8 beats $\approx 16 \dots 20$ cycles).
+   - 64-byte dirty victim writeback to DRAM (8 beats `≈ 8 ... 14` cycles).
+   - 64-byte line refill from DRAM (8 beats `≈ 16 ... 20` cycles).
    - Total SRB lockup duration: **25 to 35 cycles**.
 3. Under the frozen contract (`docs/architecture/l1d-srb-v1.md` §3.3), Store Buffer draining is **strictly suspended** while `srb_busy_q == 1`:
-   $$\text{sb\_drain\_eligible} = (\text{count\_q} > 0) \land \text{l1d\_idle\_i} \land \neg\text{srb\_busy\_i}$$
+   `sb_drain_eligible = (count_q > 0) && l1d_idle_i && !srb_busy_i`
 4. While SRB is busy, the Store Buffer cannot drain a single store—even stores that would result in L1D cache hits!
 5. In SB4, after 4 stores are retired in Stage E, the 5th store encounters `sb_enqueue_stall = 1`.
 6. Stage E stalls for the remainder of the ~25-cycle SRB refill duration.
@@ -134,7 +134,7 @@ The overwhelming root cause (94.27%) of Store Buffer full stalls is **downstream
 ### 3.3 Burst Absorption vs Drain Postponement
 A critical distinction must be established:
 - **Genuine Burst Absorption**: If a code sequence executes a cluster of 5–8 stores followed by substantial independent ALU/branch computation, a deeper buffer (SB8/SB12) absorbs all stores without stalling Stage E. The subsequent ALU instructions execute concurrently while SRB finishes its background refill.
-- **Unavoidable Postponement**: If a code sequence is store-dense (e.g., `memset`, block copies, page zeroing) where stores arrive every 1–2 cycles, expanding depth from 4 to 8 merely delays the pipeline stall by 4 cycles. Once the 8th entry is allocated, the core stalls for the remaining $25 - 4 = 21$ cycles. Furthermore, once SRB finishes, 8 dirty stores must drain sequentially, increasing subsequent drain tail latency and the probability of a secondary store miss.
+- **Unavoidable Postponement**: If a code sequence is store-dense (e.g., `memset`, block copies, page zeroing) where stores arrive every 1–2 cycles, expanding depth from 4 to 8 merely delays the pipeline stall by 4 cycles. Once the 8th entry is allocated, the core stalls for the remaining `25 - 4 = 21` cycles. Furthermore, once SRB finishes, 8 dirty stores must drain sequentially, increasing subsequent drain tail latency and the probability of a secondary store miss.
 
 ---
 
@@ -199,29 +199,29 @@ This closed-form calculation produces:
 
 ### 5.2 Architectural Evaluation of the Heuristic Shadow Model
 These numbers must be understood strictly as **isolated full-episode heuristic estimates**, not physical opportunity ceilings or cycle-accurate predicted speedups. The formula assumes an infinite burst density (1 store arriving every cycle during full episodes):
-1. **Underestimation on Sparse Bursts**: If a program has exactly 5 stores followed by 20 ALU instructions, SB4 stalls for ~21 cycles. An 8-entry buffer absorbs store 5 immediately, allowing all 20 ALU instructions to execute concurrently with the SRB refill. In this scenario, SB8 saves **21 cycles**, whereas the heuristic only credited **4 cycles** ($\min(L, 4)$).
+1. **Underestimation on Sparse Bursts**: If a program has exactly 5 stores followed by 20 ALU instructions, SB4 stalls for ~21 cycles. An 8-entry buffer absorbs store 5 immediately, allowing all 20 ALU instructions to execute concurrently with the SRB refill. In this scenario, SB8 saves **21 cycles**, whereas the heuristic only credited **4 cycles** (`min(L, 4)`).
 2. **Overestimation on Sustained Loops**: In block stores (`memset`), stores arrive continuously. Adding 4 entries only delays the stall by 4 cycles, saving exactly 4 cycles.
 3. **Drain Congestion and Secondary Miss Cascades**:
    - Draining 8 entries requires 8 cycles minimum.
    - At a 7.04% store miss rate, the probability that at least one of 8 queued stores misses upon draining is:
-     $$P(\ge 1 \text{ miss}) = 1 - (1 - 0.0704)^8 = 1 - 0.556 = 44.4\%$$
+     `P(≥ 1 miss) = 1 - (1 - 0.0704)^8 = 1 - 0.556 = 44.4%`
    - In 44.4% of deep queues, draining triggers another immediate SRB lockup, completely negating part of the absorbed benefit.
 4. **Increased Load RAW Stalls**: With 8 or 12 entries, subsequent loads collide with queued stores more frequently, converting SB-full stalls into SB-RAW stalls.
 5. **Measured Post-SB8 Empirical Ground Truth**:
-   The old SB4 heuristic (~518,474 cycles) did not model subsequent instruction concurrency, changed queue residency, changed store clustering, emergent tail merging, or downstream timing changes. During authoritative full-workload execution (`results/perf-sb8-s0.json`), actual measured SB8 cycle savings reached **1,213,488 cycles** (a **5.0086% runtime reduction**; IPC 0.615170 $\to$ 0.647560), confirming that the old heuristic was an isolated under-estimate, not an upper ceiling.
+   The old SB4 heuristic (~518,474 cycles) did not model subsequent instruction concurrency, changed queue residency, changed store clustering, emergent tail merging, or downstream timing changes. During authoritative full-workload execution (`results/perf-sb8-s0.json`), actual measured SB8 cycle savings reached **1,213,488 cycles** (a **5.0086% runtime reduction**; IPC 0.615170 `→` 0.647560), confirming that the old heuristic was an isolated under-estimate, not an upper ceiling.
 
 ---
 
 ## 6. Architecture Candidate A: SB8 (8-Entry FIFO)
 
 ### 6.1 Microarchitectural Specification
-- **Storage**: 8 entries $\times$ 231 bits = 1,848 payload flip-flops (+924 FFs vs SB4). Including control pointers and occupancy counter (+2 FFs), total incremental storage is **~926 FFs** (934 $\to$ 1,860 FFs total). This is strictly an analytical structural RTL bit-count estimate; no physical synthesis evidence exists yet.
+- **Storage**: 8 entries `×` 231 bits = 1,848 payload flip-flops (+924 FFs vs SB4). Including control pointers and occupancy counter (+2 FFs), total incremental storage is **~926 FFs** (934 `→` 1,860 FFs total). This is strictly an analytical structural RTL bit-count estimate; no physical synthesis evidence exists yet.
   - `valid_q[7:0]`, `issued_q[7:0]`, `paddr_q[7:0][52:0]`, `data_q[7:0][63:0]`, `byte_mask_q[7:0][7:0]`, `size_q[7:0][2:0]`, `rd_q[7:0][4:0]`, `pc_q[7:0][63:0]`, `insn_q[7:0][31:0]`.
 - **Pointers & Counters**:
-  - `head_q[2:0]`: 3-bit read pointer. Increments modulo 8 ($7 \to 0$ naturally).
-  - `tail_q[2:0]`: 3-bit write pointer. Increments modulo 8 ($7 \to 0$ naturally).
-  - `tail_prev_idx`: `tail_q - 3'd1` (natural 3-bit unsigned underflow: $0 - 1 = 7$).
-  - `count_q[3:0]`: 4-bit occupancy counter ($0 \dots 8$).
+  - `head_q[2:0]`: 3-bit read pointer. Increments modulo 8 (`7 → 0` naturally).
+  - `tail_q[2:0]`: 3-bit write pointer. Increments modulo 8 (`7 → 0` naturally).
+  - `tail_prev_idx`: `tail_q - 3'd1` (natural 3-bit unsigned underflow: `0 - 1 = 7`).
+  - `count_q[3:0]`: 4-bit occupancy counter (`0 ... 8`).
   - `sb_full_o`: `count_q == 4'd8`.
   - `sb_empty_o`: `count_q == 4'd0`.
 - **Full-Buffer Release Bubble**: Preserves the frozen SB-v1 1-cycle stall-release bubble. When `count_q == 8`, `enqueue_stall_o` asserts unconditionally; an acknowledgement pulse `l1d_store_ack_i` on Cycle N pops the head and decrements `count_q` to 7 on the clock edge, permitting the held Stage-E store to commit and enqueue on Cycle N+1.
@@ -235,16 +235,16 @@ These numbers must be understood strictly as **isolated full-episode heuristic e
 ## 7. Architecture Candidate B: SB12 (12-Entry FIFO)
 
 ### 7.1 Microarchitectural Specification
-- **Storage**: 12 entries $\times$ 231 bits = 2,772 flip-flops (+1,848 FFs vs SB4).
+- **Storage**: 12 entries `×` 231 bits = 2,772 flip-flops (+1,848 FFs vs SB4).
 - **Pointers & Modulo Wrap**:
   - Requires 4-bit pointers `head_q[3:0]` and `tail_q[3:0]`.
-  - Valid range: $0 \dots 11$.
+  - Valid range: `0 ... 11`.
   - Explicit modulo wrap logic:
-    $$\text{head\_next} = (\text{head\_q} == 4\text{'d}11) \,?\, 4\text{'d}0 : (\text{head\_q} + 4\text{'d}1)$$
-    $$\text{tail\_next} = (\text{tail\_q} == 4\text{'d}11) \,?\, 4\text{'d}0 : (\text{tail\_q} + 4\text{'d}1)$$
-    $$\text{tail\_prev\_idx} = (\text{tail\_q} == 4\text{'d}0) \,?\, 4\text{'d}11 : (\text{tail\_q} - 4\text{'d}1)$$
-  - While explicit 11 $\to$ 0 wrap is conventional synchronous RTL and fully verifiable, states $12 \dots 15$ represent an unused state space in 4-bit registers, requiring explicit verification coverage and defensive handling compared to natural power-of-two rollover.
-- **Counter**: `count_q[3:0]` ($0 \dots 12$). `sb_full_o = (count_q == 4'd12)`.
+    `head_next = (head_q == 4'd11) ? 4'd0 : (head_q + 4'd1)`
+    `tail_next = (tail_q == 4'd11) ? 4'd0 : (tail_q + 4'd1)`
+    `tail_prev_idx = (tail_q == 4'd0) ? 4'd11 : (tail_q - 4'd1)`
+  - While explicit 11 `→` 0 wrap is conventional synchronous RTL and fully verifiable, states `12 ... 15` represent an unused state space in 4-bit registers, requiring explicit verification coverage and defensive handling compared to natural power-of-two rollover.
+- **Counter**: `count_q[3:0]` (`0 ... 12`). `sb_full_o = (count_q == 4'd12)`.
 - **RAW Detection**: 12 parallel 53-bit comparators (636 comparator bits), reduced via an irregular 12-input OR tree (3–4 logic levels).
 - **Drain Muxing**: Irregular 12-to-1 230-bit multiplexer, adding 2–3 LUT levels in FPGA.
 
@@ -255,7 +255,7 @@ These numbers must be understood strictly as **isolated full-episode heuristic e
 | Parameter | 4 Entries (SB4) | 8 Entries (SB8) | 12 Entries (SB12) | Full Associative CAM (8 entries) |
 | :--- | :---: | :---: | :---: | :---: |
 | **Merge Policy** | Tail-only | Tail-only | Tail-only | Full 8-entry parallel search |
-| **PA Comparators** | 1 $\times$ 53-bit | 1 $\times$ 53-bit | 1 $\times$ 53-bit | 8 $\times$ 53-bit (424 bits) |
+| **PA Comparators** | 1 `×` 53-bit | 1 `×` 53-bit | 1 `×` 53-bit | 8 `×` 53-bit (424 bits) |
 | **Priority Logic** | None | None | None | 8-to-3 priority encoder |
 | **Write Muxing** | Tail slot only | Tail slot only | Tail slot only | 8-way byte-enable write bus |
 | **Critical Path Impact**| 0 ns | 0 ns | 0 ns | Adds structural stall delay |
@@ -276,9 +276,9 @@ In Fursoy Slice-0's 2-stage organization, the load RAW hazard check lies on one 
 ```
 
 ### 9.2 Scaling Across Depth Options (Pre-Synthesis Structural Projections)
-- **SB4**: 4 comparators (212 XORs), 4-bit OR (1 LUT level). Analytical pre-synthesis delay projection $\approx 0.45$ ns.
-- **SB8**: 8 comparators (424 XORs), 8-bit OR (2 LUT levels). Analytical pre-synthesis delay projection $\approx 0.68$ ns (+0.23 ns structural adder). Fits cleanly within standard cycle time margins without degrading core clock target.
-- **SB12**: 12 comparators (636 XORs), 12-bit OR (3 LUT levels). High fanout of `dtrans_pa` across 12 distributed register slices. Analytical pre-synthesis delay projection $\approx 0.98$ ns (+0.53 ns structural adder). Directly increases timing risk on FPGA routing and tight ASIC corners.
+- **SB4**: 4 comparators (212 XORs), 4-bit OR (1 LUT level). Analytical pre-synthesis delay projection `≈ 0.45` ns.
+- **SB8**: 8 comparators (424 XORs), 8-bit OR (2 LUT levels). Analytical pre-synthesis delay projection `≈ 0.68` ns (+0.23 ns structural adder). Fits cleanly within standard cycle time margins without degrading core clock target.
+- **SB12**: 12 comparators (636 XORs), 12-bit OR (3 LUT levels). High fanout of `dtrans_pa` across 12 distributed register slices. Analytical pre-synthesis delay projection `≈ 0.98` ns (+0.53 ns structural adder). Directly increases timing risk on FPGA routing and tight ASIC corners.
 
 *(Note: All timing values are analytical pre-synthesis structural projections; they do not represent physical post-synthesis/STA evidence).*
 
@@ -320,11 +320,11 @@ Accounting for secondary effects (burst continuation, drain congestion, secondar
 
 | Component / Metric | SB4 (Frozen Baseline) | SB8 (Candidate A) | SB12 (Candidate B) |
 | :--- | :---: | :---: | :---: |
-| **Payload Storage (FFs)** | 924 FFs (4 $\times$ 231) | 1,848 FFs (+100%) | 2,772 FFs (+200%) |
+| **Payload Storage (FFs)** | 924 FFs (4 `×` 231) | 1,848 FFs (+100%) | 2,772 FFs (+200%) |
 | **Pointers & Counters (FFs)** | 10 FFs | 12 FFs (+2 FFs) | 14 FFs (+4 FFs) |
 | **Total Flip-Flops** | 934 FFs | **1,860 FFs (+99.1%)** | **2,786 FFs (+198.3%)** |
-| **Merge Comparators** | 1 $\times$ 53-bit | 1 $\times$ 53-bit (0 growth) | 1 $\times$ 53-bit (0 growth) |
-| **RAW Comparators** | 4 $\times$ 53-bit (212 bits) | 8 $\times$ 53-bit (424 bits) | 12 $\times$ 53-bit (636 bits) |
+| **Merge Comparators** | 1 `×` 53-bit | 1 `×` 53-bit (0 growth) | 1 `×` 53-bit (0 growth) |
+| **RAW Comparators** | 4 `×` 53-bit (212 bits) | 8 `×` 53-bit (424 bits) | 12 `×` 53-bit (636 bits) |
 | **Drain Multiplexer** | 4:1 (230 bits) | 8:1 (230 bits, power-of-2) | 12:1 (230 bits, irregular) |
 | **FPGA Resource Projection** | ~135 LUTs, 934 FFs | ~310 LUTs, 1,860 FFs | ~550 LUTs, 2,786 FFs |
 | **FPGA Timing Projection** | Pre-synthesis: Clean | Pre-synthesis: Safe (~130–140 MHz est.) | Pre-synthesis: Constrained (~105–115 MHz est.) |
@@ -342,11 +342,11 @@ Accounting for secondary effects (burst continuation, drain congestion, secondar
    - SB8 preserves strict gating: every architectural update requires `commit_fire == 1`.
    - In SB8, even if Stage E stalls for 25+ cycles during an SB-full episode, no architectural state change can occur.
 2. **Pointer Wrap Verification**:
-   - SB8 utilizes 3-bit pointers `head_q[2:0]` and `tail_q[2:0]`. Binary addition naturally wraps $7 \to 0$ without comparators. The state space is mathematically closed.
-   - SB12 utilizes 4-bit pointers with modulo 12 wrap ($11 \to 0$). While standard synchronous logic, states $12 \dots 15$ require explicit verification and assertion coverage to prove no illegal states can be entered.
+   - SB8 utilizes 3-bit pointers `head_q[2:0]` and `tail_q[2:0]`. Binary addition naturally wraps `7 → 0` without comparators. The state space is mathematically closed.
+   - SB12 utilizes 4-bit pointers with modulo 12 wrap (`11 → 0`). While standard synchronous logic, states `12 ... 15` require explicit verification and assertion coverage to prove no illegal states can be entered.
 3. **Simultaneous Enqueue and Dequeue at Non-Full vs Full**:
    - For `count_q < SB_DEPTH`: Simultaneous enqueue and dequeue is supported, advancing both pointers and holding `count_q` constant.
-   - For `count_q == SB_DEPTH` (Full Buffer): In accordance with frozen SB-v1 timing, `enqueue_stall_o` asserts combinationally without observing `l1d_store_ack_i`. If an acknowledgement arrives on Cycle N, the head pops, decrementing `count_q` to $\text{SB\_DEPTH} - 1$ on the clock edge while Stage E stalls. The held store commits and enqueues on Cycle N+1. This 1-cycle release bubble guarantees exactly-once commitment and preserves timing boundaries.
+   - For `count_q == SB_DEPTH` (Full Buffer): In accordance with frozen SB-v1 timing, `enqueue_stall_o` asserts combinationally without observing `l1d_store_ack_i`. If an acknowledgement arrives on Cycle N, the head pops, decrementing `count_q` to `SB_DEPTH - 1` on the clock edge while Stage E stalls. The held store commits and enqueues on Cycle N+1. This 1-cycle release bubble guarantees exactly-once commitment and preserves timing boundaries.
 4. **Reservation Invalidation (`LR/SC`)**:
    - Evaluated on exact enqueue cycle (`!enqueue_stall_o`). Preserved bit-for-bit.
 
@@ -356,7 +356,7 @@ Accounting for secondary effects (burst continuation, drain congestion, secondar
 
 ### 14.1 Directed Adversarial Suite Specification (38 Scenarios)
 The prospective RTL implementation of SB-v2 must pass an expanded 38-scenario adversarial test suite:
-- **Baseline Invariants (Scenarios 1–33)**: All 33 existing scenarios from `verification/sb_s0_tb.cpp` executed with $N=8$, verifying FIFO ordering, tail merging, RAW stalls, ghost window elimination, arbitration bounds, LR/SC invalidation, CSR/MRET/SRET isolation, and reset.
+- **Baseline Invariants (Scenarios 1–33)**: All 33 existing scenarios from `verification/sb_s0_tb.cpp` executed with `N=8`, verifying FIFO ordering, tail merging, RAW stalls, ghost window elimination, arbitration bounds, LR/SC invalidation, CSR/MRET/SRET isolation, and reset.
 - **SB8-Specific Scenarios (Scenarios 34–38)**:
   - `SB-CAP-01`: Consecutive store burst filling all 8 entries without pipeline stall; 9th store triggers backpressure stall.
   - `SB-CAP-02` (Full-Buffer 1-Cycle Release Bubble):
@@ -366,9 +366,9 @@ The prospective RTL implementation of SB-v2 must pass an expanded 38-scenario ad
     4. `enqueue_stall_o == 1`, `stall_e == 1`, `commit_fire == 0`.
     5. `res_invalidate_o` does NOT pulse for the held store during the full stall.
     6. The already-issued head receives `l1d_store_ack_i == 1`.
-    7. Exactly one head entry pops on the clock edge; `count_q` transitions 8 $\to$ 7.
+    7. Exactly one head entry pops on the clock edge; `count_q` transitions 8 `→` 7.
     8. The held Stage-E store remains intact without corruption.
-    9. On Cycle N+1, `enqueue_stall_o == 0`; store commits/enqueues exactly once (`count_q` transitions 7 $\to$ 8).
+    9. On Cycle N+1, `enqueue_stall_o == 0`; store commits/enqueues exactly once (`count_q` transitions 7 `→` 8).
     10. Reservation invalidation occurs exactly once on the accepted enqueue (Cycle N+1) if its granule matches.
     11. Zero RF/CSR/PMP/MRET/SRET or architectural side effects duplicate across the stall.
   - `SB-CAP-03`: Continuous circular pointer wrap across 10,000+ random store transactions.
@@ -397,7 +397,7 @@ An audit of the testbenches identified hardcoded depth-4 assumptions that were m
    - Widened entry loops from `i < 4` to `i < 8` for coalescing and RAW diagnostic checks.
    - Updated full-buffer detection from `count_q == 4` to `count_q == 8`.
    - Extended occupancy distribution telemetry and arrays from 5 bins (`0..4`) to 9 bins (`0..8`, `occ_0`..`occ_8`).
-   - Re-anchored shadow FIFO models to real SB8 baseline (`d10`, `d12`, `d16` representing $+2, +4, +8$).
+   - Re-anchored shadow FIFO models to real SB8 baseline (`d10`, `d12`, `d16` representing `+2, +4, +8`).
 2. **Core, L1D, and SRB Testbenches (`verification/pipeline_s0_tb.cpp`, `verification/l1d_s0_tb.cpp`, `verification/srb_s0_tb.cpp`)**:
    - Mechanically adapted Store Buffer memory-helper/internal mirror loops from inspecting `i < 4` to `i < 8` so stores resident in slots 4..7 are visible to existing testbench helper logic.
    - These changes did NOT weaken tests, did NOT alter pass criteria, and did NOT change stimulus semantics.
@@ -436,14 +436,14 @@ An audit of the testbenches identified hardcoded depth-4 assumptions that were m
 | **Expected Total Execution Cycles**| 24,227,980 | **~23,888,000 cycles** | ~23,678,000 cycles |
 | **Expected IPC** | 0.61517 | **~0.6240 IPC** | ~0.6295 IPC |
 | **Storage Flip-Flops** | 934 FFs | **1,860 FFs (+926 FFs)** | 2,786 FFs (+1,852 FFs) |
-| **Merge Comparators** | 1 $\times$ 53-bit | 1 $\times$ 53-bit (0 growth) | 1 $\times$ 53-bit (0 growth) |
-| **RAW Comparators** | 4 $\times$ 53-bit (212 bits) | 8 $\times$ 53-bit (424 bits) | 12 $\times$ 53-bit (636 bits) |
+| **Merge Comparators** | 1 `×` 53-bit | 1 `×` 53-bit (0 growth) | 1 `×` 53-bit (0 growth) |
+| **RAW Comparators** | 4 `×` 53-bit (212 bits) | 8 `×` 53-bit (424 bits) | 12 `×` 53-bit (636 bits) |
 | **Drain Multiplexer** | 4:1 (230 bits) | 8:1 (clean power-of-2) | 12:1 (irregular muxing) |
 | **Pointer Management** | 2-bit natural binary wrap| 3-bit natural binary wrap| 4-bit non-power-of-2 modulo |
-| **Illegal Pointer States** | 0 | **0 (mathematically closed)**| 4 states ($12 \dots 15$) |
-| **Timing Criticality ($F_{\max}$)**| Baseline | **Pre-synthesis: Safe margin** | Pre-synthesis: Moderate-to-High risk |
+| **Illegal Pointer States** | 0 | **0 (mathematically closed)**| 4 states (`12 ... 15`) |
+| **Timing Criticality (`F_max`)**| Baseline | **Pre-synthesis: Safe margin** | Pre-synthesis: Moderate-to-High risk |
 | **FPGA LUT / FF Overhead** | ~135 LUTs / 934 FFs (pre-syn)| ~310 LUTs / 1,860 FFs (pre-syn)| ~550 LUTs / 2,786 FFs (pre-syn)|
-| **Correctness & Modulo Risk** | Zero (Proven) | **Very Low (natural wrap)** | Low-Moderate (11 $\to$ 0 wrap verifiable)|
+| **Correctness & Modulo Risk** | Zero (Proven) | **Very Low (natural wrap)** | Low-Moderate (11 `→` 0 wrap verifiable)|
 | **Verification Burden** | 33 passed tests | **Low-Moderate (clean wrap)**| High (non-power-of-2 state coverage)|
 | **Interface Compatibility** | Baseline | **100% drop-in plug-compatible**| **100% drop-in plug-compatible**|
 | **Confidence in Realization** | High | **HIGH** | Medium |
@@ -451,12 +451,12 @@ An audit of the testbenches identified hardcoded depth-4 assumptions that were m
 ### 16.2 Architectural Selection
 The architecture study concludes with a single, unambiguous recommendation:
 
-$$\mathbf{RECOMMEND \; SB8}$$
+`RECOMMEND SB8`
 
 **Architectural Justification**:
 1. **Optimal ROI Balance**: SB8 captures the steep, high-return portion of the burst absorption curve (~340k realistic cycles saved, ~1.4% wall-clock reduction) for a modest investment of 926 flip-flops.
-2. **Binary Mathematical Elegance**: 3-bit pointers wrap naturally ($7 \to 0$), eliminating all non-power-of-two modulo comparators and illegal pointer states.
-3. **Timing Safety**: 8 parallel 53-bit comparators and an 8-bit OR reduction tree fit cleanly within the critical Stage-E DTLB-to-commit timing budget without compromising core clock frequency. SB12 adds 50% more comparator fanout and irregular 12-to-1 multiplexing, creating substantial $F_{\max}$ risk.
+2. **Binary Mathematical Elegance**: 3-bit pointers wrap naturally (`7 → 0`), eliminating all non-power-of-two modulo comparators and illegal pointer states.
+3. **Timing Safety**: 8 parallel 53-bit comparators and an 8-bit OR reduction tree fit cleanly within the critical Stage-E DTLB-to-commit timing budget without compromising core clock frequency. SB12 adds 50% more comparator fanout and irregular 12-to-1 multiplexing, creating substantial `F_max` risk.
 4. **Diminishing Returns of SB12**: Beyond depth 8, the marginal gain drops significantly because 94.27% of stalls remain fundamentally bounded by the single-entry SRB refill latency.
 
 ---

@@ -20,7 +20,7 @@ The TLB acts strictly as a **translation caching acceleration** for the frozen, 
 ### 1.2 Non-Goals and Deferred Features
 The following features are explicitly deferred:
 - Multi-hart TLB invalidation broadcasting / hardware shootdown (unsupported on single-hart Slice-0).
-- Nonzero ASID support (`ASIDLEN = 0` remains normative; all translations reside in the single address space).
+- Nonzero ASID support in Slice-0 (`ASIDLEN = 0`; Slice-1 `fursoy_s1_itlb`/`fursoy_s1_dtlb` implement full `16`-bit ASIDs in `satp[59:44]`, localized 3-bit Tree-PLRU across `64`-entry 4-way base TLBs + `8`-entry 2M/1G CAMs, and `global_map` preservation across `rs2 != x0` `SFENCE.VMA`).
 - Speculative page table walks or prefetching.
 - Hardware A/D bit updates (`Svadu` is unsupported; `Svade` fault-on-clear remains frozen).
 - Sub-page permissions or NAPOT translations (`Svnapot` is unsupported).
@@ -47,7 +47,7 @@ To align with the independent instruction-fetch frontend (`fursoy_s0_fetch`) and
   - **DTLB**: 16 entries.
   - **Total**: 32 translation entries.
 - **Associativity**: **Fully Associative**.
-- **Replacement Policy**: **True Least-Recently Used (True-LRU)** maintained via a standard $16 \times 16$ triangular age matrix (120 state bits per TLB).
+- **Replacement Policy**: **True Least-Recently Used (True-LRU)** maintained via a standard `16 × 16` triangular age matrix (120 state bits per TLB).
 
 #### Associativity Rationale
 Sv39 natively specifies three distinct leaf page granularities: 4 KiB pages, 2 MiB megapages, and 1 GiB gigapages.
@@ -83,7 +83,7 @@ The TLB supports all three standard Sv39 leaf page sizes as defined in RISC-V Pr
 Superpage alignment checks (`PTE.PPN[0] == 0` for 2 MiB, `PTE.PPN[1:0] == 0` for 1 GiB) are performed by the PTW prior to insertion into the TLB. Misaligned superpages raise an immediate page fault and are never installed.
 
 ### 3.2 Tag Matching Rules
-Let `req_vpn` be the 27-bit virtual page number of the incoming virtual address (`req_va[38:12]`). For entry $k$, a match occurs if and only if:
+Let `req_vpn` be the 27-bit virtual page number of the incoming virtual address (`req_va[38:12]`). For entry `k`, a match occurs if and only if:
 
 ```text
 match[k] = valid[k] && (
@@ -94,7 +94,7 @@ match[k] = valid[k] && (
 ```
 
 ### 3.3 Physical Address Formation
-On a matching hit in entry $k$, the translated 56-bit physical address `pa[55:0]` is constructed combinationally by merging the entry PPN with the unmasked low bits of the incoming virtual address:
+On a matching hit in entry `k`, the translated 56-bit physical address `pa[55:0]` is constructed combinationally by merging the entry PPN with the unmasked low bits of the incoming virtual address:
 
 ```text
 pa[55:0] =
@@ -111,34 +111,34 @@ The upper 8 bits (`pa[63:56]`) are zero-extended on the physical bus interfaces.
 
 ### 4.1 Cached Static Metadata vs Dynamic Architectural State
 The TLB caches only **static PTE metadata** (`U, G, R, W, X, A, D`). All permission evaluations occur against the **live dynamic architectural state** of the core at the cycle of access:
-- Current privilege mode: `priv_mode` ($P \in \{M, S, U\}$).
-- Effective data privilege: $D_{\text{eff}} = (P == M \land \text{mstatus.MPRV}) \ ? \ \text{mstatus.MPP} : P$.
+- Current privilege mode: `priv_mode` (`P ∈ {M, S, U}`).
+- Effective data privilege: `D_eff = (P == M && mstatus.MPRV) ? mstatus.MPP : P`.
 - Status register bits: `mstatus.SUM` (or `sstatus.SUM`) and `mstatus.MXR` (or `sstatus.MXR`).
 
 *Consequence*: Modifying `SUM`, `MXR`, or `MPRV` takes effect on the very next cycle without requiring an `SFENCE.VMA` flush.
 
 ### 4.2 ITLB Hit Permission Checks
-On an ITLB hit in entry $k$ for instruction fetch at privilege $P$:
+On an ITLB hit in entry `k` for instruction fetch at privilege `P`:
 1. **Privilege Check**:
-   - If $P == U$: requires $\text{entry}_k.u == 1$. Violation $\rightarrow$ Instruction Page Fault (cause 12).
-   - If $P == S$: requires $\text{entry}_k.u == 0$ (Supervisor execution of User pages is strictly prohibited, regardless of `SUM`). Violation $\rightarrow$ Instruction Page Fault (cause 12).
+   - If `P == U`: requires `entry_k.u == 1`. Violation → Instruction Page Fault (cause 12).
+   - If `P == S`: requires `entry_k.u == 0` (Supervisor execution of User pages is strictly prohibited, regardless of `SUM`). Violation → Instruction Page Fault (cause 12).
 2. **Execute Permission**:
-   - Requires $\text{entry}_k.x == 1$. Violation $\rightarrow$ Instruction Page Fault (cause 12).
+   - Requires `entry_k.x == 1`. Violation → Instruction Page Fault (cause 12).
 3. **Accessed Bit (Svade)**:
-   - Requires $\text{entry}_k.a == 1$. Violation $\rightarrow$ Instruction Page Fault (cause 12).
+   - Requires `entry_k.a == 1`. Violation → Instruction Page Fault (cause 12).
 
 ### 4.3 DTLB Hit Permission Checks
-On a DTLB hit in entry $k$ for load, store, or AMO at effective privilege $D_{\text{eff}}$:
+On a DTLB hit in entry `k` for load, store, or AMO at effective privilege `D_eff`:
 1. **Privilege Check**:
-   - If $D_{\text{eff}} == U$: requires $\text{entry}_k.u == 1$. Violation $\rightarrow$ Load Page Fault (cause 13) or Store/AMO Page Fault (cause 15).
-   - If $D_{\text{eff}} == S$: if $\text{entry}_k.u == 1$, requires `sstatus.SUM == 1`. Violation $\rightarrow$ Load Page Fault (cause 13) or Store/AMO Page Fault (cause 15).
+   - If `D_eff == U`: requires `entry_k.u == 1`. Violation → Load Page Fault (cause 13) or Store/AMO Page Fault (cause 15).
+   - If `D_eff == S`: if `entry_k.u == 1`, requires `sstatus.SUM == 1`. Violation → Load Page Fault (cause 13) or Store/AMO Page Fault (cause 15).
 2. **Read / Write Permission**:
-   - For Load: requires $\text{entry}_k.r == 1 \lor (\text{sstatus.MXR} == 1 \land \text{entry}_k.x == 1)$. Violation $\rightarrow$ Load Page Fault (cause 13).
-   - For Store: requires $\text{entry}_k.w == 1$. Violation $\rightarrow$ Store/AMO Page Fault (cause 15).
-   - For AMO (RV64A): requires **both** read and write permission ($\text{entry}_k.r == 1 \land \text{entry}_k.w == 1$). Violation $\rightarrow$ Store/AMO Page Fault (cause 15).
+   - For Load: requires `entry_k.r == 1 || (sstatus.MXR == 1 && entry_k.x == 1)`. Violation → Load Page Fault (cause 13).
+   - For Store: requires `entry_k.w == 1`. Violation → Store/AMO Page Fault (cause 15).
+   - For AMO (RV64A): requires **both** read and write permission (`entry_k.r == 1 && entry_k.w == 1`). Violation → Store/AMO Page Fault (cause 15).
 3. **Accessed and Dirty Bits (Svade)**:
-   - All data accesses require $\text{entry}_k.a == 1$. Violation $\rightarrow$ cause 13 (load) or cause 15 (store/AMO).
-   - Store and AMO accesses additionally require $\text{entry}_k.d == 1$. Violation $\rightarrow$ Store/AMO Page Fault (cause 15).
+   - All data accesses require `entry_k.a == 1`. Violation → cause 13 (load) or cause 15 (store/AMO).
+   - Store and AMO accesses additionally require `entry_k.d == 1`. Violation → Store/AMO Page Fault (cause 15).
 
 ---
 
@@ -247,7 +247,7 @@ An `SFENCE.VMA` instruction:
 ## 8. `satp` Write Serialization and Invalidation
 
 ### 8.1 Required Serialization
-Writing to `satp` (CSR 0x180) changes translation mode (`Bare` $\leftrightarrow$ `Sv39`) or the root page table pointer (`PPN`).
+Writing to `satp` (CSR 0x180) changes translation mode (`Bare` → `Sv39`) or the root page table pointer (`PPN`).
 Although the RISC-V Privileged specification mandates that software must execute `SFENCE.VMA` to order page-table changes across address spaces, hardware safety requires deterministic behavior across mode changes.
 
 ### 8.2 Invalidation Contract
@@ -263,13 +263,13 @@ To eliminate stale translation risks across address spaces:
 | :--- | :---: | :---: | :---: | :--- | :--- |
 | **M-mode** | Any | 0 | Any | Bypass TLB; physical access | Bypass TLB; physical access |
 | **M-mode** | Bare (0) | 1 | Any | Bypass TLB; physical access | Bypass TLB; physical access |
-| **M-mode** | Sv39 (8) | 1 | M (3) | Bypass TLB; physical access | **Bypass TLB; physical access** ($D_{\text{eff}} = M$) |
-| **M-mode** | Sv39 (8) | 1 | S (1) | Bypass TLB; physical access | **Translate via DTLB** using $D_{\text{eff}} = S$ |
-| **M-mode** | Sv39 (8) | 1 | U (0) | Bypass TLB; physical access | **Translate via DTLB** using $D_{\text{eff}} = U$ |
+| **M-mode** | Sv39 (8) | 1 | M (3) | Bypass TLB; physical access | **Bypass TLB; physical access** (`D_eff = M`) |
+| **M-mode** | Sv39 (8) | 1 | S (1) | Bypass TLB; physical access | **Translate via DTLB** using `D_eff = S` |
+| **M-mode** | Sv39 (8) | 1 | U (0) | Bypass TLB; physical access | **Translate via DTLB** using `D_eff = U` |
 | **S-mode** | Bare (0) | X | Any | Bypass TLB; physical access | Bypass TLB; physical access |
-| **S-mode** | Sv39 (8) | X | Any | **Translate via ITLB** ($P = S$) | **Translate via DTLB** ($D_{\text{eff}} = S$) |
+| **S-mode** | Sv39 (8) | X | Any | **Translate via ITLB** (`P = S`) | **Translate via DTLB** (`D_eff = S`) |
 | **U-mode** | Bare (0) | X | Any | Bypass TLB; physical access | Bypass TLB; physical access |
-| **U-mode** | Sv39 (8) | X | Any | **Translate via ITLB** ($P = U$) | **Translate via DTLB** ($D_{\text{eff}} = U$) |
+| **U-mode** | Sv39 (8) | X | Any | **Translate via ITLB** (`P = U`) | **Translate via DTLB** (`D_eff = U`) |
 
 *Rule*: Bypassed accesses never probe, allocate, or update the TLB. In particular, when `mstatus.MPRV == 1` but `mstatus.MPP == 2'b11` (M-mode), explicit M-mode data accesses bypass translation completely in conformance with the RISC-V Privileged ISA.
 
@@ -284,7 +284,7 @@ Fursoy Slice-0 implements the **Svade** architecture (Section 7 of `sv39-mmu-v1.
   - If `D == 0` on a store or AMO: immediately raises Store/AMO Page Fault (cause 15).
 - On a TLB miss:
   - The PTW enforces `A == 1` (and `D == 1` for stores) before allowing leaf completion.
-  - A leaf installed by a load may have $D = 0$. If a subsequent store hits this entry, the DTLB hit logic detects $D == 0$ combinationally and raises Store Page Fault (cause 15). Software handles the trap, updates the PTE dirty bit in memory, issues `SFENCE.VMA`, and re-executes.
+  - A leaf installed by a load may have `D = 0`. If a subsequent store hits this entry, the DTLB hit logic detects `D == 0` combinationally and raises Store Page Fault (cause 15). Software handles the trap, updates the PTE dirty bit in memory, issues `SFENCE.VMA`, and re-executes.
 
 ---
 
@@ -321,7 +321,7 @@ A faulting access never updates architectural state:
    - If write permission is denied (e.g. read-only page), SC raises Store Page Fault (cause 15) even if the reservation is invalid.
    - If valid and permitted, reservation match is verified against `pa[55:0]`.
 3. **Atomic Memory Operations (AMO)**:
-   - Evaluated through DTLB requiring dual Read and Write permissions ($R=1 \land W=1$) and $D=1$.
+   - Evaluated through DTLB requiring dual Read and Write permissions (`R=1 && W=1`) and `D=1`.
    - A single DTLB lookup translation provides the physical address for both the read and write phases of the atomic RMW sequence.
 
 ---
@@ -347,8 +347,8 @@ A faulting access never updates architectural state:
 The implementation must be validated against a dedicated testbench suite (`verification/tlb_s0_tb.cpp` / `tools/run_tlb_s0.py`) covering at least 30 targeted scenarios:
 
 1. **Basic Functionality & Capacity**:
-   - ITLB cold miss $\rightarrow$ PTW walk $\rightarrow$ refill $\rightarrow$ consecutive hit (0-stall).
-   - DTLB cold miss $\rightarrow$ PTW walk $\rightarrow$ refill $\rightarrow$ consecutive hit (0-stall).
+   - ITLB cold miss → PTW walk → refill → consecutive hit (0-stall).
+   - DTLB cold miss → PTW walk → refill → consecutive hit (0-stall).
    - True-LRU replacement verification across all 16 entries (verifying entry 0 eviction upon 17th unique page insertion).
 2. **Superpage Translations**:
    - 4 KiB leaf translation and physical address formation.
@@ -362,8 +362,8 @@ The implementation must be validated against a dedicated testbench suite (`verif
    - Dynamic toggle: setting `sstatus.MXR=1` allows load from execute-only page without flush.
    - M-mode execution with `mstatus.MPRV=1` directing DTLB translation to `MPP=S`.
 4. **Svade A/D Enforcement**:
-   - Leaf with $A=0$ causes page fault on TLB lookup / refill.
-   - Leaf with $A=1, D=0$ permits load but faults on subsequent store hit.
+   - Leaf with `A=0` causes page fault on TLB lookup / refill.
+   - Leaf with `A=1, D=0` permits load but faults on subsequent store hit.
 5. **Invalidation Scenarios**:
    - `SFENCE.VMA (x0, x0)` flushes all entries; subsequent access triggers PTW walk.
    - `SFENCE.VMA (va, x0)` flushes only the targeted page; adjacent page remains hitting.

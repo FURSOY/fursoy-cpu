@@ -15,6 +15,8 @@
   `e298467c8eb6476270a21dc2414c7b1afa87697036c37e99ca1c90f7372926fb`
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m4-frontend-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`.
 
+> **Post-Phase-3 RTL Note (`bab4ceb`):** Building on this frozen M6 TAGE-Lite/RAS/NLP contract, production `fursoy_s1_bpu.sv` adds `16` branch checkpoints (`CHKPT_IDX_W = 4`), `INDEXED_RAS_CHKPT = 32` (`slots 1..31`), a `64`-entry tagged Indirect Branch Predictor (`IBP`), commit-time BTB/TAGE/IBP training with periodic 256K u-bit reset, and preservation of `arch_ghr_q`, `arch_csr_q`, and `arch_ras_array_q[16]` across traps and non-branch flushes. See `docs/architecture/slice1-core-v1.md`.
+
 ---
 
 ## 1. Milestone Objective, Phased Charter & Scope Boundaries
@@ -67,7 +69,7 @@ Therefore, the objective of **Milestone 6 (M6)** is to deliver an **Advanced Bra
 
 ### 1.2 In-Scope Architectural Additions
 The following microarchitectural features are **explicitly in-scope** for Milestone 6:
-1. **TAGE-Lite Direction Predictor**: A 5-table predictor consisting of one bimodal base table ($T_0$) and four tagged geometric history tables ($T_1, T_2, T_3, T_4$) with geometric history lengths $L \in \{4, 12, 36, 108\}$, 3-bit saturating signed counters, 1-bit useful flags, and circular folded history registers (CSRs).
+1. **TAGE-Lite Direction Predictor**: A 5-table predictor consisting of one bimodal base table (`T_0`) and four tagged geometric history tables (`T_1, T_2, T_3, T_4`) with geometric history lengths `L ∈ {4, 12, 36, 108}`, 3-bit saturating signed counters, 1-bit useful flags, and circular folded history registers (CSRs).
 2. **Dual-Branch Fetch Block Evaluation**: Parallel single-cycle evaluation of Slot 0 and Slot 1 conditional branches within each 64-bit fetch block in Stage F2.
 3. **Speculative Folded History Checkpointing**: Checkpoint storage and restoration of live GHR and folded history vectors across all 8 M1 speculative branch checkpoints.
 4. **Complete RAS Coroutine-Swap Logic**: Hardware decoding of `rd`/`rs1` linkage register permutations (`x1`, `x5`) according to the RISC-V specification, enabling precise coroutine call-stack manipulation without RAS pointer drift.
@@ -171,7 +173,6 @@ The BPU and Frontend interact with the frozen execution backend via the followin
     output ras_chkpt_t        uop1_ras_chkpt_o
     output tage_csr_bundle_t  uop1_csr_chkpt_o
 ```
-```
 
 ---
 
@@ -196,8 +197,8 @@ Analysis of the hardware performance telemetry reveals four critical structural 
 1. **Catastrophic Branch Recovery Penalty (`C_br_recover`)**:
    - In `branch_torture`, `C_br_recover` consumes **683 cycles** `[MEASURED FURSOY RTL RESULT]`.
    - Event `0x0E` (`EV_BPU_DIR_MISPRED`) records **127 mispredictions** out of 282 branches `[MEASURED FURSOY RTL RESULT]`.
-   - Each misprediction requires an average of $683 / 127 = 5.38$ cycles of active backward ROB register reclamation `[MEASURED FURSOY RTL RESULT]`.
-   - Gshare4096 is fundamentally limited: its 12-bit global history register ($2^{12} = 4096$ entries) cannot differentiate complex alternating patterns, loops with variable exit conditions, or nested calling contexts `[DESIGN HYPOTHESIS]`. Severe destructive aliasing in the 4096-entry PHT prevents learning distinct branch behaviors `[DESIGN HYPOTHESIS]`.
+   - Each misprediction requires an average of `683 / 127 = 5.38` cycles of active backward ROB register reclamation `[MEASURED FURSOY RTL RESULT]`.
+   - Gshare4096 is fundamentally limited: its 12-bit global history register (`2^12 = 4096` entries) cannot differentiate complex alternating patterns, loops with variable exit conditions, or nested calling contexts `[DESIGN HYPOTHESIS]`. Severe destructive aliasing in the 4096-entry PHT prevents learning distinct branch behaviors `[DESIGN HYPOTHESIS]`.
 
 2. **Severe Post-Redirect Pipeline Refill Overhead (`C_idle_other`)**:
    - Following each branch recovery redirect, the pipeline is completely flushed. The core spends **640 to 643 cycles** in `C_idle_other` during `branch_torture` `[MEASURED FURSOY RTL RESULT]`.
@@ -205,8 +206,8 @@ Analysis of the hardware performance telemetry reveals four critical structural 
    - When combined, branch misprediction recovery (`C_br_recover` = 683) and recovery-induced frontend refill bubbles (`C_idle_other` = 643) account for **1,326 cycles out of 1,715 total execution cycles (77.3% of runtime)** `[MEASURED FURSOY RTL RESULT]`. Eliminating branch mispredictions is mathematically the single highest-leverage optimization available for Fursoy Slice-1 `[DESIGN HYPOTHESIS]`.
 
 3. **Return Address Stack Pointer Drift on Coroutine Swaps**:
-   - In M4, the RAS decoder classified `JALR` with $rd \in \{x1, x5\}$ as a CALL and $rd = x0 \land rs1 \in \{x1, x5\}$ as a RET `[ANALYTICAL STRUCTURAL BOUND]`.
-   - However, compiler-generated coroutine context switching (e.g., in user-level thread libraries or runtime schedulers) executes `jalr x1, 0(x5)` where both $rd$ and $rs1$ are link registers. In M4, this popped the RAS or pushed without popping, causing the RAS top-of-stack pointer to drift `[ANALYTICAL STRUCTURAL BOUND]`. Subsequent returns experienced 100% mispredictions `[DESIGN HYPOTHESIS]`.
+   - In M4, the RAS decoder classified `JALR` with `rd ∈ {x1, x5}` as a CALL and `rd = x0 && rs1 ∈ {x1, x5}` as a RET `[ANALYTICAL STRUCTURAL BOUND]`.
+   - However, compiler-generated coroutine context switching (e.g., in user-level thread libraries or runtime schedulers) executes `jalr x1, 0(x5)` where both `rd` and `rs1` are link registers. In M4, this popped the RAS or pushed without popping, causing the RAS top-of-stack pointer to drift `[ANALYTICAL STRUCTURAL BOUND]`. Subsequent returns experienced 100% mispredictions `[DESIGN HYPOTHESIS]`.
 
 4. **Sequential Instruction Stream Bubbles & Straight-Line L1I Latency**:
    - In `stream_memcpy` and `pointer_chasing`, straight-line instruction fetch regularly encounters cold or capacity cache line transitions. While the core has dual I-MSHRs, MSHR1 remains completely idle during sequential execution `[MEASURED FURSOY RTL RESULT]`.
@@ -254,13 +255,13 @@ Milestone 6 is formally organized into four sequential, auditable implementation
 ### 4.1 Explicitly Rejected and Deferred Mechanisms
 The following candidate mechanisms were rigorously evaluated and **rejected or deferred**:
 1. **Multi-Megabyte Neural / Perceptron Predictors (REJECTED)**:
-   - *Technical Rationale*: Perceptron predictors require wide dot-product arithmetic (MAC units), multi-bit weight tables ($> 32\text{ KiB}$), and high power consumption `[DESIGN HYPOTHESIS]`. TAGE achieves equal or superior accuracy under strict area budgets ($< 4\text{ KiB}$) using simple integer addition and XOR hashing `[ANALYTICAL STRUCTURAL BOUND]`.
+   - *Technical Rationale*: Perceptron predictors require wide dot-product arithmetic (MAC units), multi-bit weight tables (`> 32 KiB`), and high power consumption `[DESIGN HYPOTHESIS]`. TAGE achieves equal or superior accuracy under strict area budgets (`< 4 KiB`) using simple integer addition and XOR hashing `[ANALYTICAL STRUCTURAL BOUND]`.
 2. **Aggressive Multi-Path / Next-Page Prefetching (REJECTED)**:
    - *Technical Rationale*: Prefetching beyond the current 4 KiB page requires speculative hardware page table walks (PTW). In a shared PTW architecture (where DTLB and ITLB share walker resources), speculative prefetch page walks would contend with demand D-cache misses, degrading memory throughput `[DESIGN HYPOTHESIS]`. Speculative page faults could also violate architectural isolation `[ANALYTICAL STRUCTURAL BOUND]`.
 3. **Decoded Op-Cache / Loop Stream Buffer (DEFERRED to Family C)**:
    - *Technical Rationale*: An Op-Cache requires complex multi-ported SRAM arrays, instruction boundary tagging, and dual-source rename multiplexing. M5 Phase B2 already expanded the Fetch Queue to 16 entries (FQ16), which provides up to 8 cycles of 2-wide decode buffering `[ANALYTICAL STRUCTURAL BOUND]`. An Op-Cache would destabilize the frozen frontend/rename interface.
 4. **Wider Frontend (3-Wide or 4-Wide Decode) (REJECTED)**:
-   - *Technical Rationale*: Core width is frozen at 2-wide decode / rename / dispatch / commit. Core widening causes an $O(W^2)$ explosion in rename dependency comparators and PRF read ports `[ANALYTICAL STRUCTURAL BOUND]`.
+   - *Technical Rationale*: Core width is frozen at 2-wide decode / rename / dispatch / commit. Core widening causes an `O(W^2)` explosion in rename dependency comparators and PRF read ports `[ANALYTICAL STRUCTURAL BOUND]`.
 
 ---
 
@@ -272,7 +273,7 @@ The Tagged Geometric History Length (TAGE) predictor is the industry standard fo
 - **Medium histories** capture function call arguments and structured if-then-else nesting;
 - **Long histories** capture path-dependent context and phase-dependent execution states.
 
-TAGE employs a **bimodal base predictor** ($T_0$) to provide default predictions for branches with low history dependence, complemented by multiple **tagged tables** ($T_1, T_2, T_3, T_4$) indexed by geometrically increasing global history lengths.
+TAGE employs a **bimodal base predictor** (`T_0`) to provide default predictions for branches with low history dependence, complemented by multiple **tagged tables** (`T_1, T_2, T_3, T_4`) indexed by geometrically increasing global history lengths.
 
 ```
 +===================================================================================================+
@@ -307,15 +308,15 @@ TAGE employs a **bimodal base predictor** ($T_0$) to provide default predictions
 ### 5.2 Geometric History Spacing & Table Geometry
 Milestone 6 defines a **5-table TAGE-Lite configuration** optimized for high accuracy under an ultra-compact storage budget:
 
-$$\alpha = 3.0, \quad L_1 = 4, \quad L_2 = 12, \quad L_3 = 36, \quad L_4 = 108$$
+`α = 3.0, L_1 = 4, L_2 = 12, L_3 = 36, L_4 = 108`
 
-| Predictor Table | History Length ($L_i$) | Number of Entries | Index Width | Tag Width | Counter Width (`ctr`) | Useful Width (`u`) | Entry Width | Total Storage |
+| Predictor Table | History Length (`L_i`) | Number of Entries | Index Width | Tag Width | Counter Width (`ctr`) | Useful Width (`u`) | Entry Width | Total Storage |
 |---|---|---|---|---|---|---|---|---|
-| **$T_0$ (Base)** | 0 bits | 2,048 | 11 bits | None | 2 bits (bimodal) | None | 2 bits | 4,096 bits (512 B) |
-| **$T_1$ (Tagged)**| 4 bits | 512 | 9 bits | 8 bits | 3 bits (signed) | 1 bit | 12 bits | 6,144 bits (768 B) |
-| **$T_2$ (Tagged)**| 12 bits | 512 | 9 bits | 8 bits | 3 bits (signed) | 1 bit | 12 bits | 6,144 bits (768 B) |
-| **$T_3$ (Tagged)**| 36 bits | 512 | 9 bits | 9 bits | 3 bits (signed) | 1 bit | 13 bits | 6,656 bits (832 B) |
-| **$T_4$ (Tagged)**| 108 bits| 512 | 9 bits | 10 bits | 3 bits (signed) | 1 bit | 14 bits | 7,168 bits (896 B) |
+| **`T_0` (Base)** | 0 bits | 2,048 | 11 bits | None | 2 bits (bimodal) | None | 2 bits | 4,096 bits (512 B) |
+| **`T_1` (Tagged)**| 4 bits | 512 | 9 bits | 8 bits | 3 bits (signed) | 1 bit | 12 bits | 6,144 bits (768 B) |
+| **`T_2` (Tagged)**| 12 bits | 512 | 9 bits | 8 bits | 3 bits (signed) | 1 bit | 12 bits | 6,144 bits (768 B) |
+| **`T_3` (Tagged)**| 36 bits | 512 | 9 bits | 9 bits | 3 bits (signed) | 1 bit | 13 bits | 6,656 bits (832 B) |
+| **`T_4` (Tagged)**| 108 bits| 512 | 9 bits | 10 bits | 3 bits (signed) | 1 bit | 14 bits | 7,168 bits (896 B) |
 | **TOTALS** | — | **4,096 entries** | — | — | — | — | — | **30,208 bits (3.69 KiB)** |
 
 *All parameters tagged as `[ANALYTICAL STRUCTURAL BOUND]`.*
@@ -323,72 +324,72 @@ $$\alpha = 3.0, \quad L_1 = 4, \quad L_2 = 12, \quad L_3 = 36, \quad L_4 = 108$$
 ### 5.3 Folded History (CSR) Circular Hashing
 Directly computing an XOR reduction over 108 bits of history on every cycle would create an intolerable combinational delay in Stage F2. Milestone 6 mandates the use of **Circular Shift Registers (CSRs)** for folded history tracking:
 
-A folded history of length $L$ compressed into $k$ bits satisfies:
+A folded history of length `L` compressed into `k` bits satisfies:
 
-$$\text{CSR}[k-1:0] = \bigoplus_{i=0}^{\lceil L / k \rceil - 1} \text{GHR}[i \cdot k +: k]$$
+`CSR[k-1:0] = XOR_i=0^ceil( L / k ) - 1 GHR[i · k +: k]`
 
-On each conditional branch with outcome $b \in \{0, 1\}$, the CSR updates incrementally in a single clock cycle with zero ripple delay using circular 1-bit left-rotation ($\text{ROL}_1$):
+On each conditional branch with outcome `b ∈ {0, 1}`, the CSR updates incrementally in a single clock cycle with zero ripple delay using circular 1-bit left-rotation (`ROL_1`):
 
-$$\text{CSR}_{\text{next}} = \text{ROL}_1(\text{CSR}_{\text{curr}}, k) \oplus b \oplus (\text{GHR}[L] \ll (L \bmod k))$$
+`CSR_next = ROL_1(CSR_curr, k) ^ b ^ (GHR[L] << (L mod k))`
 
-In synthesizable SystemVerilog, the circular rotation is expressed by rotating bit $k-1$ into bit 0, guaranteeing that no historical correlation entropy is dropped:
+In synthesizable SystemVerilog, the circular rotation is expressed by rotating bit `k-1` into bit 0, guaranteeing that no historical correlation entropy is dropped:
 
 ```systemverilog
 // Exact 1-cycle circular bit-rotation update for folded history register of width k:
 CSR_next = {CSR_curr[k-2:0], CSR_curr[k-1]} ^ {{(k-1){1'b0}}, b} ^ (GHR[L] << (L % k));
 ```
 
-#### Exact Parametrization of Folded Registers Across Tables $T_1..T_4$
-To ensure 100% bit-exact equivalence between the synthesizable RTL and the independent C++ verification reference model, each tagged table $T_i$ maintains three dedicated circular folded history registers:
-1. **$\text{CSR\_Index}_i$**: Compresses full table history $L_i$ into index width $k_{\text{idx}} = 9$ bits.
-2. **$\text{CSR\_TagA}_i$**: Compresses full table history $L_{\text{TagA}} = L_i$ into tag width $k_{\text{tag}} \in \{8, 8, 9, 10\}$ bits.
-3. **$\text{CSR\_TagB}_i$**: Compresses secondary/geometric half-length history $L_{\text{TagB}} = \lfloor L_i / 2 \rfloor$ into tag width $k_{\text{tag}} \in \{8, 8, 9, 10\}$ bits.
+#### Exact Parametrization of Folded Registers Across Tables `T_1..T_4`
+To ensure 100% bit-exact equivalence between the synthesizable RTL and the independent C++ verification reference model, each tagged table `T_i` maintains three dedicated circular folded history registers:
+1. **`CSR_Index_i`**: Compresses full table history `L_i` into index width `k_idx = 9` bits.
+2. **`CSR_TagA_i`**: Compresses full table history `L_TagA = L_i` into tag width `k_tag ∈ {8, 8, 9, 10}` bits.
+3. **`CSR_TagB_i`**: Compresses secondary/geometric half-length history `L_TagB = floor( L_i / 2 )` into tag width `k_tag ∈ {8, 8, 9, 10}` bits.
 
 The exact geometric history lengths, bit widths, and folding parameters are formalized below:
 
-| Table | History Length ($L_i$) | Index Width ($k_{\text{idx}}$) | Tag Width ($k_{\text{tag}}$) | TagA History ($L_{\text{TagA}}$) | TagB History ($L_{\text{TagB}}$) | Tag Hash Equation |
+| Table | History Length (`L_i`) | Index Width (`k_idx`) | Tag Width (`k_tag`) | TagA History (`L_TagA`) | TagB History (`L_TagB`) | Tag Hash Equation |
 |---|---|---|---|---|---|---|
-| **$T_1$** | 4 bits | 9 bits | 8 bits | 4 bits | 2 bits | $\text{PC}[19:12] \oplus \text{CSR\_TagA}_1 \oplus (\text{CSR\_TagB}_1 \ll 1)$ |
-| **$T_2$** | 12 bits | 9 bits | 8 bits | 12 bits | 6 bits | $\text{PC}[19:12] \oplus \text{CSR\_TagA}_2 \oplus (\text{CSR\_TagB}_2 \ll 1)$ |
-| **$T_3$** | 36 bits | 9 bits | 9 bits | 36 bits | 18 bits | $\text{PC}[20:12] \oplus \text{CSR\_TagA}_3 \oplus (\text{CSR\_TagB}_3 \ll 1)$ |
-| **$T_4$** | 108 bits | 9 bits | 10 bits | 108 bits | 54 bits | $\text{PC}[21:12] \oplus \text{CSR\_TagA}_4 \oplus (\text{CSR\_TagB}_4 \ll 1)$ |
+| **`T_1`** | 4 bits | 9 bits | 8 bits | 4 bits | 2 bits | `PC[19:12] ^ CSR_TagA_1 ^ (CSR_TagB_1 << 1)` |
+| **`T_2`** | 12 bits | 9 bits | 8 bits | 12 bits | 6 bits | `PC[19:12] ^ CSR_TagA_2 ^ (CSR_TagB_2 << 1)` |
+| **`T_3`** | 36 bits | 9 bits | 9 bits | 36 bits | 18 bits | `PC[20:12] ^ CSR_TagA_3 ^ (CSR_TagB_3 << 1)` |
+| **`T_4`** | 108 bits | 9 bits | 10 bits | 108 bits | 54 bits | `PC[21:12] ^ CSR_TagA_4 ^ (CSR_TagB_4 << 1)` |
 
-*Note on Index Hashing*: For all tagged tables $T_1..T_4$, the 9-bit index is computed as:
-$$\text{Index}_i = \text{PC}[11:3] \oplus \text{CSR\_Index}_i \oplus (\text{CSR\_Index}_i \gg 5)$$
+*Note on Index Hashing*: For all tagged tables `T_1..T_4`, the 9-bit index is computed as:
+`Index_i = PC[11:3] ^ CSR_Index_i ^ (CSR_Index_i >> 5)`
 
 ### 5.4 Dual-Slot Prediction Arbitration in Stage F2
 Because Fursoy fetches 64-bit blocks containing up to two instructions (Slot 0 at `PC[2]=0` and Slot 1 at `PC[2]=1`), Stage F2 performs parallel lookup:
-1. **Slot 0 Prediction**: Evaluates $T_0..T_4$ using the block base PC (`fetch_pc[63:3]`) and the live GHR (`GHR[107:0]`).
-2. **Slot 1 Prediction**: Evaluates $T_0..T_4$ using Slot 1 PC (`fetch_pc[63:3] | 3'b100`) subject to Slot 0 control-flow classification:
+1. **Slot 0 Prediction**: Evaluates `T_0..T_4` using the block base PC (`fetch_pc[63:3]`) and the live GHR (`GHR[107:0]`).
+2. **Slot 1 Prediction**: Evaluates `T_0..T_4` using Slot 1 PC (`fetch_pc[63:3] | 3'b100`) subject to Slot 0 control-flow classification:
    - **Slot 0 is NOT a conditional branch** (e.g. integer ALU, load, store, CSR, JAL): Slot 1 MUST evaluate using the **unmodified live GHR** (`GHR[107:0]`). Non-branch instructions do NOT mutate or shift GHR under any circumstances.
    - **Slot 0 is a conditional branch predicted NOT taken**: Slot 1 evaluates using the speculative carry outcome `{GHR[106:0], 1'b0}` and correspondingly carried folded CSRs.
    - **Slot 0 is a conditional branch predicted taken**: Slot 1 evaluation is suppressed and ignored, as the Slot 0 redirect takes immediate priority in Stage F0.
 
 ### 5.5 Provider Selection and Alternate Prediction (`altpred`)
 For a given branch query:
-1. **Tag Match**: Each tagged table $T_1..T_4$ compares its stored tag against $\text{Tag}_i$.
-2. **Provider Table ($T_{\text{prov}}$)**: The matching tagged table with the **longest history length** is designated the **provider**.
-3. **Alternate Predictor ($T_{\text{alt}}$)**: The matching table with the next-longest history length (or $T_0$ if no other tagged table matches) is designated the **alternate predictor**.
+1. **Tag Match**: Each tagged table `T_1..T_4` compares its stored tag against `Tag_i`.
+2. **Provider Table (`T_prov`)**: The matching tagged table with the **longest history length** is designated the **provider**.
+3. **Alternate Predictor (`T_alt`)**: The matching table with the next-longest history length (or `T_0` if no other tagged table matches) is designated the **alternate predictor**.
 4. **Final Prediction Decision**:
-   - If no tagged table matches, the prediction is provided by $T_0$ (Base table: 2-bit counter $\ge 2$ means Taken).
-   - If a tagged table matches, the provider's 3-bit counter ($ctr \in [-4, +3]$ or $[0, 7]$) determines the prediction:
-     - If $ctr \ge 4$, predict **Taken**; if $ctr \le 3$, predict **Not Taken**.
-     - *Weak Provider Exception*: If the provider counter is newly allocated and weak ($ctr \in \{3, 4\}$) and the useful bit is zero ($u = 0$), the selector falls back to $T_{\text{alt}}$ to prevent nascent mispredictions.
+   - If no tagged table matches, the prediction is provided by `T_0` (Base table: 2-bit counter `≥ 2` means Taken).
+   - If a tagged table matches, the provider's 3-bit counter (`ctr ∈ [-4, +3]` or `[0, 7]`) determines the prediction:
+     - If `ctr ≥ 4`, predict **Taken**; if `ctr ≤ 3`, predict **Not Taken**.
+     - *Weak Provider Exception*: If the provider counter is newly allocated and weak (`ctr ∈ {3, 4}`) and the useful bit is zero (`u = 0`), the selector falls back to `T_alt` to prevent nascent mispredictions.
 
 ### 5.6 Predictor Training, Allocation & Useful-Bit Aging
 When a conditional branch resolves at Port 0 execution/writeback (`train_valid_i` asserted):
 1. **Provider Update**:
-   - The provider counter $T_{\text{prov}}.ctr$ increments on taken, decrements on not taken (saturating at 0 and 7).
-   - If the provider prediction differed from the alternate prediction ($pred_{\text{prov}} \neq pred_{\text{alt}}$), the useful bit is updated:
-     - Set $T_{\text{prov}}.u \leftarrow 1$ if provider was correct;
-     - Set $T_{\text{prov}}.u \leftarrow 0$ if provider was incorrect.
+   - The provider counter `T_prov.ctr` increments on taken, decrements on not taken (saturating at 0 and 7).
+   - If the provider prediction differed from the alternate prediction (`pred_prov ≠ pred_alt`), the useful bit is updated:
+     - Set `T_prov.u ← 1` if provider was correct;
+     - Set `T_prov.u ← 0` if provider was incorrect.
 2. **Deterministic Single-Table Allocation on Misprediction**:
-   - If the final branch prediction was incorrect, the hardware attempts to allocate into **at most ONE** eligible table with $u == 0$.
-   - Hardware enforces strict deterministic priority by selecting the **smallest eligible history table** ($T_j$ with minimal $L_j > L_{\text{prov}}$) whose entry at index $\text{Index}_j$ currently has $u == 0$.
-   - If an eligible table is found: exactly that single entry is initialized ($Tag \leftarrow \text{Tag}_j$, $ctr \leftarrow \text{weak}$ [3 for not taken, 4 for taken], $u \leftarrow 0$). No subsequent or longer history tables are allocated.
-   - If **all** eligible tables with $L_j > L_{\text{prov}}$ have $u == 1$: no new entry is allocated anywhere, and the useful bits of the indexed entries in all eligible tables ($L_j > L_{\text{prov}}$) are decremented ($u \leftarrow 0$) to age out established entries and prevent allocation deadlocks.
+   - If the final branch prediction was incorrect, the hardware attempts to allocate into **at most ONE** eligible table with `u == 0`.
+   - Hardware enforces strict deterministic priority by selecting the **smallest eligible history table** (`T_j` with minimal `L_j > L_prov`) whose entry at index `Index_j` currently has `u == 0`.
+   - If an eligible table is found: exactly that single entry is initialized (`Tag ← Tag_j`, `ctr ← weak` [3 for not taken, 4 for taken], `u ← 0`). No subsequent or longer history tables are allocated.
+   - If **all** eligible tables with `L_j > L_prov` have `u == 1`: no new entry is allocated anywhere, and the useful bits of the indexed entries in all eligible tables (`L_j > L_prov`) are decremented (`u ← 0`) to age out established entries and prevent allocation deadlocks.
 3. **Graceful Useful-Bit Decay / Reset State Machine**:
-   - A 19-bit global counter tracks branch retirements. Every $256\text{K}$ retired branches, all useful bits across $T_1..T_4$ are cleared to zero ($u \leftarrow 0$), allowing stale patterns to be reclaimed gracefully.
+   - A 19-bit global counter tracks branch retirements. Every 256K retired branches, all useful bits across `T_1..T_4` are cleared to zero (`u ← 0`), allowing stale patterns to be reclaimed gracefully.
 
 ---
 
@@ -399,14 +400,14 @@ Fursoy Slice-1 uses an 8-entry hardware checkpoint array (`NUM_CHECKPOINTS = 8`)
 
 > **Speculative History Invariant**: Every conditional branch allocated at Rename captures an exact snapshot of:
 > 1. The 108-bit live Global History Register (`ghr_t`);
-> 2. The complete folded history circular shift register bundle ($\text{CSR\_Index}_{1..4}$, $\text{CSR\_TagA}_{1..4}$, $\text{CSR\_TagB}_{1..4}$);
+> 2. The complete folded history circular shift register bundle (`CSR_Index_1..4`, `CSR_TagA_1..4`, `CSR_TagB_1..4`);
 > 3. The 16-entry Return Address Stack logical state (`ras_chkpt_t`).
 
 When Port 0 detects a branch misprediction (`recover_valid_i` asserted):
 1. The BPU restores the exact pre-branch GHR from `chkpt_ghr_table[recover_chkpt_id_i]`;
 2. The GHR shifts in the **actual resolved branch direction** (`recover_actual_taken_i`):
-   $$\text{GHR}_{\text{restored}} = \{\text{chkpt\_ghr}[106:0], \text{recover\_actual\_taken\_i}\}$$
-3. All folded history registers ($\text{CSR\_Index}_i$, $\text{CSR\_TagA}_i$, $\text{CSR\_TagB}_i$ for tables $T_1..T_4$) are **restored directly from checkpoint storage** (`chkpt_csr_table[recover_chkpt_id_i]`) in a single cycle and updated with the resolved branch direction (`recover_actual_taken_i`) via the single-cycle circular rotation formula. This completely eliminates combinational XOR reconstruction trees from the 108-bit GHR on the critical mispredict redirect path;
+   `GHR_restored = {chkpt_ghr[106:0], recover_actual_taken_i}`
+3. All folded history registers (`CSR_Index_i`, `CSR_TagA_i`, `CSR_TagB_i` for tables `T_1..T_4`) are **restored directly from checkpoint storage** (`chkpt_csr_table[recover_chkpt_id_i]`) in a single cycle and updated with the resolved branch direction (`recover_actual_taken_i`) via the single-cycle circular rotation formula. This completely eliminates combinational XOR reconstruction trees from the 108-bit GHR on the critical mispredict redirect path;
 4. The RAS array, top-of-stack pointer, and depth counter are restored from `chkpt_ras_table[recover_chkpt_id_i]`.
 
 This guarantees **zero history drift or corrupt state** across arbitrary sequences of speculative branch mispredictions.
@@ -423,11 +424,11 @@ Milestone 6 formally addresses the deferred P2 coroutine-swap classification. Un
 
 | Case | Instruction Pattern | Link Register Condition | RAS Action | Operational Rationale |
 |---|---|---|---|---|
-| **1** | `JALR rd, rs1, imm` | $rd \notin \{x1, x5\} \land rs1 \notin \{x1, x5\}$ | **None** | Standard indirect jump (function pointer, switch table). |
-| **2** | `JALR rd, rs1, imm` | $rd \in \{x1, x5\} \land rs1 \notin \{x1, x5\}$ | **PUSH (`PC+4`)** | Indirect function call (`CALL`). Return address saved. |
-| **3** | `JALR rd, rs1, imm` | $rd \notin \{x1, x5\} \land rs1 \in \{x1, x5\}$ | **POP** | Standard function return (`RET`) or stack unwind. Restores return target. |
-| **4** | `JALR rd, rs1, imm` | $rd \in \{x1, x5\} \land rs1 \in \{x1, x5\} \land rd \neq rs1$ | **POP then PUSH (`PC+4`)** | **Coroutine Swap**: Pops caller return address and pushes new return address. |
-| **5** | `JALR rd, rs1, imm` | $rd \in \{x1, x5\} \land rs1 \in \{x1, x5\} \land rd = rs1$ | **PUSH (`PC+4`)** | Coroutine link re-use; push return address only (no pop). |
+| **1** | `JALR rd, rs1, imm` | `rd ∉ {x1, x5} && rs1 ∉ {x1, x5}` | **None** | Standard indirect jump (function pointer, switch table). |
+| **2** | `JALR rd, rs1, imm` | `rd ∈ {x1, x5} && rs1 ∉ {x1, x5}` | **PUSH (`PC+4`)** | Indirect function call (`CALL`). Return address saved. |
+| **3** | `JALR rd, rs1, imm` | `rd ∉ {x1, x5} && rs1 ∈ {x1, x5}` | **POP** | Standard function return (`RET`) or stack unwind. Restores return target. |
+| **4** | `JALR rd, rs1, imm` | `rd ∈ {x1, x5} && rs1 ∈ {x1, x5} && rd ≠ rs1` | **POP then PUSH (`PC+4`)** | **Coroutine Swap**: Pops caller return address and pushes new return address. |
+| **5** | `JALR rd, rs1, imm` | `rd ∈ {x1, x5} && rs1 ∈ {x1, x5} && rd = rs1` | **PUSH (`PC+4`)** | Coroutine link re-use; push return address only (no pop). |
 
 *All conditions tagged as `[ANALYTICAL STRUCTURAL BOUND]`.*
 
@@ -447,7 +448,7 @@ Milestone 6 formally addresses the deferred P2 coroutine-swap classification. Un
 By performing an **in-place overwrite of the top-of-stack entry on Coroutine Swaps (Case 4)**, the TOS pointer and stack depth experience zero drift, completely preventing stack exhaustion or corruption during coroutine execution.
 
 ### 6.4 Polymorphic Indirect Target Hardening
-For indirect non-return jumps (`JALR` with $rd = x0 \land rs1 \notin \{x1, x5\}$):
+For indirect non-return jumps (`JALR` with `rd = x0 && rs1 ∉ {x1, x5}`):
 - Milestone 6 retains the 512-entry 2-way BTB for primary indirect target caching.
 - To prevent polymorphic indirect call-sites (e.g., C++ virtual table dispatches) from thrashing BTB entries, the BTB update policy is augmented: if an indirect jump updates a matching set with a new target, the entry is updated only if the target differs from the current prediction, preserving stable direct jump entries.
 
@@ -461,7 +462,7 @@ In sequential integer code, instruction streams frequently transition across 64-
 ### 7.2 Safe Next-Line Prefetcher (NLP) Architecture & Dual-MSHR Arbitration
 Milestone 4 provided dual Instruction MSHRs (`IMSHR_DEPTH = 2`: MSHR0 and MSHR1). In Milestone 6, these MSHR slots are arbitrated with strict demand prioritization:
 1. **MSHR0 Priority**: MSHR0 is strictly dedicated to **demand fetch misses** from Stage F1/F2.
-2. **MSHR1 Conditional Prefetch Allocation**: MSHR1 is permitted to issue an external memory prefetch for the next sequential cache line ($\text{LineAddr} + 1$) if and only if **ALL** of the following conditions hold combinationally:
+2. **MSHR1 Conditional Prefetch Allocation**: MSHR1 is permitted to issue an external memory prefetch for the next sequential cache line (`LineAddr + 1`) if and only if **ALL** of the following conditions hold combinationally:
    - MSHR1 is currently idle (`!imshr_q[1].valid`);
    - MSHR0 is either idle or its demand bus request has already been granted;
    - The downstream Fetch Queue is not backpressured (`fq_free_count >= 2`);
@@ -509,7 +510,7 @@ Milestone 4 provided dual Instruction MSHRs (`IMSHR_DEPTH = 2`: MSHR0 and MSHR1)
 
 ### 7.3 Page-Boundary Crossing Invariant & VIPT/ITLB/PMP Safety
 > **Page-Boundary Crossing Invariant**: The Next-Line Prefetcher **MUST NEVER** issue a prefetch request across a 4 KiB virtual page boundary:
-> $$\text{Prefetch\_Allowed} \iff \text{Demand\_PA}[11:6] \neq 6\text{'b}111111$$
+> `Prefetch_Allowed <=> Demand_PA[11:6] ≠ 6'b111111`
 
 - **Technical Rationale**: In an Sv39 virtual memory system, the next sequential 4 KiB page may be unmapped, execute-protected, or mapped to a disparate physical page. A prefetch crossing the page boundary would require an ITLB lookup and could trigger an unauthorized page fault or PMP access violation.
 - **Silent Abort**: When a demand fetch accesses line 63 of a 4 KiB page (`PA[11:6] == 6'b111111`), the prefetcher silently aborts with zero side effects. No ITLB query, PTW translation, or bus request is initiated.
@@ -542,9 +543,9 @@ Milestone 6 preserves 100% of the 48 hardware performance event sources (`0x01`.
 
 ### 8.2 Milestone 6 Diagnostic Telemetry Probes
 To facilitate independent verification and bottleneck diagnosis, the following non-architectural internal probe signals are exported to the verification testbench:
-- `diag_m6_tage_hit_base_o`: Asserted when prediction is provided by Base Table $T_0$.
-- `diag_m6_tage_hit_tagged_o`: Asserted when prediction is provided by Tagged Tables $T_1..T_4$.
-- `diag_m6_tage_alloc_fail_o`: Asserted when a mispredicted branch fails to allocate due to all $u = 1$.
+- `diag_m6_tage_hit_base_o`: Asserted when prediction is provided by Base Table `T_0`.
+- `diag_m6_tage_hit_tagged_o`: Asserted when prediction is provided by Tagged Tables `T_1..T_4`.
+- `diag_m6_tage_alloc_fail_o`: Asserted when a mispredicted branch fails to allocate due to all `u = 1`.
 - `diag_m6_nlp_req_issued_o`: Asserted when MSHR1 successfully issues a next-line prefetch request.
 - `diag_m6_nlp_hit_o`: Asserted when a demand fetch hits a cache line previously installed by NLP.
 - `diag_m6_nlp_drop_page_bound_o`: Asserted when a prefetch is safely aborted at a 4 KiB page boundary.
@@ -552,11 +553,11 @@ To facilitate independent verification and bottleneck diagnosis, the following n
 ### 8.3 Preservation of Single-Owner CPI Conservation
 Milestone 6 strictly preserves the single-owner CPI cycle accounting framework established in M5 Section 9:
 
-$$\Delta\text{CSR\_MCYCLE} = C_{\text{serialize}} + C_{\text{br\_recover}} + C_{\text{productive}} + C_{\text{mem\_stall}} + C_{\text{be\_rename}} + C_{\text{be\_sched}} + C_{\text{fe\_starve}} + C_{\text{idle\_other}}$$
+`ΔCSR_MCYCLE = C_serialize + C_br_recover + C_productive + C_mem_stall + C_be_rename + C_be_sched + C_fe_starve + C_idle_other`
 
-$$\text{CPI} = \frac{\Delta\text{CSR\_MCYCLE}}{\Delta\text{CSR\_MINSTRET}} = \sum_{k=1}^8 \Delta\text{CPI}_k$$
+`CPI = (ΔCSR_MCYCLE) / (ΔCSR_MINSTRET) = sum_k=1^8 ΔCPI_k`
 
-> **Zero-Leakage Invariant**: The formal property $\sum_{k=1}^8 C_k == \Delta\text{mcycle}$ must hold continuously over every clock cycle and across all verification workloads without exception.
+> **Zero-Leakage Invariant**: The formal property `sum_k=1^8 C_k == Δmcycle` must hold continuously over every clock cycle and across all verification workloads without exception.
 
 ---
 
@@ -567,11 +568,11 @@ Milestone 6 structures are carefully budgeted to guarantee compact implementatio
 
 | Subsystem Component | Structure / Organization | Entry Count | Bit Budget | Byte Budget | Physical Implementation |
 |---|---|---|---|---|---|
-| **TAGE Base Table ($T_0$)** | Direct Mapped, 2-bit bimodal | 2,048 | 4,096 bits | 512 Bytes | Distributed RAM / Dual-Port BRAM |
-| **TAGE Tagged Table ($T_1$)**| 512 entries, 8b tag + 3b ctr + 1b u | 512 | 6,144 bits | 768 Bytes | Distributed RAM / BRAM |
-| **TAGE Tagged Table ($T_2$)**| 512 entries, 8b tag + 3b ctr + 1b u | 512 | 6,144 bits | 768 Bytes | Distributed RAM / BRAM |
-| **TAGE Tagged Table ($T_3$)**| 512 entries, 9b tag + 3b ctr + 1b u | 512 | 6,656 bits | 832 Bytes | Distributed RAM / BRAM |
-| **TAGE Tagged Table ($T_4$)**| 512 entries, 10b tag + 3b ctr + 1b u| 512 | 7,168 bits | 896 Bytes | Distributed RAM / BRAM |
+| **TAGE Base Table (`T_0`)** | Direct Mapped, 2-bit bimodal | 2,048 | 4,096 bits | 512 Bytes | Distributed RAM / Dual-Port BRAM |
+| **TAGE Tagged Table (`T_1`)**| 512 entries, 8b tag + 3b ctr + 1b u | 512 | 6,144 bits | 768 Bytes | Distributed RAM / BRAM |
+| **TAGE Tagged Table (`T_2`)**| 512 entries, 8b tag + 3b ctr + 1b u | 512 | 6,144 bits | 768 Bytes | Distributed RAM / BRAM |
+| **TAGE Tagged Table (`T_3`)**| 512 entries, 9b tag + 3b ctr + 1b u | 512 | 6,656 bits | 832 Bytes | Distributed RAM / BRAM |
+| **TAGE Tagged Table (`T_4`)**| 512 entries, 10b tag + 3b ctr + 1b u| 512 | 7,168 bits | 896 Bytes | Distributed RAM / BRAM |
 | **Folded History Registers**| Live (2 sets) + 8 Checkpoints (106b each) | 2 live + 8 ckpts | 1,060 bits | 133 Bytes | Flip-Flops |
 | **Global History Register (GHR)** | Live (108b) + 8 Checkpoints (108b each) | 1 live + 8 ckpts | 972 bits | 122 Bytes | Flip-Flops |
 | **Branch Target Buffer (BTB)**| 2-Way Set-Associative (256 sets) | 512 | 61,440 bits | 7,680 Bytes | Block RAM / SRAM |
@@ -585,7 +586,7 @@ Milestone 6 structures are carefully budgeted to guarantee compact implementatio
 ### 9.2 Critical-Path Timing Discipline
 To preserve high operating frequency and prevent critical path degradation:
 1. **Decoupled Stage F1/F2 Hashing**: Folded history CSR updates occur synchronously at cycle boundaries. In Stage F2, table indices and tags are formed using shallow 2-level XOR gates in parallel with the L1I tag SRAM read.
-2. **Parallel Provider Selection**: Tag match comparisons across $T_1..T_4$ execute concurrently using priority multiplexers, ensuring provider selection delay is $< 0.4\text{ ns}$ in typical 28nm/16nm ASIC technology `[DESIGN HYPOTHESIS]`.
+2. **Parallel Provider Selection**: Tag match comparisons across `T_1..T_4` execute concurrently using priority multiplexers, ensuring provider selection delay is `< 0.4 ns` in typical 28nm/16nm ASIC technology `[DESIGN HYPOTHESIS]`.
 3. **No GH/Index Crossbar**: GHR is strictly organized as a shift register; tagged tables do not dynamically reconfigure history lengths.
 4. **No GHz / Process Claims**: Explicit clock frequency targets (e.g. 1.0 GHz) are removed as binding requirements; timing is evaluated via post-synthesis static timing analysis (STA).
 
@@ -600,22 +601,22 @@ The verification testbench must formally prove compliance across the following *
 
 | Property ID | Target Mechanism | Validation Criterion |
 |---|---|---|
-| `PROP_M6_01` | TAGE Base Hit | Un-correlated branch hits $T_0$; prediction matches bimodal 2-bit counter. |
-| `PROP_M6_02` | TAGE Tagged Hit ($T_1$) | 4-bit correlated branch hits $T_1$; overrides $T_0$ prediction correctly. |
-| `PROP_M6_03` | TAGE Tagged Hit ($T_2$) | 12-bit correlated branch hits $T_2$; overrides $T_1$ and $T_0$. |
-| `PROP_M6_04` | TAGE Tagged Hit ($T_3$) | 36-bit correlated branch hits $T_3$; overrides shorter history tables. |
-| `PROP_M6_05` | TAGE Longest Match ($T_4$)| 108-bit correlated branch hits $T_4$; selects $T_4$ as provider. |
-| `PROP_M6_06` | Altpred Fallback | Weak provider counter ($ctr \in \{3,4\}, u=0$) gracefully falls back to $T_{\text{alt}}$. |
+| `PROP_M6_01` | TAGE Base Hit | Un-correlated branch hits `T_0`; prediction matches bimodal 2-bit counter. |
+| `PROP_M6_02` | TAGE Tagged Hit (`T_1`) | 4-bit correlated branch hits `T_1`; overrides `T_0` prediction correctly. |
+| `PROP_M6_03` | TAGE Tagged Hit (`T_2`) | 12-bit correlated branch hits `T_2`; overrides `T_1` and `T_0`. |
+| `PROP_M6_04` | TAGE Tagged Hit (`T_3`) | 36-bit correlated branch hits `T_3`; overrides shorter history tables. |
+| `PROP_M6_05` | TAGE Longest Match (`T_4`)| 108-bit correlated branch hits `T_4`; selects `T_4` as provider. |
+| `PROP_M6_06` | Altpred Fallback | Weak provider counter (`ctr ∈ 3,4, u=0`) gracefully falls back to `T_alt`. |
 | `PROP_M6_07` | Dual-Slot Prediction | Block containing two branches predicts both in parallel; Slot 0 taken suppresses Slot 1. |
 | `PROP_M6_08` | Carried GHR Update | Slot 0 conditional untaken carries {GHR[106:0], 1'b0} into Slot 1; non-branch in Slot 0 leaves GHR[107:0] completely unmodified for Slot 1. |
-| `PROP_M6_09` | Checkpoint Allocation | Live GHR and all folded history CSRs captured cleanly into checkpoint $ID \in [0,7]$. |
+| `PROP_M6_09` | Checkpoint Allocation | Live GHR and all folded history CSRs captured cleanly into checkpoint `ID ∈ [0,7]`. |
 | `PROP_M6_10` | Port 0 Recovery | Port 0 mispredict restores checkpointed GHR and updates with actual resolved direction. |
 | `PROP_M6_11` | Folded CSR Checkpoint Restoration | Folded CSR registers restored directly from checkpoint storage in 1 cycle, matching bit-for-bit with golden folded state. |
-| `PROP_M6_12` | Useful Bit Increment | Provider correct while altpred incorrect increments useful bit ($u \leftarrow 1$). |
-| `PROP_M6_13` | Useful Bit Decrement | Provider incorrect while altpred correct decrements useful bit ($u \leftarrow 0$). |
-| `PROP_M6_14` | Table Allocation Success | Mispredicted branch allocates entry in at most one table (smallest eligible history table with $u = 0$). |
-| `PROP_M6_15` | Table Allocation Failure | Allocation failure when all $u = 1$ safely decays useful bits without corruption. |
-| `PROP_M6_16` | Useful Bit Periodic Reset | 19-bit retirement counter triggers periodic flash reset of all $u$ bits to zero. |
+| `PROP_M6_12` | Useful Bit Increment | Provider correct while altpred incorrect increments useful bit (`u ← 1`). |
+| `PROP_M6_13` | Useful Bit Decrement | Provider incorrect while altpred correct decrements useful bit (`u ← 0`). |
+| `PROP_M6_14` | Table Allocation Success | Mispredicted branch allocates entry in at most one table (smallest eligible history table with `u = 0`). |
+| `PROP_M6_15` | Table Allocation Failure | Allocation failure when all `u = 1` safely decays useful bits without corruption. |
+| `PROP_M6_16` | Useful Bit Periodic Reset | 19-bit retirement counter triggers periodic flash reset of all `u` bits to zero. |
 | `PROP_M6_17` | RAS Standard Call/Ret | Function call pushes `PC+4`; matching return pops correct target with 0 mispredicts. |
 | `PROP_M6_18` | RAS Coroutine Swap Case 4 | `JALR x1, 0(x5)` performs in-place TOS overwrite; pointer depth remains invariant. |
 | `PROP_M6_19` | RAS Coroutine Swap Case 5 | `JALR x1, 0(x1)` performs push only; depth increments cleanly. |
@@ -632,7 +633,7 @@ The verification testbench must formally prove compliance across the following *
 | `PROP_M6_30` | PTW Memory Priority | Shared PTW walk requests strictly take priority over prefetch bus requests. |
 | `PROP_M6_31` | Odd-Word Fetch Alignment | Fetch starting at `PC[2]=1` masks Slot 0 and delivers Slot 1 correctly to FQ16. |
 | `PROP_M6_32` | HPM Counter Mapping | Events `0x0B`..`0x12` verified incrementing precisely under TAGE/RAS stimulation. |
-| `PROP_M6_33` | CPI Conservation Law | $\sum_{k=1}^8 C_k == \Delta\text{mcycle}$ continuously holds across all testbench runs. |
+| `PROP_M6_33` | CPI Conservation Law | `sum_k=1^8 C_k == Δmcycle` continuously holds across all testbench runs. |
 | `PROP_M6_34` | Multi-Checkpoint Drain | 8 consecutive checkpoints allocated and retired in program order without leak. |
 | `PROP_M6_35` | Nested Mispredict Cascade | Branch mispredicts while older recovery is active; older recovery dominates. |
 | `PROP_M6_36` | Full Random Torture | 100,000 randomized operations pass across canonical seeds with 0 mismatches. |
@@ -657,12 +658,12 @@ Milestone 6 shall be declared **FROZEN** only when all of the following criteria
 ### 11.2 Implementation & Correctness Gates
 - [ ] **Full Predecessor Regression Clean**: 100% pass rate across all M1, M2, M3, M4, and M5 regression suites (200+ directed tests).
 - [ ] **M6 Mandatory Properties Clean**: All 36 mandatory properties in Section 10.1 pass 100%.
-- [ ] **Randomized Control-Flow Torture**: $\ge 100,000$ accepted operations across canonical seeds (42, 20260920, 20261009) with 0 assertion failures, 0 mismatches, and 0 watchdog timeouts.
+- [ ] **Randomized Control-Flow Torture**: `≥ 100,000` accepted operations across canonical seeds (42, 20260920, 20261009) with 0 assertion failures, 0 mismatches, and 0 watchdog timeouts.
 - [ ] **Verilator Lint Clean**: Zero warnings, zero errors under strict lint rules (`tools/run_s1_lint.py`).
 
 ### 11.3 Telemetry & Cycle Conservation Gates
 - [ ] **HPM Telemetry Validation**: All 48 hardware performance events and new diagnostic probes verified against cycle-accurate traces.
-- [ ] **Zero Cycle Leakage**: Formal assertion confirms $\sum_{k=1}^8 C_{\text{category}} == \Delta\text{mcycle}$ across all benchmark runs.
+- [ ] **Zero Cycle Leakage**: Formal assertion confirms `sum_k=1^8 C_category == Δmcycle` across all benchmark runs.
 
 ### 11.4 Performance Evaluation Gates
 - [ ] **Benchmark Characterization Report**: Formal benchmark report generated comparing M6 performance directly against the frozen M5 B4 baseline (`results/s1-m5-b4.json`).

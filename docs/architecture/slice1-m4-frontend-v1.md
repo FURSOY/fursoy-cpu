@@ -10,6 +10,8 @@
 **Freeze Commit (M3):** `2ae4246eac2dcf4f98fc1209d70a3fd06e8dfe4a`  
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m2-backend-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`
 
+> **Post-Phase-3 RTL Note (`bab4ceb`):** In post-Phase-3 production RTL (`docs/architecture/slice1-core-v1.md`), `Gshare4096` and `FQ12` evolved into `TAGE-Lite` (`108`-bit GHR) + `64`-entry tagged `IBP` + `FQ16`, branch checkpoints scaled from `8` to `16` (`NUM_CHECKPOINTS = 16`), RAS uses `INDEXED_RAS_CHKPT = 32` (`slots 1..31`) plus full `arch_ras_array_q[16]`/GHR preservation across non-branch traps, and `fursoy_s1_ptw.sv` enforces reserved PTE `[63:54]`, non-leaf `U/A/D`, and `priv == M && MPRV` checks alongside `global_map`-preserving `SFENCE.VMA` (`16`-bit ASID).
+
 ---
 
 ## 1. Executive Summary & Milestone Scope
@@ -58,9 +60,9 @@ Fursoy Slice-1 Milestones 1, 2, and 3 established and froze a high-performance, 
 ```
 
 ### 1.2 In-Scope for Milestone 4
-1. **Multistage Decoupled Frontend Pipeline**: F0 (Next-PC), F1 (I$/ITLB Request), F2 (I$ Read & Skid Buffer), F3 (Align & Early JAL Check), F4 (Fetch Queue Buffer), D0 (Decode & Exception Bypass).
+1. **Multistage Decoupled Frontend Pipeline**: F0 (Next-PC), F1 (I`/ITLB Request), F2 (I` Read & Skid Buffer), F3 (Align & Early JAL Check), F4 (Fetch Queue Buffer), D0 (Decode & Exception Bypass).
 2. **64-bit Fetch Bandwidth & Alignment**: Delivery of up to two 32-bit instructions per cycle from 64-bit aligned fetch blocks.
-3. **Explicit RVC Exclusion**: Initial baseline strictly excludes 16-bit compressed instructions; all instructions are naturally 4-byte aligned ($PC[1:0] == 2\text{'b}00$).
+3. **Explicit RVC Exclusion**: Initial baseline strictly excludes 16-bit compressed instructions; all instructions are naturally 4-byte aligned (`PC[1:0] == 2'b00`).
 4. **Decoupled Fetch Queue (Instruction Buffer)**: 12-entry FIFO isolating frontend memory latency and predictor bubbles from decode/rename.
 5. **Dynamic Branch Prediction Subsystem**:
    - **BTB**: 512 entries, 2-way set-associative, with dual-branch evaluation per 64-bit block.
@@ -69,7 +71,7 @@ Fursoy Slice-1 Milestones 1, 2, and 3 established and froze a high-performance, 
 6. **Speculative JALR Target-Mispredict Recovery (Resolution of P0-1)**: Defining a minimal cross-milestone integration extension allowing speculative JALR and return target predictions to allocate an M1 branch checkpoint, enabling Port 0 to assert recovery redirect on target mismatch.
 7. **Speculative GHR Ownership (`pre_branch_ghr`)**: Every predicted conditional branch captures and carries its exact pre-branch GHR snapshot; younger branches cannot mutate older checkpointed history.
 8. **Frontend-Local Predictor Recovery**: Clean rollback of speculative GHR and RAS state for unrenamed branches squashed in the Fetch Queue.
-9. **Instruction Address Misaligned Attribution**: Attributed strictly to the control-flow instruction itself in the execution unit upon taken transfer to an unaligned target ($Target[1:0] \neq 2\text{'b}00$).
+9. **Instruction Address Misaligned Attribution**: Attributed strictly to the control-flow instruction itself in the execution unit upon taken transfer to an unaligned target (`Target[1:0] ≠ 2'b00`).
 10. **Early Decode JAL Redirect Gating**: Gated by `!already_correctly_predicted` to eliminate duplicate redirects.
 11. **Synchronous L1I Response Skid Buffer (Stage F2)**: 1-entry skid buffer absorbing synchronous SRAM responses during downstream Fetch Queue backpressure without data loss or duplicate enqueue.
 12. **Dual Instruction MSHRs (I-MSHR)**: 2 MSHR entries eliminating redirect-under-miss starvation; dead refills install into L1I but suppress pipeline delivery.
@@ -95,7 +97,7 @@ Fursoy Slice-1 Milestones 1, 2, and 3 established and froze a high-performance, 
 | **Instruction Length** | 32 bits fixed (RVC compressed instructions excluded) | **FROZEN SEMANTIC CONTRACT** |
 | **Decode Width** | 2 instructions / cycle into canonical micro-ops | **FROZEN SEMANTIC CONTRACT** |
 | **Rename Handoff Width** | Up to 2 uops / cycle (gated by M1 `rename_ack_o`) | **FROZEN SEMANTIC CONTRACT** |
-| **RVC Exclusion** | Canonical initial baseline strictly requires $PC[1:0] == 2\text{'b}00$ | **FROZEN SEMANTIC CONTRACT** |
+| **RVC Exclusion** | Canonical initial baseline strictly requires `PC[1:0] == 2'b00` | **FROZEN SEMANTIC CONTRACT** |
 | **Exact Redirect Priority** | Reset > Trap > MRET/SRET > Branch/JALR Mispredict > Early JAL > BPU > NextPC | **FROZEN SEMANTIC CONTRACT** |
 | **JALR Recovery Extension** | Speculative JALR allocates M1 checkpoint; Port 0 triggers target recovery | **CROSS-MILESTONE INTEGRATION EXTENSION** |
 | **FENCE.I Visibility** | Complete L1D dirty-line clean before L1I invalidation | **FROZEN SEMANTIC CONTRACT** |
@@ -110,7 +112,7 @@ Fursoy Slice-1 Milestones 1, 2, and 3 established and froze a high-performance, 
 | **F2 Skid Buffer** | 1-entry synchronous SRAM response hold buffer | **FROZEN SEMANTIC CONTRACT** |
 | **GHR Ownership** | Carries `pre_branch_ghr`; restored from checkpoint on mispredict | **FROZEN SEMANTIC CONTRACT** |
 | **RAS Rollback** | Full 16-entry logical state restoration per checkpoint | **FROZEN SEMANTIC CONTRACT** |
-| **L1I Way Size Bound** | Way Size $\le 4\text{ KiB}$ ($64\text{ sets} \times 64\text{ bytes} = 4096\text{ bytes/way}$) | **FROZEN SEMANTIC CONTRACT** |
+| **L1I Way Size Bound** | Way Size `≤ 4 KiB` (`64 sets × 64 bytes = 4096 bytes/way`) | **FROZEN SEMANTIC CONTRACT** |
 | **Reset Entry PC** | `64'h0000_0000_8000_0000` | **FROZEN SEMANTIC CONTRACT** |
 | **Pipeline Partitioning** | 6-stage physical partitioning (F0, F1, F2, F3, F4, D0) | **PROVISIONAL MICROARCHITECTURAL PARAMETER** |
 | **Fetch Queue Depth** | 12 entries | **PROVISIONAL MICROARCHITECTURAL PARAMETER** |
@@ -143,11 +145,11 @@ Fursoy Slice-1 Milestones 1, 2, and 3 established and froze a high-performance, 
 
 ### 3.1 Stage F0: Next-PC Generation (`GenPC`)
 - **Sequential Next-PC Calculation**:
-  - If fetch begins at lower half ($PC[2] == 0$): Both Slot 0 and Slot 1 are fetched. Next sequential fetch block address is:
-    $$\text{next\_pc} = PC + 8$$
-  - If fetch begins at upper half ($PC[2] == 1$): Only Slot 1 is delivered (Slot 0 masked). Next sequential fetch block address is:
-    $$\text{next\_pc} = \{PC[63:3] + 1\text{'b}1, 3\text{'b}000\} = PC + 4$$
-  - **CRITICAL**: The frontend **NEVER adds 8 to an odd-slot PC** ($PC[2]==1$), which would skip Slot 0 of the adjacent 64-bit block!
+  - If fetch begins at lower half (`PC[2] == 0`): Both Slot 0 and Slot 1 are fetched. Next sequential fetch block address is:
+    `next_pc = PC + 8`
+  - If fetch begins at upper half (`PC[2] == 1`): Only Slot 1 is delivered (Slot 0 masked). Next sequential fetch block address is:
+    `next_pc = {PC[63:3] + 1'b1, 3'b000} = PC + 4`
+  - **CRITICAL**: The frontend **NEVER adds 8 to an odd-slot PC** (`PC[2]==1`), which would skip Slot 0 of the adjacent 64-bit block!
 
 ### 3.2 Stage F2: Synchronous L1I Response Skid Buffer (Resolution of P1 Finding)
 Synchronous SRAM arrays present read data exactly 1 cycle after address assertion. If the downstream Fetch Queue becomes full in the exact cycle data emerges from L1I, the data cannot be accepted into F3/F4 and cannot be held inside the SRAM output latches without being clobbered:
@@ -167,14 +169,14 @@ Synchronous SRAM arrays present read data exactly 1 cycle after address assertio
   4. Guarantees: Zero dropped instruction bytes, zero SRAM overwrites, and zero duplicate enqueues.
 
 ### 3.3 Stage F3: Instruction Alignment & Gated Early JAL Redirect
-- Slices 64-bit fetch block into Slot 0 ($PC[2]==0$, bits [31:0]) and Slot 1 ($PC[2]==1$, bits [63:32]).
+- Slices 64-bit fetch block into Slot 0 (`PC[2]==0`, bits [31:0]) and Slot 1 (`PC[2]==1`, bits [63:32]).
 - Evaluates JAL instructions. To prevent spurious duplicate redirects:
   ```verilog
   early_jal_redirect = decoded_jal && !already_correctly_predicted;
   ```
   where `already_correctly_predicted = btb_hit && (pred_target == computed_jal_target)`.
   - If the BTB already predicted the exact JAL target in F2, F3 **suppresses redirection**.
-  - If the BTB missed or predicted the wrong target, F3 redirects F0 to the exact computed target $PC + \text{imm}$ immediately, saving execution-stage misprediction penalty cycles.
+  - If the BTB missed or predicted the wrong target, F3 redirects F0 to the exact computed target `PC + imm` immediately, saving execution-stage misprediction penalty cycles.
 
 ### 3.4 Stage D0: Decode & Exception Decode Bypass (Resolution of P1 Finding)
 - **Decode Exception Bypass Rule**:
@@ -245,8 +247,8 @@ Every control-flow micro-op entering the pipeline is strictly classified across 
 2. **Checkpoint Allocation at Rename**:
    - M1 Rename allocates one of the **8 branch checkpoints** for the speculative `JALR`, copying SRAT map, Free List state, `pre_branch_ghr`, and RAS logical state.
 3. **Port 0 Resolution & Recovery**:
-   - `u_branch_unit` calculates $\text{actual\_target} = (op\_a + \text{imm}) \ \& \ \sim 64\text{'d}1$.
-   - Evaluates $\text{target\_mispredict} = (\text{actual\_target} \neq \text{pred\_target})$.
+   - `u_branch_unit` calculates `actual_target = (op_a + imm) & ~ 64'd1`.
+   - Evaluates `target_mispredict = (actual_target ≠ pred_target)`.
    - Port 0 writeback stage asserts `p0_wb_mispredict`:
      ```verilog
      p0_wb_mispredict <= (rf0_uop_q.uop_class == UOP_BRANCH || rf0_uop_q.uop_class == UOP_JALR) ? br_mispredict : 1'b0;
@@ -264,28 +266,28 @@ Every control-flow micro-op entering the pipeline is strictly classified across 
 Snapshotting the live frontend GHR at Rename is strictly forbidden because younger branches fetched while older branches wait in the Fetch Queue mutate the live GHR, corrupting the older branch's checkpoint.
 
 1. **Prediction Point Capture (Stage F2)**:
-   When conditional branch $B$ is evaluated in F2, it captures its exact pre-branch history:
-   $$B.\text{pre\_branch\_ghr}[11:0] \Leftarrow \text{GHR}[11:0]$$
+   When conditional branch `B` is evaluated in F2, it captures its exact pre-branch history:
+   `B.pre_branch_ghr[11:0] ← GHR[11:0]`
 2. **Speculative Live Advancement**:
    The live frontend GHR shifts immediately to predict subsequent branches in the stream:
-   $$\text{GHR} \Leftarrow \{\text{GHR}[10:0], B.\text{pred\_taken}\}$$
+   `GHR ← {GHR[10:0], B.pred_taken}`
 3. **Queue Encapsulation**:
-   $B.\text{pre\_branch\_ghr}$ is stored in the Fetch Queue entry alongside $B$.
+   `B.pre_branch_ghr` is stored in the Fetch Queue entry alongside `B`.
 4. **Checkpoint Copy at Rename**:
-   When branch $B$ allocates M1 checkpoint $k$ at Rename:
-   $$\text{chkpt\_table}[k].\text{ghr}[11:0] \Leftarrow B.\text{pre\_branch\_ghr}[11:0]$$
+   When branch `B` allocates M1 checkpoint `k` at Rename:
+   `chkpt_table[k].ghr[11:0] ← B.pre_branch_ghr[11:0]`
    Younger branches in the Fetch Queue have zero influence on `chkpt_table[k].ghr`.
 5. **Resolution & History Reconstruction on Port 0**:
    - *Correct Prediction*: Speculative GHR sequence is retained.
    - *Misprediction*: The recovery logic restores the branch's exact pre-branch snapshot and appends the actual resolved direction:
-     $$\text{GHR}_{\text{recovered}} = \{\text{chkpt\_table}[k].\text{ghr}[10:0], \text{actual\_taken}\}$$
+     `GHR_recovered = {chkpt_table[k].ghr[10:0], actual_taken}`
    - Bit-exact mathematical history restoration is guaranteed.
 
 ### 5.2 Frontend-Local Predictor Recovery Before Rename
 Backend checkpoints do not exist for instructions waiting in the Fetch Queue. Four required scenarios must be handled without permanent GHR or RAS drift:
 1. **Branch Predicted but Never Renamed**:
    - Occurs when a backend redirect or trap squashes the Fetch Queue while unrenamed predicted branches reside within it.
-   - *Action*: Entire Fetch Queue is cleared; live GHR is restored from the backend checkpoint's $\text{GHR}_{\text{recovered}}$ (or cleared on trap/reset).
+   - *Action*: Entire Fetch Queue is cleared; live GHR is restored from the backend checkpoint's `GHR_recovered` (or cleared on trap/reset).
 2. **Early Decode Redirect (Stage F3 JAL Correction)**:
    - When an unpredicted or mispredicted JAL redirects in F3, any younger branches fetched in F0..F2 are squashed.
    - *Action*: Live GHR is restored to the `pre_branch_ghr` of the instruction immediately following the JAL.
@@ -317,23 +319,23 @@ Because the RAS is circular with finite depth (16 entries), speculative function
 
 - **Authoritative M4 Baseline Contract**:
   - Each of M1's **8 branch checkpoints** allocates a full logical RAS backup:
-    $$\text{chkpt\_ras\_table}[k] = \{\text{ras\_array}[15:0], \text{tos\_ptr}[3:0], \text{depth}[4:0]\}$$
-  - Total flip-flop overhead: $8 \times 1033\text{ bits} \approx 1\text{ KiB}$ of storage across the core.
+    `chkpt_ras_table[k] = {ras_array[15:0], tos_ptr[3:0], depth[4:0]}`
+  - Total flip-flop overhead: `8 × 1033 bits ≈ 1 KiB` of storage across the core.
 - **Rollback Operation**:
-  When Port 0 asserts `recover_valid_o` with checkpoint $k$:
-  $$\text{ras\_array}[15:0] \Leftarrow \text{chkpt\_ras\_table}[k].\text{ras\_array}[15:0]$$
-  $$\text{tos\_ptr} \Leftarrow \text{chkpt\_ras\_table}[k].\text{tos\_ptr}$$
-  $$\text{depth} \Leftarrow \text{chkpt\_ras\_table}[k].\text{depth}$$
+  When Port 0 asserts `recover_valid_o` with checkpoint `k`:
+  `ras_array[15:0] ← chkpt_ras_table[k].ras_array[15:0]`
+  `tos_ptr ← chkpt_ras_table[k].tos_ptr`
+  `depth ← chkpt_ras_table[k].depth`
   - Fully restores the exact pre-branch call stack in 1 cycle, completely immune to speculative call overwrites.
 
 ### 6.2 Exhaustive Operational Semantics
-- **Nested Calls**: Increments `tos_ptr` and pushes $PC + 4$.
+- **Nested Calls**: Increments `tos_ptr` and pushes `PC + 4`.
 - **Nested Returns**: Reads predicted target at `tos_ptr` and decrements `tos_ptr`.
 - **Speculative Calls & Returns**: Updated speculatively at F2/F3 prediction time; protected by M1 checkpointing.
 - **Overflow & Circular Wrap**: When `depth == 16`, subsequent calls increment `tos_ptr` modulo 16 and overwrite the oldest return address, saturating `depth` at 16.
 - **Underflow**: When `depth == 0`, return reads `RAS[tos_ptr]` and keeps `depth = 0`.
 - **Misprediction Recovery**: Fully restores array, pointer, and depth to checkpointed state.
-- **Call PC Semantics**: The pushed return address is strictly $PC + 4$ (instructions are 4-byte fixed length; RVC excluded).
+- **Call PC Semantics**: The pushed return address is strictly `PC + 4` (instructions are 4-byte fixed length; RVC excluded).
 
 ---
 
@@ -354,7 +356,7 @@ In strict accordance with the RISC-V Unprivileged Specification:
    - `retire_exception_o = 1'b1`
    - `retire_exc_cause_o = 5'd0` (Instruction Address Misaligned)
    - `retire_exc_pc_o = branch_uop.pc` (the PC of the branch/jump itself)
-   - `mtval` / `stval` $\Leftarrow \text{actual\_target\_o}$ (the invalid misaligned address).
+   - `mtval` / `stval` `← actual_target_o` (the invalid misaligned address).
 4. **Target Fetch Uop Eliminated**: No target fetch uop is ever launched or needed to report this trap.
 
 ### 7.2 Fetch Exception Precision & Fault Packet Definition
@@ -427,7 +429,7 @@ With a single I-MSHR, if a wrong-path fetch misses in L1I and a branch redirect 
 ### 9.1 Shared PTW Ownership (M4 RTL Scope)
 The centralized Sv39 hardware Page Table Walker is an **authoritative Milestone 4 RTL deliverable**:
 - Accepts translation requests from M3 DTLB (carrying `tr_id[1:0]`) and M4 ITLB (carrying `itrt_id`).
-- Implements 3-level page table traversal ($L2 \rightarrow L1 \rightarrow L0$).
+- Implements 3-level page table traversal (`L2 → L1 → L0`).
 - Performs memory reads via a dedicated memory arbitration layer outside frozen L1D.
 - Memory access attributes: Strictly read-only, 64-bit aligned, subject to PMP execute/read checks, with persistent response tags matching request transaction IDs.
 
@@ -534,7 +536,7 @@ The frozen M1 ROB contains no `fence_i_flush_o` output port, nor does it define 
 4. **Older Memory Quiescence & Dirty L1D Clean Handshake**:
    - The controller verifies older store quiescence by checking `sq_empty_i` from `fursoy_s1_lsu_queues.sv`, guaranteeing all prior stores have retired and drained from the Store Queue into L1D.
    - The controller then asserts `dcache_clean_all_req_o = 1'b1` to `fursoy_s1_l1d.sv`.
-   - L1D executes an exhaustive sweep across all 64 sets $\times$ 4 ways, writes back all dirty lines through the Writeback Buffer (WBB) to external memory, and verifies WBB is empty before asserting `dcache_clean_all_done_i = 1'b1`.
+   - L1D executes an exhaustive sweep across all 64 sets `×` 4 ways, writes back all dirty lines through the Writeback Buffer (WBB) to external memory, and verifies WBB is empty before asserting `dcache_clean_all_done_i = 1'b1`.
 
 5. **Frontend Invalidation & Pipeline Purge**:
    - Only after receiving `dcache_clean_all_done_i`, the controller asserts `l1i_inval_all_o = 1'b1`, clearing all valid tags across the entire L1I array.
@@ -590,7 +592,7 @@ To preserve the absolute correctness and frozen status of Milestones 1, 2, and 3
    - `fursoy_s1_backend.sv`: Asserts `p0_wb_mispredict` for `UOP_JALR` upon target mismatch.
    - `fursoy_s1_substrate.sv`: M1 Rename allocates branch checkpoints for speculative `UOP_JALR`.
 2. **L1D Cache Clean Maintenance Interface (Milestone 3 Extension)**:
-   - `fursoy_s1_l1d.sv`: Exposes `dcache_clean_all_req_i` and `dcache_clean_all_done_o`, performing an exhaustive sweep of all 64 sets $\times$ 4 ways, evicting dirty lines through WBB.
+   - `fursoy_s1_l1d.sv`: Exposes `dcache_clean_all_req_i` and `dcache_clean_all_done_o`, performing an exhaustive sweep of all 64 sets `×` 4 ways, evicting dirty lines through WBB.
 3. **Shared PTW Memory Arbitration Layer (Milestone 3 Extension)**:
    - Arbitrates external memory read requests between M3 L1D refills/writebacks and the M4 shared Page Table Walker outside the frozen L1D core.
 
@@ -602,19 +604,19 @@ To preserve the absolute correctness and frozen status of Milestones 1, 2, and 3
 Each test specifies explicit stimulus, expected architectural state/output, and explicit failure conditions:
 
 1. **Sequential 2-Wide Fetch**:
-   - *Stimulus*: 64 consecutive 32-bit ALU instructions at $PC=0x8000\_0000$.
+   - *Stimulus*: 64 consecutive 32-bit ALU instructions at `PC=0x8000_0000`.
    - *Expected*: Fetch and Decode sustain 2 uops/cycle delivery.
    - *Failure*: Any unexpected stall or bubble.
-2. **Upper-Half Fetch Start ($PC[2]==1$)**:
-   - *Stimulus*: Redirect to $PC=0x8000\_0004$.
-   - *Expected*: Cycle 1 delivers Slot 1 only; Cycle 2 fetches from $PC=0x8000\_0008$.
-   - *Failure*: Next-PC adds 8 to odd PC ($0x8000\_000C$) or drops Slot 1.
+2. **Upper-Half Fetch Start (`PC[2]==1`)**:
+   - *Stimulus*: Redirect to `PC=0x8000_0004`.
+   - *Expected*: Cycle 1 delivers Slot 1 only; Cycle 2 fetches from `PC=0x8000_0008`.
+   - *Failure*: Next-PC adds 8 to odd PC (`0x8000_000C`) or drops Slot 1.
 3. **Cache Line Boundary Crossing**:
-   - *Stimulus*: Sequential execution across 64-byte boundary ($0x8000\_003C \rightarrow 0x8000\_0040$).
+   - *Stimulus*: Sequential execution across 64-byte boundary (`0x8000_003C → 0x8000_0040`).
    - *Expected*: Seamless transition between L1I cache lines with zero dropped bytes.
    - *Failure*: Pipeline stall or wrong PC fetched.
 4. **4 KiB Virtual Page Boundary Crossing**:
-   - *Stimulus*: Code crossing from $0x8000\_0FFC$ to $0x8000\_1000$ under Sv39.
+   - *Stimulus*: Code crossing from `0x8000_0FFC` to `0x8000_1000` under Sv39.
    - *Expected*: ITLB translates both pages seamlessly.
    - *Failure*: False page fault or incorrect physical address.
 5. **Predicted Taken Branch (BTB Hit)**:
@@ -627,19 +629,19 @@ Each test specifies explicit stimulus, expected architectural state/output, and 
    - *Failure*: Erroneous target redirect.
 7. **Direction Misprediction Recovery**:
    - *Stimulus*: Branch predicted taken, actually not taken.
-   - *Expected*: Port 0 asserts mispredict; M1 recovers SRAT; PC restores to fallthrough $PC+4$.
+   - *Expected*: Port 0 asserts mispredict; M1 recovers SRAT; PC restores to fallthrough `PC+4`.
    - *Failure*: Pipeline hang or incorrect architectural register state.
 8. **Conditional Target Misprediction Recovery**:
    - *Stimulus*: Branch predicted taken with incorrect target address.
    - *Expected*: Port 0 redirects to actual target; GHR restored.
    - *Failure*: Stale PC refetched.
 9. **JALR Target Misprediction Recovery (Resolution of P0-1)**:
-   - *Stimulus*: Indirect JALR predicted to address $A$; actual register contains address $B$.
-   - *Expected*: Port 0 asserts `p0_wb_mispredict`; checkpoint recovers SRAT and RAS; fetch redirects to $B$.
-   - *Failure*: Execution continues at $A$, or backend hangs without recovery.
+   - *Stimulus*: Indirect JALR predicted to address `A`; actual register contains address `B`.
+   - *Expected*: Port 0 asserts `p0_wb_mispredict`; checkpoint recovers SRAT and RAS; fetch redirects to `B`.
+   - *Failure*: Execution continues at `A`, or backend hangs without recovery.
 10. **Return RAS Target Misprediction (Resolution of P0-1)**:
     - *Stimulus*: Function modifies return address on stack; `RET` predicted via stale RAS target.
-    - *Expected*: Port 0 detects mismatch against actual register $ra$; triggers checkpoint recovery to correct address.
+    - *Expected*: Port 0 detects mismatch against actual register `ra`; triggers checkpoint recovery to correct address.
     - *Failure*: Wrong-path execution commits.
 11. **Gated Early JAL Redirect (No Duplicate Redirect)**:
     - *Stimulus*: JAL instruction with BTB hit predicting exact target.
@@ -647,16 +649,16 @@ Each test specifies explicit stimulus, expected architectural state/output, and 
     - *Failure*: F3 issues duplicate redirect, causing fetch bubble.
 12. **Early JAL Target Correction**:
     - *Stimulus*: JAL instruction missing in BTB.
-    - *Expected*: F3 detects JAL and immediately redirects F0 to $PC+\text{imm}$ before Rename.
+    - *Expected*: F3 detects JAL and immediately redirects F0 to `PC+imm` before Rename.
     - *Failure*: Redirect deferred until execution stage.
 13. **Unrenamed Branch Squashed in Fetch Queue**:
     - *Stimulus*: 3 predicted branches queued in F4; older branch mispredicts.
     - *Expected*: Queue cleared; GHR restored from backend checkpoint; zero permanent GHR drift.
     - *Failure*: GHR retains speculative history of squashed branches.
 14. **`pre_branch_ghr` Isolation**:
-    - *Stimulus*: Branch $B_1$ queued; younger branch $B_2$ predicted in F2.
-    - *Expected*: $B_1$'s checkpointed GHR matches history at $B_1$'s prediction cycle, unaffected by $B_2$.
-    - *Failure*: $B_1$'s checkpoint contains $B_2$'s shifted history.
+    - *Stimulus*: Branch `B_1` queued; younger branch `B_2` predicted in F2.
+    - *Expected*: `B_1`'s checkpointed GHR matches history at `B_1`'s prediction cycle, unaffected by `B_2`.
+    - *Failure*: `B_1`'s checkpoint contains `B_2`'s shifted history.
 15. **Full RAS Checkpoint Rollback (Resolution of P1 Finding)**:
     - *Stimulus*: Speculative path executes 5 nested calls overwriting RAS array; branch resolves mispredicted.
     - *Expected*: Checkpoint restores full 16-entry array, `tos_ptr`, and depth bit-for-bit.
@@ -700,13 +702,13 @@ Each test specifies explicit stimulus, expected architectural state/output, and 
 25. **Shared PTW Bounded Fairness (Resolution of P1 Finding)**:
     - *Stimulus*: Continuous DTLB miss stream with 1 ITLB miss pending.
     - *Expected*: PTW grants ITLB request after exactly 4 DTLB grants.
-    - *Failure*: ITLB starves for $>4$ DTLB grants.
+    - *Failure*: ITLB starves for `>4` DTLB grants.
 26. **Decode Exception Bypass (Resolution of P1 Finding)**:
     - *Stimulus*: Instruction Page Fault (Cause 12) arrives at D0 with random data bits.
     - *Expected*: Stage D0 preserves Cause 12, bypasses decode, does not raise Cause 2.
     - *Failure*: Illegal Instruction (Cause 2) generated.
 27. **Instruction Page Fault (Cause 12)**:
-    - *Stimulus*: Fetch from page with $X=0$ in PTE.
+    - *Stimulus*: Fetch from page with `X=0` in PTE.
     - *Expected*: Precise Cause 12 at ROB head with `stval` = faulting PC.
     - *Failure*: Instruction executes or wrong trap cause.
 28. **Instruction Access Fault (Cause 1)**:
@@ -779,7 +781,7 @@ Each test specifies explicit stimulus, expected architectural state/output, and 
     - *Failure*: FIFO pointer corruption.
 45. **Call / Return Coroutine Swap**:
     - *Stimulus*: `JALR x1, x5, 0` swapping execution contexts.
-    - *Expected*: Pops target from RAS, pushes $PC+4$.
+    - *Expected*: Pops target from RAS, pushes `PC+4`.
     - *Failure*: Stack unbalanced.
 46. **F2 Skid Buffer Flush on Redirect**:
     - *Stimulus*: F2 skid buffer valid when Port 0 mispredict redirect occurs.

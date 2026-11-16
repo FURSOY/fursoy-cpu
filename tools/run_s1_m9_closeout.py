@@ -9,6 +9,7 @@ import sys
 import time
 
 from s1_rtl_manifest import (
+    ACCEPTED_RTL_MANIFEST_SHA256S,
     CORE_RTL,
     ROOT,
     SOC_RTL,

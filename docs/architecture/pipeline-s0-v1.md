@@ -34,7 +34,7 @@ In the existing non-pipelined Slice-0 core (`fursoy_s0_core.sv`), instruction fe
 3. In Cycle 2, L1I enters `FETCH_CHECK` to check ITLB, compare tags, and register the hit.
 4. Only upon registering `fetched_valid_o = 1` does the core evaluate decode, register read, ALU compute, and register writeback.
 
-Even with a **98.38% L1I hit rate**, every single instruction requires at least 1 full cycle of fetch wait before execution can occur. Cache misses account for only ~2.42M cycles of refill wait ($246,953 \times \approx 9.8\text{ cycles}$). The remaining **22.20 million cycles of pure fetch wait are structural serialization overhead**.
+Even with a **98.38% L1I hit rate**, every single instruction requires at least 1 full cycle of fetch wait before execution can occur. Cache misses account for only ~2.42M cycles of refill wait (`246,953 × ≈ 9.8 cycles`). The remaining **22.20 million cycles of pure fetch wait are structural serialization overhead**.
 
 ### 1.3 Architectural Objective
 
@@ -75,7 +75,7 @@ Candidate B: 3-Stage Pipeline (Fetch [F] | Decode/Execute [D/X] | Memory/Writeba
 | **Inter-Stage Registers** | 1 stage boundary (F/E) | 2 stage boundaries (F/D, D/W) |
 | **RAW Hazard Forwarding** | **ZERO forwarding multiplexers required**. Register writeback occurs at clock edge ending Stage E; subsequent instruction reads updated RF in Stage E. | **Full EX-to-EX forwarding required** for both `rs1` and `rs2` from M/W to D/X. |
 | **ALU-to-ALU Dependency** | **0-cycle stall, 1 IPC throughput** on dependent ALU instructions (`add a0, a1; add a0, a0`). | Requires combinational forwarding bus or 1-cycle stall. |
-| **Load-to-Use Penalty** | Equivalent to LSU latency ($N$ cycles). Next instruction stalls in F. | $N$ cycles with forwarding; $N+1$ cycles without forwarding. |
+| **Load-to-Use Penalty** | Equivalent to LSU latency (`N` cycles). Next instruction stalls in F. | `N` cycles with forwarding; `N+1` cycles without forwarding. |
 | **Taken Branch Penalty** | **1 cycle bubble** (target fetched in F while branch commits in E). | **2 cycle bubble** (both F and D stages squashed). |
 | **Untaken Branch Penalty** | **0 cycle penalty** (sequential fall-through instruction enters E immediately). | **0 cycle penalty** (fall-through enters D). |
 | **Exception Precision** | Trivial: Stage E is the sole commit and trap point. Only 1 instruction in execution. | Complex: Distributed exceptions between D/X and M/W require tracking and cancel buses. |
@@ -97,7 +97,7 @@ The 2-stage organization is selected because:
 ## 3. L1I Streaming Hit Throughput Contract Extension (P0-1)
 
 ### 3.1 Motivation & Identification of Extension
-Under the previously frozen L1I contract (`docs/architecture/l1i-cache-v1.md`), the FSM unconditionally transitioned `FETCH_CHECK -> FETCH_REQ` upon completing a hit. This imposed an alternating 2-cycle cadence (`FETCH_REQ` $\rightarrow$ `FETCH_CHECK`), preventing back-to-back hits.
+Under the previously frozen L1I contract (`docs/architecture/l1i-cache-v1.md`), the FSM unconditionally transitioned `FETCH_CHECK -> FETCH_REQ` upon completing a hit. This imposed an alternating 2-cycle cadence (`FETCH_REQ` → `FETCH_CHECK`), preventing back-to-back hits.
 
 To enable **1 instruction/cycle hit throughput after pipeline fill**, the pipeline architecture introduces a **strictly controlled, minimal streaming hit extension** to `fursoy_s0_l1i`.
 
@@ -183,7 +183,7 @@ To enable **1 instruction/cycle hit throughput after pipeline fill**, the pipeli
    - Cache capacity (16 KiB), associativity (4-way), set count (64), line size (64 bytes).
    - VIPT zero-aliasing index (`PC[11:6]`) and physical tag width (`PA[55:12]`).
    - Tree-PLRU replacement algorithm.
-   - PMP authorization ordering (Canonical $\rightarrow$ ITLB $\rightarrow$ PMP $\rightarrow$ Tag match).
+   - PMP authorization ordering (Canonical → ITLB → PMP → Tag match).
    - Refill atomicity (no partial lines visible).
 
 ---
@@ -248,7 +248,7 @@ To enable **1 instruction/cycle hit throughput after pipeline fill**, the pipeli
 #### 4.1.2 Formal Definition of `stall_f` (P1-2)
 Stage F is stalled if and only if `stall_f` evaluates true:
 
-$$\text{stall\_f} = \text{rst\_i} \lor \text{stall\_e} \lor \text{l1i\_miss\_active} \lor \text{itlb\_busy} \lor \text{l1i\_hold\_active} \lor \text{serialize\_active}$$
+`stall_f = rst_i || stall_e || l1i_miss_active || itlb_busy || l1i_hold_active || serialize_active`
 
 Where:
 - `rst_i`: Hardware reset asserted.
@@ -356,22 +356,22 @@ Consider an arbitrary back-to-back dependent ALU instruction sequence:
 Cycle T:    Inst 1 in Stage E: addi a0, zero, 5    (writes a0)
 Cycle T+1:  Inst 2 in Stage E: addi a1, a0, 10      (reads a0)
 ```
-1. In Cycle $T$, Inst 1 executes in Stage E. Its ALU result (`5`) is ready combinationally.
-2. At the rising clock edge ending Cycle $T$ (beginning Cycle $T+1$):
+1. In Cycle `T`, Inst 1 executes in Stage E. Its ALU result (`5`) is ready combinationally.
+2. At the rising clock edge ending Cycle `T` (beginning Cycle `T+1`):
    - Inst 1 commits.
    - `registers[10] <= 5` is written into the register file.
    - Inst 2 moves from Stage F into Stage E (`fe_q.insn <= Inst 2`).
-3. In Cycle $T+1$, Inst 2 executes in Stage E. Its combinational register read accesses `registers[10]`.
+3. In Cycle `T+1`, Inst 2 executes in Stage E. Its combinational register read accesses `registers[10]`.
 4. Because `registers[10]` holds value `5` as of the clock edge, Inst 2 reads `5` with **zero wait states and zero forwarding logic**.
 5. **Throughput:** Exactly 1 cycle per instruction (IPC = 1.0) on dependent ALU chains.
 
 ### 5.2 Load-to-Use Hazards
-When instruction $i$ in Stage E is a load and instruction $i+1$ reads the loaded register:
-1. Cycle $T$: Load enters Stage E, issues memory request (`vd_req_valid = 1`). Stage E asserts `stall_e = 1`, holding instruction $i+1$ in Stage F.
+When instruction `i` in Stage E is a load and instruction `i+1` reads the loaded register:
+1. Cycle `T`: Load enters Stage E, issues memory request (`vd_req_valid = 1`). Stage E asserts `stall_e = 1`, holding instruction `i+1` in Stage F.
 2. When LSU receives read data (`vd_rsp_valid = 1`):
    - LSU formats sign/zero-extension (`lsu_retire_data`).
    - At clock edge, `registers[rd] <= lsu_retire_data` is written, and `stall_e` deasserts.
-3. Next cycle, instruction $i+1$ enters Stage E, reads the newly written register, and executes.
+3. Next cycle, instruction `i+1` enters Stage E, reads the newly written register, and executes.
 4. **Load-to-Use Penalty:** Exactly equal to the memory latency. Zero additional hazard bubble cycles.
 
 ---
@@ -385,34 +385,34 @@ The baseline pipeline implements **predict-not-taken (fall-through)**:
 ### 6.2 Cycle-by-Cycle Branch Timing Derivation
 
 #### Scenario 1: Conditional Branch NOT TAKEN (50.77% of branches in Linux baseline)
-- **Cycle $T$:** Branch executes in Stage E, evaluates condition as UNTAKEN.
+- **Cycle `T`:** Branch executes in Stage E, evaluates condition as UNTAKEN.
   * `commit_valid_o = 1`, `redirect_branch_e = 0`.
-  * Fall-through instruction (`fe_q.pc + 4`) was already requested in Stage F during Cycle $T$ and hits in streaming L1I.
-  * At clock edge ending Cycle $T$, fall-through instruction enters Stage E (`fe_q.valid <= 1`).
-- **Cycle $T+1$:** Fall-through instruction executes and commits in Stage E!
+  * Fall-through instruction (`fe_q.pc + 4`) was already requested in Stage F during Cycle `T` and hits in streaming L1I.
+  * At clock edge ending Cycle `T`, fall-through instruction enters Stage E (`fe_q.valid <= 1`).
+- **Cycle `T+1`:** Fall-through instruction executes and commits in Stage E!
 - **Branch Penalty:** **EXACTLY 0 BUBBLE CYCLES (Zero-Stall Fall-Through).**
 
 #### Scenario 2: Conditional Branch TAKEN (49.23% of branches) or JAL / JALR
-- **Cycle $T$:** Branch executes in Stage E, evaluates condition as TAKEN.
+- **Cycle `T`:** Branch executes in Stage E, evaluates condition as TAKEN.
   * Target PC computed: `branch_target_e = fe_q.pc + imm` (or `rs1 + imm`).
   * Branch commits (`commit_valid_o = 1`, `commit_pc_o = fe_q.pc`).
   * Stage E asserts `redirect_branch_e = 1`, driving `branch_target_e` into Stage F.
   * F/E register is flushed: `fe_q.valid <= 1'b0` (squashes speculative fall-through instruction).
   * L1I receives `redirect_i = 1`, latches `req_pc_q <= branch_target_e`, and enters `FETCH_CHECK`.
-- **Cycle $T+1$ (Pipeline Bubble):**
+- **Cycle `T+1` (Pipeline Bubble):**
   * Stage E observes `fe_q.valid == 0` (**Bubble Cycle**; zero commits, zero register writes).
   * L1I is in `FETCH_CHECK` evaluating `branch_target_e`. Tag matches!
-  * At end of Cycle $T+1$, L1I presents target instruction on `fetched_valid_o = 1`.
+  * At end of Cycle `T+1`, L1I presents target instruction on `fetched_valid_o = 1`.
   * Target instruction clocked into F/E register (`fe_q.valid <= 1`, `fe_q.pc <= branch_target_e`).
-- **Cycle $T+2$:** Target instruction executes and commits in Stage E!
+- **Cycle `T+2`:** Target instruction executes and commits in Stage E!
 - **Branch Penalty:** **EXACTLY 1 BUBBLE CYCLE on L1I Hit.**
 
 #### Scenario 3: Taken Branch with Target Missing in L1I
-- **Cycle $T$:** Branch commits in Stage E. Redirect asserted.
-- **Cycle $T+1$:** L1I evaluates `branch_target_e` in `FETCH_CHECK`. Tag mismatch!
+- **Cycle `T`:** Branch commits in Stage E. Redirect asserted.
+- **Cycle `T+1`:** L1I evaluates `branch_target_e` in `FETCH_CHECK`. Tag mismatch!
   * L1I transitions to `REFILL_REQ`.
-- **Cycles $T+1$ to $T+10$:** L1I performs 8-beat refill from DRAM. Stage E remains empty (`fe_q.valid == 0`).
-- **Cycle $T+11$:** Target instruction enters Stage E and commits.
+- **Cycles `T+1` to `T+10`:** L1I performs 8-beat refill from DRAM. Stage E remains empty (`fe_q.valid == 0`).
+- **Cycle `T+11`:** Target instruction enters Stage E and commits.
 - **Branch Penalty:** **1 cycle redirect bubble + 8–10 cycles refill latency.**
 
 ---
@@ -485,12 +485,12 @@ end
 ```
 
 #### Verification Against All Reviewer Cases:
-- **Sequential Execution:** Instruction $i$ commits. Interrupt taken. $\text{EPC} = \text{fe\_q.pc} + 4$. Stage F flushed. Returns cleanly to instruction $i+1$.
-- **Taken Branch / JAL / JALR:** Branch commits. Interrupt taken. $\text{EPC} = \text{branch\_target\_e}$. Stage F flushed. Returns cleanly to target instruction.
-- **Stage E Empty / Bubble:** $\text{EPC} = \text{pending\_pc\_q}$. Returns cleanly to pending instruction.
-- **L1I Miss / Refill:** Stage E empty. $\text{EPC} = \text{pending\_pc\_q}$ (the missing PC). Refill aborted via `refill_abort_q`. Returns cleanly to re-fetch missing PC.
-- **LSU Stall:** Interrupt deferred until LSU completes. If LSU completes cleanly, $\text{EPC} = \text{fe\_q.pc} + 4$. If LSU faults, synchronous exception takes absolute priority ($\text{EPC} = \text{fe\_q.pc}$).
-- **Fetch Fault:** If Stage E commits, interrupt taken at $\text{EPC} = \text{fe\_q.pc} + 4$. Faulting instruction in Stage F squashed without side effects.
+- **Sequential Execution:** Instruction `i` commits. Interrupt taken. `EPC = fe_q.pc + 4`. Stage F flushed. Returns cleanly to instruction `i+1`.
+- **Taken Branch / JAL / JALR:** Branch commits. Interrupt taken. `EPC = branch_target_e`. Stage F flushed. Returns cleanly to target instruction.
+- **Stage E Empty / Bubble:** `EPC = pending_pc_q`. Returns cleanly to pending instruction.
+- **L1I Miss / Refill:** Stage E empty. `EPC = pending_pc_q` (the missing PC). Refill aborted via `refill_abort_q`. Returns cleanly to re-fetch missing PC.
+- **LSU Stall:** Interrupt deferred until LSU completes. If LSU completes cleanly, `EPC = fe_q.pc + 4`. If LSU faults, synchronous exception takes absolute priority (`EPC = fe_q.pc`).
+- **Fetch Fault:** If Stage E commits, interrupt taken at `EPC = fe_q.pc + 4`. Faulting instruction in Stage F squashed without side effects.
 - **Simultaneous Retirement + Interrupt Eligibility:** Handled cleanly by `commit_fire` branch above.
 - **Trap Vector PC Isolation:** `trap_target_pc` is derived from `mtvec`/`stvec` and drives `next_pc_f`. It is NEVER an input to `saved_epc`.
 
@@ -502,7 +502,7 @@ end
 
 | CSR Group | Target CSRs | Architectural Effect | Pipeline Action | Correctness Rationale |
 |---|---|---|---|---|
-| **Class 1: Virtual Memory Root** | `satp` | Modifies translation mode (Bare $\leftrightarrow$ Sv39) and ASID/PPN. | **Full Serialize & Flush.** Flushes Stage F; restarts fetch at `fe_q.pc + 4`. | Instructions in Stage F fetched under old virtual mapping are stale. Must re-fetch under new page table. |
+| **Class 1: Virtual Memory Root** | `satp` | Modifies translation mode (Bare → Sv39) and ASID/PPN. | **Full Serialize & Flush.** Flushes Stage F; restarts fetch at `fe_q.pc + 4`. | Instructions in Stage F fetched under old virtual mapping are stale. Must re-fetch under new page table. |
 | **Class 2: Physical Memory Protection** | `pmpcfg0`, `pmpcfg2`, `pmpaddr0`..`15` | Modifies PMP permission boundaries. | **Full Serialize & Flush + L1I Invalidation.** Pulses `pmp_flush_o`; flushes Stage F; restarts fetch at `fe_q.pc + 4`. | L1I cached lines authorized under old PMP configuration must be invalidated. |
 | **Class 3: Privilege & Translation Modes** | `mstatus`, `sstatus` | Modifies `MPRV`, `SUM`, `MXR`, `TVM`, `TSR`, `TW`, `MPP`, `SPP`. | **Full Serialize & Flush.** Flushes Stage F; restarts fetch at `fe_q.pc + 4`. | Subsequent fetches and data accesses depend immediately on updated privilege and permission modifier bits. |
 | **Class 4: Trap Vector Configuration** | `mtvec`, `stvec` | Modifies trap vector base address and mode (Direct vs Vectored). | **Commit Sync.** Updates register at commit edge. No flush required. | Only traps consume `mtvec`/`stvec`. Updating synchronously at commit guarantees any trap on subsequent cycles uses new vector. |
@@ -550,21 +550,21 @@ In Fursoy Slice-0 v1, legal `WFI` in M-mode, or in S-mode when `mstatus.TW == 0`
 ### 9.1 Cycle-by-Cycle Analytical Derivation
 
 From the 42,575,777 execution cycles of the post-L1I baseline:
-$$\text{Cycles}_{\text{new}} = \text{Useful Retirement} + \text{Fetch Penalty} + \text{LSU Stalls} + \text{PTW Stalls} + \text{Trap Stalls}$$
+`Cycles_new = Useful Retirement + Fetch Penalty + LSU Stalls + PTW Stalls + Trap Stalls`
 
 1. **Useful Retirement:** 15,216,301 cycles (unavoidable; 1 cycle per instruction).
 2. **Fetch Penalty in 2-Stage Pipeline with Streaming L1I:**
    - Sequential instructions hitting in L1I: **0 stall cycles** (completely overlapped with prior instruction execution in Stage E).
-   - L1I misses (246,953 misses $\times \approx 9.8$ cycles): **~2,420,000 cycles**.
-   - Taken branches (1,044,804 $\times$ 1 bubble cycle): **1,044,804 cycles**.
-   - Jumps (JAL: 468,586 + JALR: 388,678 $\times$ 1 bubble cycle): **857,264 cycles**.
-   - Untaken branches (1,077,491 $\times$ 0 cycles): **0 cycles**.
-   - Total Fetch Stalls: $\approx 2.42\text{M} + 1.04\text{M} + 0.86\text{M} \approx \mathbf{4,322,000\text{ cycles}}$ (down from 24,618,624 cycles; **82.4% reduction in fetch wait!**).
+   - L1I misses (246,953 misses `× ≈ 9.8` cycles): **~2,420,000 cycles**.
+   - Taken branches (1,044,804 `×` 1 bubble cycle): **1,044,804 cycles**.
+   - Jumps (JAL: 468,586 + JALR: 388,678 `×` 1 bubble cycle): **857,264 cycles**.
+   - Untaken branches (1,077,491 `×` 0 cycles): **0 cycles**.
+   - Total Fetch Stalls: `≈ 2.42M + 1.04M + 0.86M ≈ 4,322,000 cycles` (down from 24,618,624 cycles; **82.4% reduction in fetch wait!**).
 3. **LSU Stalls:** 2,736,970 cycles (unchanged in this milestone).
 4. **PTW Stalls:** 2,960 cycles (unchanged).
 5. **Trap Stalls:** 922 cycles (unchanged).
 
-$$\text{Estimated Total Cycles} \approx 15,216,301 + 4,322,000 + 2,736,970 + 2,960 + 922 \approx \mathbf{22,279,000\text{ cycles}}$$
+`Estimated Total Cycles ≈ 15,216,301 + 4,322,000 + 2,736,970 + 2,960 + 922 ≈ 22,279,000 cycles`
 
 ### 9.2 Comparative Projection Table
 
@@ -633,7 +633,7 @@ A dedicated verification testbench (`verification/pipeline_s0_tb.cpp`) and runne
 | | **44** | **`sstatus` SUM/MXR change immediate access** | `sstatus.SUM` updated from 0 to 1 immediately followed by S-mode load of U-page: load succeeds without page fault. |
 | | **45** | **LSU fault + simultaneous external IRQ** | LSU load access fault with simultaneous external interrupt asserting: cause 5 taken, `mtval = addr`; interrupt deferred. |
 | | **46** | **MRET/SRET return into L1I miss** | `MRET` returns to address that misses in L1I: Stage F initiates 8-beat refill cleanly; `mepc` not corrupted; resumes cleanly. |
-| | **47** | **Repeated/back-to-back flush/redirect races** | Taken branch in cycle $T$ redirects to target; external interrupt arrives in cycle $T+1$ during bubble: interrupt saves target PC in `mepc`. |
+| | **47** | **Repeated/back-to-back flush/redirect races** | Taken branch in cycle `T` redirects to target; external interrupt arrives in cycle `T+1` during bubble: interrupt saves target PC in `mepc`. |
 
 ### 10.2 Full Regression Gate
 The pipeline implementation is accepted only when all 16 repository test suites pass without regression:

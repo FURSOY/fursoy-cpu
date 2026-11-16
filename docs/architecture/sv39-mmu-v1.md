@@ -31,10 +31,10 @@ page-table walker (PTW), the required status/CSR changes, and `SFENCE.VMA`.
 It preserves the existing in-order, single-issue, one-active-LSU-operation,
 precise-trap model.
 
-Explicitly deferred: caches, PMP entries, PBMT, NAPOT translations, Sstc, the A
+Explicitly deferred in Slice-0: caches, PMP entries, PBMT, NAPOT translations, Sstc, the A
 integer/AMO extension, LR/SC, hardware A/D updates, TLBs, multiple or speculative
 walks, page-walk prefetching, PLIC, multihart shootdown, full SBI/Linux boot,
-Sv48/Sv57, H-stage translation, and performance optimization. The lack of PMP
+Sv48/Sv57, H-stage translation, and performance optimization. (In Slice-1 `fursoy_s1_ptw.sv` / `fursoy_s1_dtlb.sv` / `fursoy_s1_itlb.sv`, split TLBs, `16`-bit ASIDs, reserved PTE `[63:54] != 0` and non-leaf `U/A/D != 0` faults, `priv == M && MPRV` data walk privilege, and non-destructive L1D dirty PTE snooping are implemented.) The lack of PMP
 and a complete platform is not a claim of process isolation or Linux readiness.
 
 ## 2. `satp` and status changes

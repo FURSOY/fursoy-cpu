@@ -17,6 +17,8 @@
   `65874197b14e386f80023e9419650d4ec180134d7db02937a7e6ca7dba0d1e42`
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`, `docs/architecture/slice1-m6-frontend-opt-v1.md`.
 
+> **Post-Phase-3 RTL Note (`bab4ceb`):** Subsequent Stage 3 and Phase 2–3 production RTL (`docs/architecture/slice1-core-v1.md`) scaled `MemIQ` (`16 → 32`) and `L1D` banking (`4 → 8` 64-bit banks indexed by `PA[5:3]`), replaced L1D set replacement with true 3-bit Tree-PLRU, extracted `fursoy_s1_dtlb.sv` standalone, added `fursoy_s1_ks_adder` to `fursoy_s1_agu`, and enforced ROB-head `LR.W/D` serialization (`fursoy_s1_lsu_queues.sv:707`).
+
 ---
 
 ## 1. Milestone Objective, Phased Charter & Scope Boundaries
@@ -131,7 +133,7 @@ To support simultaneous dual memory execution without introducing artificial ser
 
 ### 2.3 Memory Execution Contracts (M3 & M5 Baseline Preservation)
 - **Load Queue Lifetime Contract**: Speculative loads remain valid in LQ16 after execution and PRF writeback until:
-  $$\text{older\_store\_checks\_complete}(load) \land (load == \text{ROB head})$$
+  `older_store_checks_complete(load) && (load == ROB head)`
 - **RAW Hazard Disambiguation**: Older stores resolving their physical address CAM-snoop active LQ entries. Any address overlap marks `violated` in LQ and sets `mem_violation` sticky in the ROB.
 - **One-Shot Replay-Safe Token**: Loads squashed due to a memory-ordering violation re-enter dispatch stamped with `replay_safe = 1'b1`, prohibiting speculative issue past unresolved stores on their replay execution.
 - **Bifurcated Store Completion**: Stores complete to the ROB once physical address and data are valid (or on exception), and drain to L1D only after committing at the ROB head.
@@ -143,16 +145,16 @@ To support simultaneous dual memory execution without introducing artificial ser
 ### 3.1 Empirical Profiling Baseline
 Under Milestone 6 closeout verification, the core was characterized across 5 canonical microarchitectural profiling workloads from clean reset:
 
-| Workload | Cycles | Instret | IPC | CPI Breakdown $[C_0..C_7]$ (Cycles) | Dominant Bottleneck |
+| Workload | Cycles | Instret | IPC | CPI Breakdown `[C_0..C_7]` (Cycles) | Dominant Bottleneck |
 | :--- | :---: | :---: | :---: | :--- | :--- |
 | **`branch_torture`** | 1,790 | 450 | 0.2514 | `[0, 719, 244, 0, 136, 63, 6, 622]` | Branch recovery / Cold TAGE warming |
-| **`pointer_chasing`** | 789 | 193 | 0.2446 | `[0, 318, 64, 136, 75, 1, 6, 189]` | Branch recovery & $C_{\text{mem\_stall}}$ (136 cyc) |
-| **`stream_memcpy`** | 467 | 194 | 0.4154 | `[0, 157, 95, 69, 44, 0, 6, 96]` | Memory stall $C_{\text{mem\_stall}}$ & Rename backpressure |
+| **`pointer_chasing`** | 789 | 193 | 0.2446 | `[0, 318, 64, 136, 75, 1, 6, 189]` | Branch recovery & `C_mem_stall` (136 cyc) |
+| **`stream_memcpy`** | 467 | 194 | 0.4154 | `[0, 157, 95, 69, 44, 0, 6, 96]` | Memory stall `C_mem_stall` & Rename backpressure |
 | **`int_dependency`**| 1,755 | 258 | 0.1470 | `[0, 43, 195, 0, 1177, 262, 36, 42]` | Backend rename & RAW register dependency |
-| **`raw_stress`** | 434 | 162 | 0.3733 | `[0, 156, 98, 63, 45, 0, 6, 66]` | Memory stall $C_{\text{mem\_stall}}$ (63 cyc) & Store drain |
+| **`raw_stress`** | 434 | 162 | 0.3733 | `[0, 156, 98, 63, 45, 0, 6, 66]` | Memory stall `C_mem_stall` (63 cyc) & Store drain |
 
 *Note: CPI decomposition components:*  
-$[C_{\text{serialize}}, C_{\text{br\_recover}}, C_{\text{productive}}, C_{\text{mem\_stall}}, C_{\text{be\_rename}}, C_{\text{be\_sched}}, C_{\text{fe\_starve}}, C_{\text{idle\_other}}]$.
+`[C_serialize, C_br_recover, C_productive, C_mem_stall, C_be_rename, C_be_sched, C_fe_starve, C_idle_other]`.
 
 ### 3.2 Root Cause Analysis of Memory Bottlenecks
 
@@ -227,8 +229,8 @@ The execution backend is configured with four parallel execution ports:
 MemIQ maintains 16 out-of-order memory uop entries. In each cycle, the scheduler evaluates entry readiness and selects up to **two independent uops** for issue:
 
 #### 1. Entry Readiness Definition:
-An entry $i \in [0, 15]$ in MemIQ is ready for issue if:
-$$\text{ready}[i] = \text{valid}[i] \land \neg\text{addr\_issued}[i] \land \text{prs1\_ready}[i]$$
+An entry `i ∈ [0, 15]` in MemIQ is ready for issue if:
+`ready[i] = valid[i] && !addr_issued[i] && prs1_ready[i]`
 *Note*: Store data (`prs2_ready`) is decoupled from address generation; a store is ready to issue to AGU0 as soon as its base register (`prs1`) is resolved.
 
 #### 2. Port Eligibility Rules:
@@ -240,15 +242,15 @@ Issue selection enforces strict circular ROB age priority (`rob_dist`):
 
 1. **Candidate Pair Identification**:
    - The scheduler scans all ready entries in MemIQ and identifies the two oldest ready entries by circular ROB age:
-     $$\text{cand}_0 = \arg\min_{i \in \text{ready}} \text{rob\_dist}(\text{rob\_idx}[i], \text{rob\_head})$$
-     $$\text{cand}_1 = \arg\min_{j \in \text{ready} \setminus \{\text{cand}_0\}} \text{rob\_dist}(\text{rob\_idx}[j], \text{rob\_head})$$
+     `cand_0 = argmin_i ∈ ready rob_dist(rob_idx[i], rob_head)`
+     `cand_1 = argmin_{j ∈ ready \ {cand_0}} rob_dist(rob_idx[j], rob_head)`
 2. **Port Assignment & Matching Rules**:
    - **Case 1: One Store (or AMO/Fence) and One Load**:
      Regardless of which instruction is older, hardware **MUST assign the Store (or AMO/Fence) to Port 2** (the only store-capable execution lane) and **MUST assign the Load to Port 3**, preserving dual-issue throughput without stalling ready memory bandwidth.
    - **Case 2: Both Candidates are Loads**:
      The older load is assigned to **Port 2** and the younger load is assigned to **Port 3**.
    - **Case 3: Both Candidates are Stores (or AMOs/Fences)**:
-     Only the older candidate ($\text{cand}_0$) is issued to **Port 2**. Port 3 cannot accept stores; the younger store remains queued and is evaluated in subsequent cycles.
+     Only the older candidate (`cand_0`) is issued to **Port 2**. Port 3 cannot accept stores; the younger store remains queued and is evaluated in subsequent cycles.
    - **Case 4: Single Ready Candidate**:
      If only one entry is ready, it issues to **Port 2** (if Store, AMO, Fence, or Load). If Port 2 is held by external backpressure (`port2_busy_i == 1`) and the single ready candidate is a Load, it issues to **Port 3**.
 3. **Port Backpressure & Hold Invariant**:
@@ -306,17 +308,17 @@ The L1 Data Cache maintains its verified VIPT (Virtually Indexed, Physically Tag
 - **Associativity**: 4-Way Set-Associative.
 - **Set Count**: 64 sets (`SET_IDX_W = 6`, `PA[11:6]`).
 - **Line Size**: 64 bytes (512 bits, `LINE_OFFSET_W = 6`, `PA[5:0]`).
-- **Way Size**: $16\text{ KiB} / 4 = 4\text{ KiB} = 4,096\text{ bytes}$.
-- **VIPT Synonym Safety Invariant**: Because $\text{Way Size} \le 4\text{ KiB}$ (the minimum Sv39 virtual page size), the cache index bits (`PA[11:6]`) are entirely derived from the page offset (`VA[11:6] == PA[11:6]`). Virtual-to-physical translation cannot alter set selection, guaranteeing **100% immunity to cache synonyms and homonyms without reverse-aliasing CAMs**.
+- **Way Size**: `16 KiB / 4 = 4 KiB = 4,096 bytes`.
+- **VIPT Synonym Safety Invariant**: Because `Way Size ≤ 4 KiB` (the minimum Sv39 virtual page size), the cache index bits (`PA[11:6]`) are entirely derived from the page offset (`VA[11:6] == PA[11:6]`). Virtual-to-physical translation cannot alter set selection, guaranteeing **100% immunity to cache synonyms and homonyms without reverse-aliasing CAMs**.
 - **Register-Based Tag Storage Architecture**:
-  To prevent tag-port structural bottlenecks, the L1D tag arrays are implemented as **flip-flop register arrays** ($64\text{ sets} \times 4\text{ ways} \times 44\text{ bits} \approx 11,264\text{ bits} \approx 1.4\text{ KiB}$), identical to the verified M3/M5 baseline. Being register-based, the tag arrays support **unrestricted, simultaneous multi-ported read queries**:
+  To prevent tag-port structural bottlenecks, the L1D tag arrays are implemented as **flip-flop register arrays** (`64 sets × 4 ways × 44 bits ≈ 11,264 bits ≈ 1.4 KiB`), identical to the verified M3/M5 baseline. Being register-based, the tag arrays support **unrestricted, simultaneous multi-ported read queries**:
   * AGU0 tag query (Port 2),
   * AGU1 tag query (Port 3),
   * External snoop tag query (`snoop_req_addr_i`),
   can all query the tag arrays in parallel within the same clock cycle with **zero tag bank conflicts**. Tag writes occur synchronously upon Refill Install or Invalidation.
 
 ### 6.2 4-Bank Interleaved Datapath Organization
-Each 64-byte cache line consists of eight 64-bit doublewords ($\text{DW}_0$ through $\text{DW}_7$). The data memory is partitioned into **4 independent physical SRAM banks** ($\text{Bank}_0, \text{Bank}_1, \text{Bank}_2, \text{Bank}_3$):
+Each 64-byte cache line consists of eight 64-bit doublewords (`DW_0` through `DW_7`). The data memory is partitioned into **4 independent physical SRAM banks** (`Bank_0, Bank_1, Bank_2, Bank_3`):
 
 ```
 +===================================================================================================+
@@ -342,17 +344,17 @@ Each 64-byte cache line consists of eight 64-bit doublewords ($\text{DW}_0$ thro
 ```
 
 #### Bank Decoding Equations:
-For any physical address $\text{PA}[55:0]$:
-$$\text{Set\_Index} = \text{PA}[11:6]$$
-$$\text{Bank\_ID} = \text{PA}[4:3] \quad (\text{Bank } 0, 1, 2, 3)$$
-$$\text{Sub\_DW} = \text{PA}[5] \quad (\text{Selects between DW[0..3] and DW[4..7] within Bank})$$
-$$\text{Line\_Offset} = \text{PA}[2:0] \quad (\text{Byte within 64-bit doubleword})$$
+For any physical address `PA[55:0]`:
+`Set_Index = PA[11:6]`
+`Bank_ID = PA[4:3] (Bank 0, 1, 2, 3)`
+`Sub_DW = PA[5] (Selects between DW[0..3] and DW[4..7] within Bank)`
+`Line_Offset = PA[2:0] (Byte within 64-bit doubleword)`
 
 ### 6.3 Bank Conflict Resolution & Multi-Beat Refill Rules
 
 #### 1. Microarchitectural Access Sources & Strict Priority:
 In any cycle, up to five microarchitectural sources may request L1D access. Arbitration enforces the following strict priority:
-$$\text{Snoop Invalidate} > \text{Refill Install (2 cycles)} > \text{Store Queue Drain} > \text{Snoop Dirty Readout} > \text{AGU0 Load} > \text{AGU1 Load}$$
+`Snoop Invalidate > Refill Install (2 cycles) > Store Queue Drain > Snoop Dirty Readout > AGU0 Load > AGU1 Load`
 
 #### 2. Exact 2-Cycle Multi-Beat Refill Sequence:
 Because each of the 4 physical SRAM banks has a single 64-bit write port, writing a 512-bit (64-byte) cache line requires **exactly 2 consecutive clock cycles**:
@@ -361,10 +363,14 @@ Because each of the 4 physical SRAM banks has a single 64-bit write port, writin
 - **Pipeline Interlock**: During both cycles of refill installation, all pipeline demand loads and store queue drains are stalled (`load_req_ready_o = 0`, `store_drain_ready_o = 0`).
 
 #### 3. Dynamic Age-Aware Bank Conflict Arbitration:
-When Port 2 (AGU0) and Port 3 (AGU1) loads target the identical bank ($\text{Bank}_{\text{L0}} == \text{Bank}_{\text{L1}}$):
-- **Identical Doubleword (Bank Broadcast)**: If $\text{PA}_0[5:3] == \text{PA}_1[5:3]$, both loads read the identical 64-bit doubleword. The bank output is broadcast simultaneously to both execution lanes in 1 cycle with **zero stall penalty**.
-- **Distinct Doublewords (Bank Conflict)**: If $\text{PA}_0[5:3] \neq \text{PA}_1[5:3]$, the bank cannot satisfy both requests concurrently. Hardware dynamically evaluates circular ROB distance:
-  $$\text{Winner} = \begin{cases} \text{Port 2 (AGU0)}, & \text{if } \text{rob\_dist}(\text{rob\_idx}_{\text{P2}}, \text{rob\_head}) < \text{rob\_dist}(\text{rob\_idx}_{\text{P3}}, \text{rob\_head}) \\ \text{Port 3 (AGU1)}, & \text{otherwise} \end{cases}$$
+When Port 2 (AGU0) and Port 3 (AGU1) loads target the identical bank (`Bank_L0 == Bank_L1`):
+- **Identical Doubleword (Bank Broadcast)**: If `PA_0[5:3] == PA_1[5:3]`, both loads read the identical 64-bit doubleword. The bank output is broadcast simultaneously to both execution lanes in 1 cycle with **zero stall penalty**.
+- **Distinct Doublewords (Bank Conflict)**: If `PA_0[5:3] ≠ PA_1[5:3]`, the bank cannot satisfy both requests concurrently. Hardware dynamically evaluates circular ROB distance:
+  ```text
+  Winner =
+    Port 2 (AGU0),  if rob_dist(rob_idx_P2, rob_head) < rob_dist(rob_idx_P3, rob_head)
+    Port 3 (AGU1),  otherwise
+  ```
 - **Anti-Starvation Rule**: A replayed Port 3 load that was stalled on a bank conflict in the previous cycle is granted priority over a newly issued younger Port 2 access to strictly prevent livelock and starvation.
 
 #### 4. Dual-Miss MSHR Allocation Rule:
@@ -378,13 +384,13 @@ If both AGU0 and AGU1 encounter an L1D tag miss in the identical cycle:
 | :--- | :--- | :---: | :--- |
 | **Refill Install** | Any Load / Store | All Banks | **Refill Dominates (2 Cycles)**: Refill installs lower 256b (`PA[5]=0`) in cycle 1 and upper 256b (`PA[5]=1`) in cycle 2 across Banks 0..3; pipeline stalls for 2 cycles. |
 | **Snoop Invalidate**| Any Load / Store | Tag Array | **Snoop Inv Dominates**: Invalidation clears tag valid bit in 1 cycle. Zero data bank conflict. |
-| **Store Drain** | Load (Port 2 or 3) | $\text{Bank}_{\text{store}} \neq \text{Bank}_{\text{load}}$ | **Concurrent**: Store writes its bank; Load reads its bank simultaneously. Zero stall. |
-| **Store Drain** | Load (Port 2 or 3) | $\text{Bank}_{\text{store}} == \text{Bank}_{\text{load}}$ | **Bank Conflict**: Store Drain wins. Load stalls in Stage M1 and replays next cycle. |
-| **Snoop Dirty Read**| Load (Port 2 or 3) | $\text{Bank}_{\text{snoop}} == \text{Bank}_{\text{load}}$ | **Bank Conflict**: Snoop readout wins target bank. Load stalls in Stage M1. |
-| **Load (Port 2)** | Load (Port 3) | $\text{Bank}_{\text{L0}} \neq \text{Bank}_{\text{L1}}$ | **Concurrent**: Both loads read their respective banks simultaneously. Zero stall. |
-| **Load (Port 2)** | Load (Port 3) | $\text{Bank}_{\text{L0}} == \text{Bank}_{\text{L1}}$, $\text{PA}_0[5:3] == \text{PA}_1[5:3]$ | **Bank Broadcast**: Both loads request identical doubleword. Data broadcast in 1 cyc. Zero stall. |
-| **Load (Port 2)** | Load (Port 3) | $\text{Bank}_{\text{L0}} == \text{Bank}_{\text{L1}}$, $\text{PA}_0[5:3] \neq \text{PA}_1[5:3]$ | **Dynamic Conflict**: Older load by `rob_dist` wins. Younger load stalls in Stage M1. |
-| **Store Drain** | Dual Loads (P2 & P3)| All Different Banks | **3-Way Concurrent**: Store writes $\text{Bank}_A$; P2 reads $\text{Bank}_B$; P3 reads $\text{Bank}_C$. All 3 proceed. |
+| **Store Drain** | Load (Port 2 or 3) | `Bank_store ≠ Bank_load` | **Concurrent**: Store writes its bank; Load reads its bank simultaneously. Zero stall. |
+| **Store Drain** | Load (Port 2 or 3) | `Bank_store == Bank_load` | **Bank Conflict**: Store Drain wins. Load stalls in Stage M1 and replays next cycle. |
+| **Snoop Dirty Read**| Load (Port 2 or 3) | `Bank_snoop == Bank_load` | **Bank Conflict**: Snoop readout wins target bank. Load stalls in Stage M1. |
+| **Load (Port 2)** | Load (Port 3) | `Bank_L0 ≠ Bank_L1` | **Concurrent**: Both loads read their respective banks simultaneously. Zero stall. |
+| **Load (Port 2)** | Load (Port 3) | `Bank_L0 == Bank_L1`, `PA_0[5:3] == PA_1[5:3]` | **Bank Broadcast**: Both loads request identical doubleword. Data broadcast in 1 cyc. Zero stall. |
+| **Load (Port 2)** | Load (Port 3) | `Bank_L0 == Bank_L1`, `PA_0[5:3] ≠ PA_1[5:3]` | **Dynamic Conflict**: Older load by `rob_dist` wins. Younger load stalls in Stage M1. |
+| **Store Drain** | Dual Loads (P2 & P3)| All Different Banks | **3-Way Concurrent**: Store writes `Bank_A`; P2 reads `Bank_B`; P3 reads `Bank_C`. All 3 proceed. |
 
 ---
 
@@ -436,9 +442,9 @@ When loads execute on Port 2 and Port 3, they simultaneously interrogate all 16 
 
 The speculative execution safety invariant proven in Milestone 5 is strictly preserved across both execution lanes:
 1. **Load Queue Lifetime Extension**: A load executed on either Port 2 or Port 3 **MUST remain allocated in the Load Queue** after writing its result to the PRF until:
-   $$\text{older\_store\_checks\_complete}(load) \land (load == \text{ROB head})$$
+   `older_store_checks_complete(load) && (load == ROB head)`
 2. **Older Store Disambiguation Check**:
-   For any load $L$, $\text{older\_store\_checks\_complete}(L)$ is asserted if and only if every store marked in $L$'s dispatch snapshot `sq_older_mask` has resolved its physical address and verified that no address collision exists.
+   For any load `L`, `older_store_checks_complete(L)` is asserted if and only if every store marked in `L`'s dispatch snapshot `sq_older_mask` has resolved its physical address and verified that no address collision exists.
 3. **Live-Epoch ROB Violation Qualification**:
    When an older store's physical address is resolved on Port 2, it CAM-snoops all active LQ entries. If a physical address collision is detected against an already-executed speculative load (issued from Port 2 or Port 3), `lsu_violation_valid_o` is pulsed with the target load's `rob_idx` and `rob_epoch`. The ROB latches `mem_violation` sticky and forces a pipeline rollback replay when the load reaches the ROB head.
 
@@ -511,11 +517,11 @@ output logic        snoop_rsp_was_dirty_o
 - **Data Memory Macro Architecture**:
   The 16 KiB data cache is implemented using **4 independent single-port (1R/1W) 6T SRAM macros**:
   * Each 64-byte line contains 8 doublewords. Across 4 banks, each bank stores **2 doublewords per cache line** (selected by `PA[5]`).
-  * Per-bank dimension: 64 sets $\times$ 4 ways $\times$ 2 doublewords = **512 entries of 64 bits = 32 Kbits = 4 KiB per bank**.
-  * Total data storage across 4 banks: **$4 \times 4\text{ KiB} = 16\text{ KiB}$ (131,072 bits)**.
+  * Per-bank dimension: 64 sets `×` 4 ways `×` 2 doublewords = **512 entries of 64 bits = 32 Kbits = 4 KiB per bank**.
+  * Total data storage across 4 banks: **`4 × 4 KiB = 16 KiB` (131,072 bits)**.
 - **Tag Storage Implementation**:
-  Implemented as flip-flop register arrays ($64\text{ sets} \times 4\text{ ways} \times 44\text{ bits} \approx 1.4\text{ KiB}$), identical to the M3/M5 baseline, providing multi-ported parallel read access for AGU0, AGU1, and external snoops.
-- **Crossbar Routing**: A low-latency $2 \times 4$ read crossbar connects Port 2 and Port 3 AGU addresses to the 4 bank chip-selects. Since bank selection is purely a function of `PA[4:3]`, bank select decoding completes combinationally within the early AGU stage without cycle penalty.
+  Implemented as flip-flop register arrays (`64 sets × 4 ways × 44 bits ≈ 1.4 KiB`), identical to the M3/M5 baseline, providing multi-ported parallel read access for AGU0, AGU1, and external snoops.
+- **Crossbar Routing**: A low-latency `2 × 4` read crossbar connects Port 2 and Port 3 AGU addresses to the 4 bank chip-selects. Since bank selection is purely a function of `PA[4:3]`, bank select decoding completes combinationally within the early AGU stage without cycle penalty.
 
 ### 9.2 Timing Closure Discipline
 1. **No Inter-Bank Chaining**: Bank collision detection operates in parallel with SRAM access; if a collision is detected, the younger load's output data latch is gated, and a replay request is sent to the pipeline control logic.
@@ -569,8 +575,8 @@ Milestone 7 mandates comprehensive verification covering unit testbenches, rando
 | `PROP_M7_35` | Coherence | Snoop collision with active WBB entry supplies dirty data from buffer. | Phase D TB |
 | `PROP_M7_36` | Coherence | `SNOOP_INV` / `SNOOP_CLEAN_INV` matching speculative load in LQ triggers ROB replay. | Phase D TB |
 | `PROP_M7_37` | Telemetry | HPM events `0x31`..`0x38` increment accurately on dual issue & bank conflict.| Phase D TB |
-| `PROP_M7_38` | Telemetry | 8-category CPI cycle conservation $\sum_{k=0}^7 C_k == \Delta\text{mcycle}$ verified. | Phase D TB |
-| `PROP_M7_39` | Multi-Seed | $\ge 100,000$ randomized dual-memory operations pass with 0 mismatches. | Torture Suite|
+| `PROP_M7_38` | Telemetry | 8-category CPI cycle conservation `sum_k=0^7 C_k == Δmcycle` verified. | Phase D TB |
+| `PROP_M7_39` | Multi-Seed | `≥ 100,000` randomized dual-memory operations pass with 0 mismatches. | Torture Suite|
 | `PROP_M7_40` | Workloads | 5 canonical profiling benchmarks run to clean completion with IPC gains. | Profiling Suite |
 
 ### 10.2 Hardware Performance Monitor (HPM) Telemetry Expansion
@@ -608,9 +614,9 @@ Milestone 7 implementation will be considered complete and eligible for freezing
 - **Gate 11.3 (Mandatory 40 Properties Proved)**:
   All 40 formal verification properties (`PROP_M7_01` through `PROP_M7_40`) pass with zero assertion failures.
 - **Gate 11.4 (Multi-Seed Randomized Torture Gate)**:
-  Cumulative randomized torture exceeding $\ge 100,000$ operations across canonical seeds (`42`, `20260920`, `20261009`) with zero mismatches against the cycle-accurate C++ golden memory model.
+  Cumulative randomized torture exceeding `≥ 100,000` operations across canonical seeds (`42`, `20260920`, `20261009`) with zero mismatches against the cycle-accurate C++ golden memory model.
 - **Gate 11.5 (CPI Conservation Law Assertion)**:
-  Cycle conservation invariant $\sum_{k=0}^7 C_k == \Delta\text{mcycle}$ asserted across every simulation cycle without cycle leakage.
+  Cycle conservation invariant `sum_k=0^7 C_k == Δmcycle` asserted across every simulation cycle without cycle leakage.
 - **Gate 11.6 (Empirical Performance Verification)**:
   Execution of the 5 canonical profiling benchmarks demonstrates measurable microarchitectural gains in memory-bound kernels (`stream_memcpy`, `pointer_chasing`, `raw_stress`), with delta comparisons logged in `results/s1-m7-closeout.json`.
 - **Gate 11.7 (RTL Manifest Freeze)**:

@@ -14,6 +14,8 @@
 - M1+M2+M3+M4 Combined RTL Manifest SHA-256: `a8dedc02b7138aedd32fbe0f67eb6d4513140a345b229ccf9a630acb3a42b554`
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m2-backend-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m4-frontend-v1.md`
 
+> **Post-Phase-3 RTL Note (`bab4ceb`):** Post-M5 production RTL expanded checkpoints (`8 → 16`), `ROB` (`48 → 128`), `PRF` (`80 → 160`), `IntIQ`/`MemIQ` (`16 → 32`), and extended the HPM bus across `64+` events while preserving the frozen 8-category single-owner CPI conservation law (`sum(C_k) == Δmcycle`) verified across the 90.30M-cycle Linux 6.6.50 boot (`results/s1-m9-closeout.json`).
+
 ---
 
 ## 1. Milestone Objective & Phased Architecture Charter
@@ -138,8 +140,8 @@ To maintain scientific integrity, every quantitative statement in this audit is 
 ### 3.1 Subsystem-by-Subsystem Bottleneck Analysis
 
 #### A. Frontend & Fetch Engine Bottlenecks
-1. **Unaligned Target Slot Wasting ($PC[2] == 1$)**:
-   - *Mechanism*: Fetch is 64-bit aligned. When a taken branch, call, or return targets an odd 32-bit slot ($PC[2] == 1$), Slot 0 is masked out, and only 1 instruction is delivered in that cycle.
+1. **Unaligned Target Slot Wasting (`PC[2] == 1`)**:
+   - *Mechanism*: Fetch is 64-bit aligned. When a taken branch, call, or return targets an odd 32-bit slot (`PC[2] == 1`), Slot 0 is masked out, and only 1 instruction is delivered in that cycle.
    - *Analysis*: In server integer code where branch/call frequency is 15–20% `[EXTERNAL WORKLOAD EXPECTATION]`, approximately 10% of fetch cycles deliver only 1 instruction instead of 2, imposing an analytical ~5% frontend bandwidth deficit `[ANALYTICAL STRUCTURAL BOUND]`.
 2. **BTB & BPU Evaluation Latency**:
    - *Mechanism*: BTB and Gshare predict in Stage F2. A predicted-taken branch redirects Stage F0 for cycle F3, introducing a 1-cycle pipeline bubble unless buffered by the Fetch Queue.
@@ -149,14 +151,14 @@ To maintain scientific integrity, every quantitative statement in this audit is 
    - *Analysis*: On an L1I cache hit, FQ12 provides adequate decoupling. However, on an L1I miss (30–60 cycles DRAM latency), FQ12 drains in 6 cycles, starving the backend for the remaining cycles `[ANALYTICAL STRUCTURAL BOUND]`. FQ12 is also vulnerable to brief TLB page-walk stalls (15–25 cycles) and branch resolution bursts `[DESIGN HYPOTHESIS]`.
 4. **Branch Misprediction Recovery Latency**:
    - *Mechanism*: Port 0 resolves branches in Stage EX. The frontend-to-execute depth is 9 cycles. At an assumed 12 MPKI `[EXTERNAL WORKLOAD EXPECTATION]`, branch misprediction penalty would contribute ~0.108 CPI `[DESIGN HYPOTHESIS]`.
-   - *Recovery Walk*: During `RECOVER`, the backwards ROB walk restores $P_{\text{new}}$ registers at 2 registers/cycle `[ANALYTICAL STRUCTURAL BOUND]`. If 16 younger uops are squashed, recovery takes 8 additional cycles during which Rename is stalled.
+   - *Recovery Walk*: During `RECOVER`, the backwards ROB walk restores `P_new` registers at 2 registers/cycle `[ANALYTICAL STRUCTURAL BOUND]`. If 16 younger uops are squashed, recovery takes 8 additional cycles during which Rename is stalled.
 
 #### B. Rename, Allocation & Reorder Buffer Bottlenecks
 1. **Branch Checkpoint Capacity (8 Checkpoints)**:
    - *Mechanism*: M1 provides 8 speculative checkpoints. Each conditional branch and speculative JALR allocates one checkpoint.
    - *Analysis*: When an older instruction stalls at ROB head, up to 48 instructions can accumulate in ROB. In branch-dense code (1 branch per 5–6 instructions `[EXTERNAL WORKLOAD EXPECTATION]`), 8 checkpoints can be exhausted within 40–48 instructions, stalling Rename on subsequent branches `[ANALYTICAL STRUCTURAL BOUND]`.
 2. **Physical Register Budget (PRF80)**:
-   - *Mechanism*: PRF80 mathematically guarantees that Free List cannot exhaust before ROB48 fills ($32\ \text{committed} + 48\ \text{speculative} = 80$) `[ANALYTICAL STRUCTURAL BOUND]`.
+   - *Mechanism*: PRF80 mathematically guarantees that Free List cannot exhaust before ROB48 fills (`32 committed + 48 speculative = 80`) `[ANALYTICAL STRUCTURAL BOUND]`.
    - *Analysis*: PRF capacity is balanced with ROB48 and does not constitute an independent bottleneck.
 
 #### C. Integer Scheduling & Execution Port Bottlenecks
@@ -164,8 +166,8 @@ To maintain scientific integrity, every quantitative statement in this audit is 
    - *Mechanism*: 16-entry unified queue feeding Port 0 (ALU0/BR) and Port 1 (ALU1/MUL/DIV).
    - *Analysis*: IntIQ16 accommodates up to 8 cycles of 2-wide integer dispatch `[ANALYTICAL STRUCTURAL BOUND]`. If dependent chains stall issue, 16 entries can fill, asserting backpressure to Dispatch.
 2. **Port 1 Arithmetic Resource Sharing**:
-   - *Mechanism*: Port 1 hosts ALU1 (1 cycle), Multiplier (3 cycles pipelined), and Iterative Divider (8–34 cycles unpipelined). Writeback priority is $\text{Divider} > \text{Multiplier} > \text{ALU1}$.
-   - *Analysis*: In standard integer/server workloads, division accounts for $< 0.5\%$ and multiplication for $2–4\%$ `[EXTERNAL WORKLOAD EXPECTATION]`. With dual ALU0/ALU1 available, peak integer throughput is 2 ops/cycle, matching 2-wide dispatch `[ANALYTICAL STRUCTURAL BOUND]`. Structural conflict on Port 1 is hypothesized to be a minor contributor ($< 0.02$ CPI) `[DESIGN HYPOTHESIS]`.
+   - *Mechanism*: Port 1 hosts ALU1 (1 cycle), Multiplier (3 cycles pipelined), and Iterative Divider (8–34 cycles unpipelined). Writeback priority is `Divider > Multiplier > ALU1`.
+   - *Analysis*: In standard integer/server workloads, division accounts for `< 0.5%` and multiplication for `2–4%` `[EXTERNAL WORKLOAD EXPECTATION]`. With dual ALU0/ALU1 available, peak integer throughput is 2 ops/cycle, matching 2-wide dispatch `[ANALYTICAL STRUCTURAL BOUND]`. Structural conflict on Port 1 is hypothesized to be a minor contributor (`< 0.02` CPI) `[DESIGN HYPOTHESIS]`.
 
 #### D. Memory Execution Subsystem Bottlenecks (THE CRITICAL LIMITER)
 1. **M3 Conservative Load Issue Constraint**:
@@ -173,7 +175,7 @@ To maintain scientific integrity, every quantitative statement in this audit is 
    - *Analysis*: In compiler-generated code, stores and loads are frequently interspersed. Stalling loads until all prior store addresses resolve introduces substantial queuing delays `[DESIGN HYPOTHESIS]`. Stalled loads delay dependent ALU operations, holding ROB entries and stalling Rename. Removing this constraint via speculative load issue is hypothesized to be the highest-return single optimization for the core `[DESIGN HYPOTHESIS]`.
 2. **Single AGU (Port 2) Throughput**:
    - *Mechanism*: All loads and stores share a single AGU on Port 2 (maximum 1 memory access / cycle).
-   - *Analysis*: Assuming ~33% memory instruction frequency in integer code `[EXTERNAL WORKLOAD EXPECTATION]`, memory demand at 1.2 IPC is ~0.40 uops/cycle `[ANALYTICAL STRUCTURAL BOUND]`. A single AGU provides 1.0 uop/cycle capacity ($2.5\times$ margin), proving that a single AGU is not the primary throughput bottleneck below 1.5 IPC `[DESIGN HYPOTHESIS]`.
+   - *Analysis*: Assuming ~33% memory instruction frequency in integer code `[EXTERNAL WORKLOAD EXPECTATION]`, memory demand at 1.2 IPC is ~0.40 uops/cycle `[ANALYTICAL STRUCTURAL BOUND]`. A single AGU provides 1.0 uop/cycle capacity (`2.5×` margin), proving that a single AGU is not the primary throughput bottleneck below 1.5 IPC `[DESIGN HYPOTHESIS]`.
 3. **MemIQ Capacity (12 entries)**:
    - *Mechanism*: MemIQ holds 12 memory uops.
    - *Analysis*: When loads stall due to cache misses or older stores, 12 entries fill within 6–8 memory instructions, asserting backpressure to Dispatch `[ANALYTICAL STRUCTURAL BOUND]`.
@@ -215,11 +217,11 @@ To guarantee evidence-driven engineering, M5 defines strict boundaries between b
 The following candidate mechanisms were evaluated and **explicitly rejected or deferred** for Milestone 5:
 
 1. **Expanding Core Width to 3-Wide or 4-Wide (REJECTED)**:
-   - *Technical Rationale*: Widening decode/rename/commit from 2 to 3 or 4 quadruples rename dependency comparator logic ($O(W^2)$), requires 8 to 12 PRF read ports, expands ROB allocation/retirement logic, and significantly increases silicon area `[DESIGN HYPOTHESIS]`. The 2-wide machine has a theoretical peak of 2.0 IPC `[ANALYTICAL STRUCTURAL BOUND]`, providing substantial headroom to reach 1.2–1.5 IPC once memory bubbles are removed.
+   - *Technical Rationale*: Widening decode/rename/commit from 2 to 3 or 4 quadruples rename dependency comparator logic (`O(W^2)`), requires 8 to 12 PRF read ports, expands ROB allocation/retirement logic, and significantly increases silicon area `[DESIGN HYPOTHESIS]`. The 2-wide machine has a theoretical peak of 2.0 IPC `[ANALYTICAL STRUCTURAL BOUND]`, providing substantial headroom to reach 1.2–1.5 IPC once memory bubbles are removed.
 2. **Adding a Second AGU on a New Execution Port (REJECTED)**:
    - *Technical Rationale*: Memory demand is ~0.40 uops/cycle at 1.2 IPC `[ANALYTICAL STRUCTURAL BOUND]`. A single AGU provides 1.0 uop/cycle capacity. Adding a second AGU requires either dual-porting L1D SRAM arrays or implementing multi-bank crossbars with complex conflict logic.
 3. **Complex Multi-Table TAGE-SC-L Branch Predictor (DEFERRED to Family C)**:
-   - *Technical Rationale*: TAGE requires $> 16\text{ KiB}$ multi-table SRAM storage and complex hysteresis state machines. M4's Gshare4096 + BTB512 + RAS16 requires only ~1.5 KiB storage. Replacing the predictor in M5 would destabilize the frozen M4 frontend substrate.
+   - *Technical Rationale*: TAGE requires `> 16 KiB` multi-table SRAM storage and complex hysteresis state machines. M4's Gshare4096 + BTB512 + RAS16 requires only ~1.5 KiB storage. Replacing the predictor in M5 would destabilize the frozen M4 frontend substrate.
 4. **Dynamic Selective Load Replay Network (REJECTED)**:
    - *Technical Rationale*: Selective replay requires associative dependency broadcast trees, scoreboard tagging, and dual-cycle replay pipelines. Reusing the verified M1 architectural full-flush recovery mechanism achieves the required correctness with vastly lower area and verification risk `[DESIGN HYPOTHESIS]`.
 5. **Store-Set Memory Dependence Predictor (DEFERRED to Family C)**:
@@ -307,8 +309,8 @@ A load must never deallocate before the final applicable violation result can be
 
 ### 6.3 Preservation of Canonical `sq_older_mask` Semantics & Check Representation
 M5 strictly preserves M3's verified circular `sq_older_mask[15:0]`:
-- At dispatch, load $L$ captures a snapshot of live, uncommitted older stores in the Store Queue:
-  $$L.\text{sq\_older\_mask}[s] = 1 \iff \text{Store } s \text{ is older than } L \text{ and currently allocated in SQ}$$
+- At dispatch, load `L` captures a snapshot of live, uncommitted older stores in the Store Queue:
+  `L.sq_older_mask[s] = 1 <=> Store s is older than L and currently allocated in SQ`
 - **Explicit Unresolved-Older-Store Check Representation**:
   To track whether all relevant older-store checks are complete without complex multi-ported tables:
   1. The allocation-time `sq_older_mask` identifies the exact set of stores that were older than the load at dispatch.
@@ -387,18 +389,18 @@ To avoid a timing-critical path combining store address generation, TLB translat
 ### 6.7 Precise Store/Load Byte Overlap Semantics
 A RAW violation occurs if and only if physical addresses match at line granularity and physical byte enables overlap:
 
-$$\text{AddrMatch} = (L.\text{paddr}[55:3] == S.\text{paddr}[55:3])$$
-$$\text{ByteOverlap} = (L.\text{byte\_mask}[7:0] \ \& \ S.\text{byte\_mask}[7:0]) \neq 8\text{'b}0000\_0000$$
-$$\text{RAW\_Violation} = L.\text{executed} \land \text{rob\_is\_older}(S, L) \land L.\text{sq\_older\_mask}[S.\text{sq\_idx}] \land \text{AddrMatch} \land \text{ByteOverlap}$$
+`AddrMatch = (L.paddr[55:3] == S.paddr[55:3])`
+`ByteOverlap = (L.byte_mask[7:0] & S.byte_mask[7:0]) ≠ 8'b0000_0000`
+`RAW_Violation = L.executed && rob_is_older(S, L) && L.sq_older_mask[S.sq_idx] && AddrMatch && ByteOverlap`
 
 #### Explicit Overlap Classifications:
-1. **Exact Overlap**: Load and store access identical addresses and identical widths (e.g. aligned 8-byte load at `paddr[2:0] == 3'b000`, aligned 8-byte store at `paddr[2:0] == 3'b000`) $\rightarrow$ **Violation**.
-2. **Store Contained in Load**: Store writes 4 bytes `[5:2]` inside an aligned 8-byte load window `[7:0]` $\rightarrow$ **Violation**.
-3. **Load Contained in Store**: Load reads 2 bytes `[3:2]` inside an aligned 8-byte store window `[7:0]` $\rightarrow$ **Violation**.
-4. **Partial Overlap (P3-1 Resolution)**: Aligned 8-byte load covering bytes `[7:0]` (`addr[2:0] == 3'b000`, mask `8'b1111_1111`) and aligned 4-byte store covering bytes `[3:0]` (`mask 8'b0000_1111`), where a strict sub-range overlaps and canonical forwarding cannot supply the unwritten bytes $\rightarrow$ **Violation**. (Note: Frozen M3 traps natural misalignment before L1D access; all memory accesses in L1D/LQ are naturally aligned within their operand size).
-5. **Same Line, No Overlap**: Store writes bytes `[3:0]`; load reads bytes `[7:4]` of the same aligned 64-bit word $\rightarrow$ **NO Violation** (zero replay).
-6. **Adjacent Bytes**: Store writes byte 3; load reads byte 4 $\rightarrow$ **NO Violation** (zero replay).
-7. **Different Lines**: Different 64-byte cache lines $\rightarrow$ **NO Violation** (zero replay).
+1. **Exact Overlap**: Load and store access identical addresses and identical widths (e.g. aligned 8-byte load at `paddr[2:0] == 3'b000`, aligned 8-byte store at `paddr[2:0] == 3'b000`) → **Violation**.
+2. **Store Contained in Load**: Store writes 4 bytes `[5:2]` inside an aligned 8-byte load window `[7:0]` → **Violation**.
+3. **Load Contained in Store**: Load reads 2 bytes `[3:2]` inside an aligned 8-byte store window `[7:0]` → **Violation**.
+4. **Partial Overlap (P3-1 Resolution)**: Aligned 8-byte load covering bytes `[7:0]` (`addr[2:0] == 3'b000`, mask `8'b1111_1111`) and aligned 4-byte store covering bytes `[3:0]` (`mask 8'b0000_1111`), where a strict sub-range overlaps and canonical forwarding cannot supply the unwritten bytes → **Violation**. (Note: Frozen M3 traps natural misalignment before L1D access; all memory accesses in L1D/LQ are naturally aligned within their operand size).
+5. **Same Line, No Overlap**: Store writes bytes `[3:0]`; load reads bytes `[7:4]` of the same aligned 64-bit word → **NO Violation** (zero replay).
+6. **Adjacent Bytes**: Store writes byte 3; load reads byte 4 → **NO Violation** (zero replay).
+7. **Different Lines**: Different 64-byte cache lines → **NO Violation** (zero replay).
 
 ### 6.8 Integration with Frozen M3 Forwarding
 M5 integrates speculative execution into a single, unified memory issue decision tree:
@@ -490,7 +492,7 @@ Milestone 5 microarchitectural optimizations alter internal execution timing onl
 | **Integer Issue Queue (IntIQ)** | 16 entries | **16 entries** | **FROZEN NUMERIC PARAMETER** | Verified adequate; oldest-ready priority scheduling added |
 | **Load Queue (LQ)** | 16 entries | **16 entries** | **FROZEN NUMERIC PARAMETER** | Extended lifetime contract; accommodates 16 in-flight loads |
 | **Store Queue (SQ)** | 16 entries | **16 entries** | **FROZEN NUMERIC PARAMETER** | Preserved from M3; balanced with commit drain bandwidth |
-| **Reorder Buffer (ROB)** | 48 entries | **48 entries** | **FROZEN NUMERIC PARAMETER** | Preserved from M1; strictly balanced with PRF80 ($32 + 48 = 80$) |
+| **Reorder Buffer (ROB)** | 48 entries | **48 entries** | **FROZEN NUMERIC PARAMETER** | Preserved from M1; strictly balanced with PRF80 (`32 + 48 = 80`) |
 | **Physical Register File** | 80 registers | **80 registers** | **FROZEN NUMERIC PARAMETER** | Invariant with ROB48; Free List cannot starve |
 | **Branch Checkpoints** | 8 checkpoints | **8 checkpoints** | **FROZEN NUMERIC PARAMETER** | Preserved from M1; accommodates in-flight speculative branches |
 
@@ -498,9 +500,9 @@ Milestone 5 microarchitectural optimizations alter internal execution timing onl
 - **Parameters**: `DEPTH = 16`, read pointer width = 4 bits, write pointer width = 4 bits, occupancy count = 5 bits (representing 0..16).
 - **Interface Signals**:
   - `count_o`: 5-bit current occupancy count (0..16).
-  - `free_count_o`: 5-bit available capacity count ($16 - \text{count}$).
-  - `full`: Asserted when $\text{count} == 16$.
-  - `empty`: Asserted when $\text{count} == 0$.
+  - `free_count_o`: 5-bit available capacity count (`16 - count`).
+  - `full`: Asserted when `count == 16`.
+  - `empty`: Asserted when `count == 0`.
 - **Push / Pop Interfaces**: 2-instruction push from F3, 2-instruction pop to D0.
 - **Dual-Push Admission Policy (P2-1 Resolution)**:
   - 2 valid pushes require at least 2 free slots (`free_count_o >= 2`, accounting for simultaneous pops);
@@ -546,7 +548,7 @@ Milestone 5 defines **48 hardware event sources** (Event IDs `0x01` through `0x3
 | `0x03` | `EV_FETCH_UOPS` | Microarchitectural (Enqueue) | Valid instruction micro-ops pushed to Fetch Queue | All Modes |
 | `0x04` | `EV_FETCH_FQ_STARVED`| Microarchitectural (Cycle) | Cycle where Fetch Queue is empty and backend is ready | All Modes |
 | `0x05` | `EV_FETCH_FQ_FULL` | Microarchitectural (Cycle) | Cycle where Fetch Queue is full and asserts backpressure | All Modes |
-| `0x06` | `EV_FETCH_ODD_SLOT` | Microarchitectural (Fetch) | Fetch cycle starting at odd word ($PC[2]==1$, Slot 0 masked)| All Modes |
+| `0x06` | `EV_FETCH_ODD_SLOT` | Microarchitectural (Fetch) | Fetch cycle starting at odd word (`PC[2]==1`, Slot 0 masked)| All Modes |
 | `0x07` | `EV_L1I_HITS` | Microarchitectural (Access) | L1I tag hit on demand fetch request | All Modes |
 | `0x08` | `EV_L1I_MISSES` | Microarchitectural (Access) | L1I tag miss allocating an Instruction MSHR | All Modes |
 | `0x09` | `EV_L1I_IMSHR_OCC` | Microarchitectural (Cycle) | Sum of active I-MSHR entries (0..2) during cycle | All Modes |
@@ -619,9 +621,9 @@ In any given clock cycle, the cycle is classified by evaluating the following co
 ```
 
 ### 9.2 Exact Mathematical Invariants
-$$\text{Total Elapsed Cycles} = \Delta \text{CSR\_MCYCLE} = C_{\text{serialize}} + C_{\text{br\_recover}} + C_{\text{productive}} + C_{\text{mem\_stall}} + C_{\text{be\_rename}} + C_{\text{be\_sched}} + C_{\text{fe\_starve}} + C_{\text{idle\_other}}$$
+`Total Elapsed Cycles = ΔCSR_MCYCLE = C_serialize + C_br_recover + C_productive + C_mem_stall + C_be_rename + C_be_sched + C_fe_starve + C_idle_other`
 
-$$\text{CPI} = \frac{\Delta \text{CSR\_MCYCLE}}{\Delta \text{CSR\_MINSTRET}} = \sum_{k=1}^{8} \Delta \text{CPI}_{k}$$
+`CPI = (ΔCSR_MCYCLE) / (ΔCSR_MINSTRET) = sum_k=1^8 ΔCPI_k`
 
 - **Zero-Leakage Assertion**: The testbench continuously asserts that the sum of the 8 hardware category counters equals `mcycle_delta` over every measured execution interval:
   ```systemverilog
@@ -676,7 +678,7 @@ Milestone 5 microarchitectural structures are strictly designed to preserve high
 3. **PRF Port Invariant**:
    - Unified PRF80 maintains exactly 6 read ports and 3 write ports. No additional ports are introduced by M5.
 4. **VIPT Cache Geometry Preserved**:
-   - Both L1I and L1D remain strictly 16 KiB, 4-way set-associative with 64-byte lines. Way size is exactly $4096\text{ bytes} \le 4\text{ KiB}$, maintaining absolute VIPT synonym safety.
+   - Both L1I and L1D remain strictly 16 KiB, 4-way set-associative with 64-byte lines. Way size is exactly `4096 bytes ≤ 4 KiB`, maintaining absolute VIPT synonym safety.
 
 ---
 
@@ -693,7 +695,7 @@ The verification testbench must formally prove compliance across the following m
 4. `PROP_LOAD_IN_STORE_OVERLAP`: Load reads sub-word inside speculative store's address window; violation detected.
 5. `PROP_PARTIAL_OVERLAP`: Aligned 8-byte load vs aligned 4-byte store sub-range overlap unsupported by canonical forwarding; violation detected.
 6. `PROP_SAME_LINE_NO_OVERLAP`: Load and store access different words within the same 64-byte line; zero violation triggered.
-7. `PROP_ADJACENT_BYTE_NO_OVERLAP`: Store writes byte $N$; load reads byte $N+1$; zero violation triggered.
+7. `PROP_ADJACENT_BYTE_NO_OVERLAP`: Store writes byte `N`; load reads byte `N+1`; zero violation triggered.
 8. `PROP_DIFF_LINE_NO_OVERLAP`: Disjoint cache lines; zero violation triggered.
 9. `PROP_MULT_UNRESOLVED_STORES`: Load issues past 4 older unresolved stores; correctly tracks dependency against all 4.
 10. `PROP_MULT_SPEC_LOADS`: 3 consecutive loads issue past unresolved store; one conflicts; precise rollback restores only the conflicting load.
@@ -719,7 +721,7 @@ The verification testbench must formally prove compliance across the following m
 30. `PROP_MEMIQ16_FULL_DRAIN`: MemIQ16 verifies 16-entry fill, backpressure, and drain without deadlock.
 31. `PROP_OLDEST_READY_WRAP`: Oldest-ready selection verifies correct age priority across circular ROB wrapping.
 32. `PROP_HPM_SELECTOR_MAPPING`: All 48 event sources verifiable across all 29 programmable `mhpmeventN` selectors; privilege mode checks verified.
-33. `PROP_CPI_CONSERVATION`: Master 8-category cycle conservation identity $\sum_{k=1}^8 C_k == \Delta \text{mcycle}$ verified over every interval.
+33. `PROP_CPI_CONSERVATION`: Master 8-category cycle conservation identity `sum_k=1^8 C_k == Δmcycle` verified over every interval.
 
 ### 12.2 Truly Independent Random Memory Reference Model
 Randomized verification must utilize an independently maintained reference model that:
@@ -746,11 +748,11 @@ Milestone 5 shall be declared **FROZEN** only when all of the following criteria
 
 ### 13.3 Instrumentation & Profiling Gates
 - [ ] **Counter Integrity**: All 48 hardware performance event sources validated against cycle traces.
-- [ ] **Zero Cycle Leakage**: Formal assertion confirms $\sum_{k=1}^8 C_{\text{category}} == \Delta \text{mcycle}$ across all benchmark runs.
+- [ ] **Zero Cycle Leakage**: Formal assertion confirms `sum_k=1^8 C_category == Δmcycle` across all benchmark runs.
 
 ### 13.4 Performance Characterization Gates
 - [ ] **Benchmark Execution**: Standard microarchitectural kernels and CoreMark run reproducibly on DUT in Verilator.
-- [ ] **Empirical Profiling Report**: Formal bottleneck characterization report generated documenting measured IPC and CPI decomposition. *(Note: Achieving $\ge 1.2$ IPC is an empirical evaluation goal, not an unconditional correctness freeze gate).*
+- [ ] **Empirical Profiling Report**: Formal bottleneck characterization report generated documenting measured IPC and CPI decomposition. *(Note: Achieving `≥ 1.2` IPC is an empirical evaluation goal, not an unconditional correctness freeze gate).*
 
 ---
 

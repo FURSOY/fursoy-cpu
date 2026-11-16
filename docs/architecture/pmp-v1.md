@@ -33,7 +33,7 @@ MMU, the CSR unit, and the platform memory/CLINT interconnect.
 
 Explicitly deferred: Smepmp (enhanced PMP / machine-mode isolation), PMP paging
 extensions, hardware PMA dynamic registers, multiple harts, dynamic granularity
-$G > 0$, caches, TLBs, and Linux boot.
+`G > 0`, caches, TLBs, and Linux boot.
 
 ---
 
@@ -41,7 +41,7 @@ $G > 0$, caches, TLBs, and Linux boot.
 
 ### 2.1 Entry count and CSR assignment
 
-**Choice**: Fursoy implements **16 PMP entries** ($N = 16$, indexed 0 through 15).
+**Choice**: Fursoy implements **16 PMP entries** (`N = 16`, indexed 0 through 15).
 This matches the standard RISC-V profile baseline for RV64 server/Linux-capable cores,
 providing sufficient entries for OpenSBI, Linux kernel memory protection, device
 isolation, and user payload sandboxing without excess gate count in Slice-0.
@@ -73,7 +73,7 @@ at even CSR addresses:
 - `pmpcfg4`..`pmpcfg15` (CSRs `0x3a4`..`0x3af`): Unimplemented, raise illegal-instruction exception.
 
 **Required (PMP address registers)**:
-Each entry $i \in \{0 \dots 15\}$ has an individual 64-bit CSR `pmpaddr`$i$:
+Each entry `i ∈ 0 ... 15` has an individual 64-bit CSR `pmpaddr[i]`:
 
 - `pmpaddr0`..`pmpaddr15` (CSRs `0x3b0`..`0x3bf`): RW from M-mode.
 - `pmpaddr16`..`pmpaddr63` (CSRs `0x3c0`..`0x3ef`): Unimplemented, raise illegal-instruction exception.
@@ -84,32 +84,32 @@ Each 8-bit `pmpicfg` layout:
 
 | Bit | Field | Description | WARL / Implementation behavior |
 |---|---|---|---|
-| 0 | R | Read permission | RW (when $L=0$) |
-| 1 | W | Write permission | WARL (when $L=0$): writable only when $R=1$ (or with $R$ written as 1). Combinations with $W=1, R=0$ are reserved in base PMP; writes coerce $W \to 0$ (Section 4.1) |
-| 2 | X | Execute permission | RW (when $L=0$) |
-| 4:3 | A | Address-matching mode | RW (when $L=0$); supports OFF(00), TOR(01), NA4(10), NAPOT(11) |
+| 0 | R | Read permission | RW (when `L=0`) |
+| 1 | W | Write permission | WARL (when `L=0`): writable only when `R=1` (or with `R` written as 1). Combinations with `W=1, R=0` are reserved in base PMP; writes coerce `W → 0` (Section 4.1) |
+| 2 | X | Execute permission | RW (when `L=0`) |
+| 4:3 | A | Address-matching mode | RW (when `L=0`); supports OFF(00), TOR(01), NA4(10), NAPOT(11) |
 | 6:5 | Reserved | Reserved bits | Hardwired to `2'b00` (WARL read-only zero) |
-| 7 | L | Lock bit | Writable $0 \to 1$ from M-mode; once 1, locked until reset |
+| 7 | L | Lock bit | Writable `0 → 1` from M-mode; once 1, locked until reset |
 
-### 2.3 Address granularity ($G$) and address width
+### 2.3 Address granularity (`G`) and address width
 
-**Choice**: Granularity parameter **$G = 0$**.
-Per the RISC-V privileged specification, the minimum region size is $2^{G+2}$ bytes:
-- With $G = 0$, minimum region size is $2^{0+2} = 4$ bytes.
-- Mode **NA4** ($A = 2'b10$) is fully supported.
-- Mode **NAPOT** ($A = 2'b11$) supports power-of-two regions $\ge 8$ bytes ($2^{k+3}$ bytes for $k \ge 0$).
+**Choice**: Granularity parameter **`G = 0`**.
+Per the RISC-V privileged specification, the minimum region size is `2^G+2` bytes:
+- With `G = 0`, minimum region size is `2^0+2 = 4` bytes.
+- Mode **NA4** (`A = 2'b10`) is fully supported.
+- Mode **NAPOT** (`A = 2'b11`) supports power-of-two regions `≥ 8` bytes (`2^k+3` bytes for `k ≥ 0`).
 
 **Required (Physical address mapping to `pmpaddr`)**:
 Under Sv39, the architectural physical address width is 56 bits (`PA[55:0]`).
-In RV64 with $G = 0$, `pmpaddr`$i$ holds bits `PA[55:2]`:
+In RV64 with `G = 0`, `pmpaddr[i]` holds bits `PA[55:2]`:
 
-- `pmpaddr`$i$`[53:0]`: Holds `PA[55:2]` (54 bits).
-- `pmpaddr`$i$`[63:54]`: Hardwired to zero (WARL read-only zero). Writes to bits 63:54 are ignored.
+- `pmpaddr[i][53:0]`: Holds `PA[55:2]` (54 bits).
+- `pmpaddr[i][63:54]`: Hardwired to zero (WARL read-only zero). Writes to bits 63:54 are ignored.
 
 ### 2.4 Reset state
 
 **Required**:
-- Upon hardware reset, all configuration bytes `pmp0cfg`..`pmp15cfg` reset to `8'h00` ($L=0$, $A=\text{OFF}$, $R=0$, $W=0$, $X=0$).
+- Upon hardware reset, all configuration bytes `pmp0cfg`..`pmp15cfg` reset to `8'h00` (`L=0`, `A=OFF`, `R=0`, `W=0`, `X=0`).
 - All address registers `pmpaddr0`..`pmpaddr15` reset to `64'h0000_0000_0000_0000`.
 - In this reset state:
   - M-mode has unrestricted access to the entire physical address space.
@@ -119,86 +119,86 @@ In RV64 with $G = 0$, `pmpaddr`$i$ holds bits `PA[55:2]`:
 
 ## 3. Address matching mechanics
 
-Every physical access has an address range $[A_{\text{start}}, A_{\text{end}}]$, where:
-- $A_{\text{start}} = \text{PA}$;
-- $A_{\text{end}} = \text{PA} + \text{len} - 1$, with $\text{len} \in \{1, 2, 4, 8\}$ bytes.
+Every physical access has an address range `[A_start, A_end]`, where:
+- `A_start = PA`;
+- `A_end = PA + len - 1`, with `len ∈ {1, 2, 4, 8}` bytes.
 
 All physical address comparisons operate on full 56-bit zero-extended physical addresses.
 
-### 3.1 Address matching modes ($A$ field)
+### 3.1 Address matching modes (`A` field)
 
-#### 1. OFF ($A = 2'b00$)
+#### 1. OFF (`A = 2'b00`)
 The PMP entry is disabled. It matches no address.
 
-#### 2. TOR — Top of Range ($A = 2'b01$)
-Defines a region $[B_{\text{lower}}, B_{\text{upper}})$ where:
-- For entry $i = 0$: $B_{\text{lower}} = 0$;
-- For entry $i > 0$: $B_{\text{lower}} = \text{pmpaddr}_{i-1}[53:0] \ll 2$;
-- For entry $i \ge 0$: $B_{\text{upper}} = \text{pmpaddr}_i[53:0] \ll 2$.
+#### 2. TOR — Top of Range (`A = 2'b01`)
+Defines a region `[B_lower, B_upper)` where:
+- For entry `i = 0`: `B_lower = 0`;
+- For entry `i > 0`: `B_lower = pmpaddr_i-1[53:0] << 2`;
+- For entry `i ≥ 0`: `B_upper = pmpaddr_i[53:0] << 2`.
 
 **Required boundary rules**:
-- Range is half-open: $B_{\text{lower}} \le \text{address} < B_{\text{upper}}$.
-- If $B_{\text{lower}} \ge B_{\text{upper}}$, the region is null/empty and matches no address.
-- `pmpaddr_{i-1}` defines the lower bound for entry $i$ regardless of the configuration or mode ($A$ field) of entry $i-1$ (even if entry $i-1$ is OFF).
+- Range is half-open: `B_lower ≤ address < B_upper`.
+- If `B_lower ≥ B_upper`, the region is null/empty and matches no address.
+- `pmpaddr_{i-1}` defines the lower bound for entry `i` regardless of the configuration or mode (`A` field) of entry `i-1` (even if entry `i-1` is OFF).
 - **TOR upper-bound limitation**: Because `pmpaddr` holds `PA[55:2]`, the highest representable TOR upper bound is `54'h3f_ffff_ffff_ffff << 2 = 56'hffff_ffff_ffff_fffc`. TOR cannot cover the uppermost 4 bytes (`56'hffff_ffff_ffff_fffc .. 56'hffff_ffff_ffff_ffff`) of the 56-bit PA space; software requiring protection or access covering the entire 56-bit space must configure a NAPOT region.
 
-#### 3. NA4 — Naturally Aligned 4-byte Region ($A = 2'b10$)
-Because $G = 0$, NA4 is available:
-- $B_{\text{lower}} = \text{pmpaddr}_i[53:0] \ll 2$;
+#### 3. NA4 — Naturally Aligned 4-byte Region (`A = 2'b10`)
+Because `G = 0`, NA4 is available:
+- `B_lower = pmpaddr_i[53:0] << 2`;
 - Region size = 4 bytes;
-- Region is $[B_{\text{lower}}, B_{\text{lower}} + 4)$.
+- Region is `[B_lower, B_lower + 4)`.
 
-#### 4. NAPOT — Naturally Aligned Power-of-Two Region ($A = 2'b11$)
+#### 4. NAPOT — Naturally Aligned Power-of-Two Region (`A = 2'b11`)
 The region size and base address are encoded by the position of the least-significant zero bit in `pmpaddr_i[53:0]`:
 
-Let $k$ be the index of the least-significant zero bit in `pmpaddr_i[53:0]` (i.e. bits $k-1:0$ are all ones):
-- For $k \in \{0 \dots 52\}$: size = $2^{k+3}$ bytes:
-  - If `pmpaddr_i[0] == 0` ($k=0$): size = 8 bytes ($2^3$);
-  - If `pmpaddr_i[1:0] == 2'b01` ($k=1$): size = 16 bytes ($2^4$);
-  - If `pmpaddr_i[2:0] == 3'b011` ($k=2$): size = 32 bytes ($2^5$).
-- For $k = 53$ (bit 53 is 0, bits 52:0 are 1): size = $2^{53+3} = 2^{56}$ bytes. Base address is 0. This exactly spans the entire implemented 56-bit physical address space $[0, 2^{56})$.
-- For $k = 54$ (all 54 bits `pmpaddr_i[53:0] == 54'h3f_ffff_ffff_ffff`): size = $2^{54+3} = 2^{57}$ bytes. Base address is 0. This saturates and also covers the entire 56-bit physical address space $[0, 2^{56})$.
+Let `k` be the index of the least-significant zero bit in `pmpaddr_i[53:0]` (i.e. bits `k-1:0` are all ones):
+- For `k ∈ 0 ... 52`: size = `2^k+3` bytes:
+  - If `pmpaddr_i[0] == 0` (`k=0`): size = 8 bytes (`2^3`);
+  - If `pmpaddr_i[1:0] == 2'b01` (`k=1`): size = 16 bytes (`2^4`);
+  - If `pmpaddr_i[2:0] == 3'b011` (`k=2`): size = 32 bytes (`2^5`).
+- For `k = 53` (bit 53 is 0, bits 52:0 are 1): size = `2^53+3 = 2^56` bytes. Base address is 0. This exactly spans the entire implemented 56-bit physical address space `[0, 2^56)`.
+- For `k = 54` (all 54 bits `pmpaddr_i[53:0] == 54'h3f_ffff_ffff_ffff`): size = `2^54+3 = 2^57` bytes. Base address is 0. This saturates and also covers the entire 56-bit physical address space `[0, 2^56)`.
 - Base address calculation:
-  $$\text{Base} = (\text{pmpaddr}_i[53:0] \gg (k+1)) \ll (k+3)$$
-  (i.e., clearing bit $k$ and all lower bits $k-1:0$, then shifting left by 2).
-- Region is $[\text{Base}, \text{Base} + \text{Size})$.
+  `Base = (pmpaddr_i[53:0] >> (k+1)) << (k+3)`
+  (i.e., clearing bit `k` and all lower bits `k-1:0`, then shifting left by 2).
+- Region is `[Base, Base + Size)`.
 
 **No address overflow**:
-All memory accesses in Fursoy (4-byte instruction fetch, 1/2/4/8-byte naturally aligned LSU accesses, and 8-byte PTW PTE reads) are naturally aligned powers of two $\le 8$ bytes. Consequently, the access range $[A_{\text{start}}, A_{\text{end}}]$ with $A_{\text{end}} = A_{\text{start}} + \text{len} - 1$ will never overflow or wrap around the 56-bit physical address space boundary ($2^{56}$).
+All memory accesses in Fursoy (4-byte instruction fetch, 1/2/4/8-byte naturally aligned LSU accesses, and 8-byte PTW PTE reads) are naturally aligned powers of two `≤ 8` bytes. Consequently, the access range `[A_start, A_end]` with `A_end = A_start + len - 1` will never overflow or wrap around the 56-bit physical address space boundary (`2^56`).
 
 ### 3.2 Entry predicates and first-match priority
 
 **Required predicates**:
-For every configured PMP entry $i \in \{0 \dots 15\}$ that is active ($A \ne \text{OFF}$), two formal predicates are evaluated against the access $[A_{\text{start}}, A_{\text{end}}]$:
+For every configured PMP entry `i ∈ 0 ... 15` that is active (`A ≠ OFF`), two formal predicates are evaluated against the access `[A_start, A_end]`:
 
-1. **`overlaps[i]`**: Entry $i$ contains at least one byte of the access $[A_{\text{start}}, A_{\text{end}}]$:
-   $$\max(A_{\text{start}}, B_{\text{lower}, i}) \le \min(A_{\text{end}}, B_{\text{upper}, i} - 1)$$
-2. **`contains[i]`**: Entry $i$ wholly contains every byte of the access $[A_{\text{start}}, A_{\text{end}}]$:
-   $$B_{\text{lower}, i} \le A_{\text{start}} \quad \text{and} \quad A_{\text{end}} < B_{\text{upper}, i}$$
+1. **`overlaps[i]`**: Entry `i` contains at least one byte of the access `[A_start, A_end]`:
+   `max(A_start, B_lower, i) ≤ min(A_end, B_upper, i - 1)`
+2. **`contains[i]`**: Entry `i` wholly contains every byte of the access `[A_start, A_end]`:
+   `B_lower, i ≤ A_start and A_end < B_upper, i`
 
-For an inactive entry ($A = \text{OFF}$), `overlaps[i] = 0` and `contains[i] = 0`.
+For an inactive entry (`A = OFF`), `overlaps[i] = 0` and `contains[i] = 0`.
 
 **Required selection and priority rule**:
 PMP entries are prioritized strictly in index order (entry 0 has the highest priority, entry 15 has the lowest):
 
-1. Identify the **lowest-indexed entry $i$** for which `overlaps[i] == 1`.
-2. If **no entry overlaps** the access (`overlaps[i] == 0` for all $i \in \{0 \dots 15\}$):
+1. Identify the **lowest-indexed entry `i`** for which `overlaps[i] == 1`.
+2. If **no entry overlaps** the access (`overlaps[i] == 0` for all `i ∈ 0 ... 15`):
    - Apply the default no-match privilege rule (Section 3.4).
-3. If a lowest-indexed overlapping entry $i$ exists:
-   - **Boundary-crossing denial**: If `contains[i] == 0` (entry $i$ overlaps at least one byte but fails to contain all bytes of the access):
+3. If a lowest-indexed overlapping entry `i` exists:
+   - **Boundary-crossing denial**: If `contains[i] == 0` (entry `i` overlaps at least one byte but fails to contain all bytes of the access):
      - The access crosses a protection boundary. It is **denied immediately** and raises an **access-fault exception** (causes 1, 5, or 7).
-     - Hardware **must NOT inspect any subsequent entry $j > i$**. A later entry cannot rescue the access even if entry $j$ covers the remaining bytes or the entire span.
-     - This denial applies unconditionally, including for current/effective M-mode and even when the selected entry has $L = 0$.
-   - **Full containment**: If `contains[i] == 1` (entry $i$ contains all bytes of the access):
-     - Apply entry $i$'s permission and effective-privilege enforcement rules (Section 4.3).
-     - No subsequent entry $j > i$ is examined.
+     - Hardware **must NOT inspect any subsequent entry `j > i`**. A later entry cannot rescue the access even if entry `j` covers the remaining bytes or the entire span.
+     - This denial applies unconditionally, including for current/effective M-mode and even when the selected entry has `L = 0`.
+   - **Full containment**: If `contains[i] == 1` (entry `i` contains all bytes of the access):
+     - Apply entry `i`'s permission and effective-privilege enforcement rules (Section 4.3).
+     - No subsequent entry `j > i` is examined.
 
 ### 3.3 Partial-match semantics and boundary crossing rationale
 
 A single architectural instruction fetch or memory access must not span distinct protection domains, split permissions, or be partially committed. The two-predicate formulation (`overlaps` and `contains`) ensures:
-- If an access straddles the boundary between two adjacent PMP regions (e.g. entry 0 covers bytes $0..3$ and entry 1 covers bytes $4..7$ of an 8-byte access), entry 0 is the lowest-indexed overlapping entry (`overlaps[0] = 1`), but `contains[0] = 0`. The access faults immediately; entry 1 is never evaluated.
+- If an access straddles the boundary between two adjacent PMP regions (e.g. entry 0 covers bytes `0..3` and entry 1 covers bytes `4..7` of an 8-byte access), entry 0 is the lowest-indexed overlapping entry (`overlaps[0] = 1`), but `contains[0] = 0`. The access faults immediately; entry 1 is never evaluated.
 - If an access crosses the boundary between a configured PMP region and an unconfigured region, it faults immediately.
-- Even M-mode with $L=0$ is barred from spanning across active PMP region boundaries.
+- Even M-mode with `L=0` is barred from spanning across active PMP region boundaries.
 
 ### 3.4 Default behavior (no matching entry)
 
@@ -213,20 +213,20 @@ If an access does not match any byte of any PMP entry (all entries are OFF, or n
 
 ### 4.1 Permission bits (R, W, X) and WARL legalization
 
-The permission bits $R$, $W$, and $X$ in `pmpicfg` specify access rights:
-- $R = 1$: Read permission granted.
-- $W = 1$: Write permission granted.
-- $X = 1$: Execute (instruction fetch) permission granted.
+The permission bits `R`, `W`, and `X` in `pmpicfg` specify access rights:
+- `R = 1`: Read permission granted.
+- `W = 1`: Write permission granted.
+- `X = 1`: Execute (instruction fetch) permission granted.
 
 **Base PMP WARL legalization rule**:
-In the ratified base RISC-V Privileged ISA (without Smepmp), configurations where $W=1$ and $R=0$ are **reserved for future standard use**. Write-only physical memory regions do not exist.
+In the ratified base RISC-V Privileged ISA (without Smepmp), configurations where `W=1` and `R=0` are **reserved for future standard use**. Write-only physical memory regions do not exist.
 Fursoy v1 implements the explicit, deterministic WARL legalization rule:
-$$W_{\text{effective}} = R_{\text{written}} \mathbin{?} W_{\text{written}} : 1'b0$$
+`W_effective = R_written ? W_written : 1'b0`
 
 Consequently:
-- An attempt by software to write `R=0, W=1` (with either $X=0$ or $X=1$) results in $W$ being cleared to 0 upon writeback and readback ($W=0$), while other independently legal fields ($X, A, L$) are preserved.
-- Writing `pmpicfg = 8'h02` ($R=0, W=1, X=0$) legalizes and reads back as `8'h00` ($R=0, W=0, X=0$).
-- Writing `pmpicfg = 8'h06` ($R=0, W=1, X=1$) legalizes and reads back as `8'h04` ($R=0, W=0, X=1$).
+- An attempt by software to write `R=0, W=1` (with either `X=0` or `X=1`) results in `W` being cleared to 0 upon writeback and readback (`W=0`), while other independently legal fields (`X, A, L`) are preserved.
+- Writing `pmpicfg = 8'h02` (`R=0, W=1, X=0`) legalizes and reads back as `8'h00` (`R=0, W=0, X=0`).
+- Writing `pmpicfg = 8'h06` (`R=0, W=1, X=1`) legalizes and reads back as `8'h04` (`R=0, W=0, X=1`).
 - Write-only physical memory regions are strictly unsupported and non-existent.
 
 **Supported permission encodings**:
@@ -240,69 +240,69 @@ The valid legal permission encodings in `pmpicfg` are:
 | 1 | 0 | 1 | Read-execute |
 | 1 | 1 | 1 | Read-write-execute |
 
-Status bits SUM and MXR (from `mstatus`/`sstatus`) **do not alter PMP checks**. MXR makes execute-only pages readable *only* in the Sv39 page-table walker; it does **not** override a PMP entry where $R = 0$.
+Status bits SUM and MXR (from `mstatus`/`sstatus`) **do not alter PMP checks**. MXR makes execute-only pages readable *only* in the Sv39 page-table walker; it does **not** override a PMP entry where `R = 0`.
 
 ### 4.2 Effective privilege evaluation
 
-Let $P_{\text{arch}} \in \{\text{U}(00), \text{S}(01), \text{M}(11)\}$ be the current architectural privilege mode of the core.
-Define the effective privilege $P_{\text{eff}}$ for a physical access as follows:
+Let `P_arch ∈ {U(00), S(01), M(11)}` be the current architectural privilege mode of the core.
+Define the effective privilege `P_eff` for a physical access as follows:
 
-| Access type | Condition | Effective privilege $P_{\text{eff}}$ |
+| Access type | Condition | Effective privilege `P_eff` |
 |---|---|---|
-| Instruction fetch | Always | $P_{\text{arch}}$ (MPRV is ignored) |
-| Page-table-walk (PTW) memory read | Always | **S-mode** ($P_{\text{eff}} = \text{S}$) |
-| Explicit load / store | $P_{\text{arch}} = \text{M}$ and `mstatus.MPRV = 1` | **`mstatus.MPP`** |
-| Explicit load / store | All other cases | $P_{\text{arch}}$ |
+| Instruction fetch | Always | `P_arch` (MPRV is ignored) |
+| Page-table-walk (PTW) memory read | Always | **S-mode** (`P_eff = S`) |
+| Explicit load / store | `P_arch = M` and `mstatus.MPRV = 1` | **`mstatus.MPP`** |
+| Explicit load / store | All other cases | `P_arch` |
 
 ### 4.3 Permission checking rules
 
-For an access with required operation $\text{Op} \in \{\text{Fetch}, \text{Load}, \text{Store}\}$:
-- $\text{Fetch}$ requires $X = 1$;
-- $\text{Load}$ requires $R = 1$;
-- $\text{Store}$ requires $W = 1$.
+For an access with required operation `Op ∈ {Fetch, Load, Store}`:
+- `Fetch` requires `X = 1`;
+- `Load` requires `R = 1`;
+- `Store` requires `W = 1`.
 
-Given effective privilege $P_{\text{eff}}$ and the selected entry $i$ (where `overlaps[i] == 1` and `contains[i] == 1`):
+Given effective privilege `P_eff` and the selected entry `i` (where `overlaps[i] == 1` and `contains[i] == 1`):
 
-1. **If a containing entry $i$ is selected**:
-   - If $P_{\text{eff}} == \text{M}$:
-     - If $L = 0$: **Permitted** (M-mode bypasses permissions of unlocked entry).
-     - If $L = 1$: Permissions enforced. The access succeeds if the corresponding permission bit is 1; otherwise, it **fails**.
-   - If $P_{\text{eff}} \in \{\text{S}, \text{U}\}$:
-     - Permissions enforced regardless of $L$. The access succeeds if the corresponding permission bit is 1; otherwise, it **fails**.
+1. **If a containing entry `i` is selected**:
+   - If `P_eff == M`:
+     - If `L = 0`: **Permitted** (M-mode bypasses permissions of unlocked entry).
+     - If `L = 1`: Permissions enforced. The access succeeds if the corresponding permission bit is 1; otherwise, it **fails**.
+   - If `P_eff ∈ {S, U}`:
+     - Permissions enforced regardless of `L`. The access succeeds if the corresponding permission bit is 1; otherwise, it **fails**.
 
-2. **If no entry overlaps the access (`overlaps[i] == 0` for all $i$)**:
-   - If $P_{\text{eff}} == \text{M}$: **Permitted**.
-   - If $P_{\text{eff}} \in \{\text{S}, \text{U}\}$: **Failed** (denied by default).
+2. **If no entry overlaps the access (`overlaps[i] == 0` for all `i`)**:
+   - If `P_eff == M`: **Permitted**.
+   - If `P_eff ∈ {S, U}`: **Failed** (denied by default).
 
 ---
 
-## 5. Lock semantics ($L$ bit)
+## 5. Lock semantics (`L` bit)
 
 ### 5.1 Locking of configuration and address registers
 
-When bit 7 ($L$) of `pmpicfg` is set to 1:
-1. Entry $i$ is **locked**.
-2. Any subsequent write from software to `pmpicfg` has no effect on any bit of `pmpicfg` ($L, A, X, W, R$ remain unchanged).
-3. Any subsequent write from software to `pmpaddr`$i$ has no effect on `pmpaddr`$i$.
-4. The $L$ bit can only be cleared by a **hardware reset**.
-5. The permissions $R, W, X$ of entry $i$ apply to M-mode accesses as well as S and U modes.
+When bit 7 (`L`) of `pmpicfg` is set to 1:
+1. Entry `i` is **locked**.
+2. Any subsequent write from software to `pmpicfg` has no effect on any bit of `pmpicfg` (`L, A, X, W, R` remain unchanged).
+3. Any subsequent write from software to `pmpaddr[i]` has no effect on `pmpaddr[i]`.
+4. The `L` bit can only be cleared by a **hardware reset**.
+5. The permissions `R, W, X` of entry `i` apply to M-mode accesses as well as S and U modes.
 
 ### 5.2 Preceding TOR entry lock rule
 
 **Required**:
-If entry $i$ has $L = 1$ and $A = \text{TOR}$ ($2'b01$), where $i > 0$:
-- The lower bound of entry $i$ is determined by `pmpaddr_{i-1}`.
-- Therefore, **writes to `pmpaddr_{i-1}` are also ignored**, even if entry $i-1$ itself has $L = 0$.
-- However, if entry $i-1$ has $L = 0$, writes to `pmp(i-1)cfg` remain permitted (the configuration byte of entry $i-1$ is not locked by entry $i$'s lock).
+If entry `i` has `L = 1` and `A = TOR` (`2'b01`), where `i > 0`:
+- The lower bound of entry `i` is determined by `pmpaddr_{i-1}`.
+- Therefore, **writes to `pmpaddr_{i-1}` are also ignored**, even if entry `i-1` itself has `L = 0`.
+- However, if entry `i-1` has `L = 0`, writes to `pmp(i-1)cfg` remain permitted (the configuration byte of entry `i-1` is not locked by entry `i`'s lock).
 
-*Rationale*: Prevents software from altering the effective protected range of locked entry $i$ by modifying its lower bound in `pmpaddr_{i-1}`.
+*Rationale*: Prevents software from altering the effective protected range of locked entry `i` by modifying its lower bound in `pmpaddr_{i-1}`.
 
 ---
 
 ## 6. Interaction with Sv39 / MMU
 
 PMP and Sv39 virtual memory are strictly hierarchical and orthogonal:
-1. **Sv39 translation stage**: Operates on virtual addresses (VA). Checks PTE validity, canonical address formation, superpage alignment, PTE $U/S$ permissions, PTE $R/W/X$ permissions, SUM, MXR, and Svade $A/D$ bits. Generates **page faults** (causes 12, 13, 15).
+1. **Sv39 translation stage**: Operates on virtual addresses (VA). Checks PTE validity, canonical address formation, superpage alignment, PTE `U/S` permissions, PTE `R/W/X` permissions, SUM, MXR, and Svade `A/D` bits. Generates **page faults** (causes 12, 13, 15).
 2. **PMP protection stage**: Operates exclusively on **physical addresses (PA)**. Checks physical range and PMP permissions. Generates **access faults** (causes 1, 5, 7).
 
 ### 6.1 Page-Table-Walk (PTW) physical accesses
@@ -310,8 +310,8 @@ PMP and Sv39 virtual memory are strictly hierarchical and orthogonal:
 During an active Sv39 translation:
 - PTW issues 8-byte naturally aligned physical memory reads to fetch level-2, level-1, or level-0 PTEs.
 - **Required**: Each PTW memory read is subjected to PMP checking.
-- **Privilege**: PTW PMP checks use **$P_{\text{eff}} = \text{S}$** (implicit supervisor physical access), regardless of current architectural privilege and regardless of `mstatus.MPRV`.
-- **Permission**: Requires $R = 1$.
+- **Privilege**: PTW PMP checks use **`P_eff = S`** (implicit supervisor physical access), regardless of current architectural privilege and regardless of `mstatus.MPRV`.
+- **Permission**: Requires `R = 1`.
 
 **Failure behavior and microarchitectural integration (deadlock prevention)**:
 - PMP checking of the PTE physical address must be resolved **before** an externally visible PTW physical request is accepted or issued to the memory interconnect.
@@ -330,9 +330,9 @@ During an active Sv39 translation:
 ### 6.2 Translated final instruction access
 
 Once virtual translation succeeds:
-- Translated physical address $\text{PA} = \text{leaf\_address}$ is checked against PMP.
-- **Privilege**: $P_{\text{eff}} = P_{\text{arch}}$ (S or U mode).
-- **Permission**: Requires $X = 1$.
+- Translated physical address `PA = leaf_address` is checked against PMP.
+- **Privilege**: `P_eff = P_arch` (S or U mode).
+- **Permission**: Requires `X = 1`.
 - **Failure behavior**:
   - If PMP denies the fetch: no physical instruction bus request is issued (`pi_req_valid_o = 0`).
   - Generates an **instruction access fault** (cause 1).
@@ -342,8 +342,8 @@ Once virtual translation succeeds:
 
 Once virtual translation succeeds:
 - Translated physical address is checked against PMP.
-- **Privilege**: $P_{\text{eff}} = (P_{\text{arch}} == \text{M} \ \&\& \ \text{MPRV}) \ ? \ \text{MPP} : P_{\text{arch}}$.
-- **Permission**: Load requires $R = 1$; Store requires $W = 1$.
+- **Privilege**: `P_eff = (P_arch == M && MPRV) ? MPP : P_arch`.
+- **Permission**: Load requires `R = 1`; Store requires `W = 1`.
 - **Failure behavior**:
   - If PMP denies access: no physical data bus request is issued (`pd_req_valid_o = 0`).
   - Generates **load access fault** (cause 5) or **store/AMO access fault** (cause 7).
@@ -354,7 +354,7 @@ Once virtual translation succeeds:
 
 In Bare mode (`satp.MODE = Bare`) or M-mode without translation:
 - Effective address is directly a physical address.
-- Checked against PMP using $P_{\text{eff}}$ ($P_{\text{arch}}$ for fetch; `D_eff` for data).
+- Checked against PMP using `P_eff` (`P_arch` for fetch; `D_eff` for data).
 - Failure generates cause 1, 5, or 7; `xtval` is loaded with the **faulting physical address**.
 - No physical request is issued to the memory interconnect.
 
@@ -363,7 +363,7 @@ In Bare mode (`satp.MODE = Bare`) or M-mode without translation:
 **Architectural requirement**:
 Per the ratified RISC-V Privileged ISA (Section 3.7):
 When page-based virtual memory is active, software must execute:
-$$\text{SFENCE.VMA } x0, x0$$
+`SFENCE.VMA x0, x0`
 after modifying PMP registers when required to ensure that subsequent implicit page-table walks observe the updated PMP configuration.
 
 **Fursoy Slice-0 behavior and forward compatibility**:
@@ -417,8 +417,8 @@ Trapping and delegation follow the existing processor trap logic:
 
 Even though accesses are naturally aligned:
 - A PMP region boundary configured via TOR or NA4 can fall on a 4-byte boundary.
-- An 8-byte load/store at address $A$ where $A \equiv 0 \pmod 8$ may have bytes $[A, A+3]$ in region $i$ and bytes $[A+4, A+7]$ outside region $i$ (or in region $i+1$).
-- Per Section 3.2, entry $i$ is the lowest-indexed overlapping entry (`overlaps[i] = 1`), but fails to contain all 8 bytes (`contains[i] = 0`); therefore, the access crosses a boundary and **fails** unconditionally with an access fault, without inspecting any subsequent entry.
+- An 8-byte load/store at address `A` where `A ≡ 0 mod 8` may have bytes `[A, A+3]` in region `i` and bytes `[A+4, A+7]` outside region `i` (or in region `i+1`).
+- Per Section 3.2, entry `i` is the lowest-indexed overlapping entry (`overlaps[i] = 1`), but fails to contain all 8 bytes (`contains[i] = 0`); therefore, the access crosses a boundary and **fails** unconditionally with an access fault, without inspecting any subsequent entry.
 
 ### 8.3 Zero physical side effects
 
@@ -427,7 +427,7 @@ Even though accesses are naturally aligned:
 - No RAM write enables may pulse, no memory cell may be updated, and no device/CLINT register may observe write intent.
 - If a load or fetch is denied by PMP, no physical read is issued.
 - If an instruction traps due to PMP:
-  - Destination register $rd$ is not updated;
+  - Destination register `rd` is not updated;
   - Ordinary CSRs are not updated;
   - No commit trace is emitted;
   - `fence_i_valid_o` is not asserted.
@@ -446,18 +446,18 @@ All PMP CSRs (`pmpcfg0`, `pmpcfg2`, `pmpaddr0`..`pmpaddr15`) are M-mode CSRs (ad
 
 PMP CSRs adhere to standard Zicsr semantics:
 - When a CSR instruction specifies `rs1 = x0` (or `zimm = 0` for immediate forms), write intent is suppressed. A read-only probe does not trigger lock checks or alter configuration state.
-- When an individual entry $i$ is locked ($L = 1$):
+- When an individual entry `i` is locked (`L = 1`):
   - A write targeting `pmpcfg0` or `pmpcfg2` updates any unlocked configuration bytes within that register, while **ignoring changes to locked configuration bytes**.
-  - A write targeting `pmpaddr`$i$ has no effect.
+  - A write targeting `pmpaddr[i]` has no effect.
 
 ### 9.3 WARL rules summary
 
 1. `pmpicfg.A`: Accepts all 4 values (`00`, `01`, `10`, `11`).
 2. `pmpicfg.Reserved`: Hardwired to `2'b00`. Nonzero writes are ignored and read back as zero.
 3. `pmpicfg.L`: Writable from 0 to 1; once 1, writes attempting to clear it to 0 are ignored.
-4. `pmpicfg.W`: WARL. Writable only when $R=1$ (or $R$ is written as 1). Writes of $W=1, R=0$ are legalized to $W=0$ ($W_{\text{effective}} = R_{\text{written}} \mathbin{?} W_{\text{written}} : 1'b0$).
-5. `pmpaddr`$i$`[63:54]`: Hardwired to 10'd0. Nonzero writes are ignored.
-6. `pmpaddr`$i$`[53:0]`: Fully writable when unlocked.
+4. `pmpicfg.W`: WARL. Writable only when `R=1` (or `R` is written as 1). Writes of `W=1, R=0` are legalized to `W=0` (`W_effective = R_written ? W_written : 1'b0`).
+5. `pmpaddr[i][63:54]`: Hardwired to 10'd0. Nonzero writes are ignored.
+6. `pmpaddr[i][53:0]`: Fully writable when unlocked.
 
 ---
 
@@ -530,35 +530,35 @@ Before PMP implementation freeze, simulation must cover the following test matri
 - S-mode and U-mode attempts to access any PMP CSR generating illegal-instruction trap.
 - WARL behavior: `pmpicfg[6:5]` read-only zero; `pmpaddr[63:54]` read-only zero.
 - WARL legalization of reserved permission combinations: writing both `R=0, W=1, X=0` (0x02) and `R=0, W=1, X=1` (0x06); asserting that `W` is coerced to 0 upon readback (reading 0x00 and 0x04 respectively) and that write-only access is never permitted.
-- Lock bit behavior: $L=0 \to 1$ transition; attempt to clear $L=1 \to 0$ ignored.
+- Lock bit behavior: `L=0 → 1` transition; attempt to clear `L=1 → 0` ignored.
 - Locked `pmpaddr` write suppression.
-- Hardware reset clearing locked entries: assert that hardware reset (`rst_i = 1`) clears all $L$ bits to 0 and restores writeability of `pmpcfg` and `pmpaddr`.
+- Hardware reset clearing locked entries: assert that hardware reset (`rst_i = 1`) clears all `L` bits to 0 and restores writeability of `pmpcfg` and `pmpaddr`.
 - Preceding TOR entry lock edge cases:
-  - Entry 0 ($i=0$) with TOR and $L=1$: verify no out-of-bounds register access or array overflow in RTL.
-  - Entry $i$ with TOR and $L=1$: verify writes to `pmpaddr_{i-1}` are ignored, but verify `pmp(i-1)cfg` remains writable if entry $i-1$ has $L=0$.
-  - Chained TOR locks: entries $i$ and $i-1$ both locked with TOR ($L=1$); verify both `pmpaddr_{i-1}` and `pmpaddr_{i-2}` are locked against writes.
-  - Entry $i$ locked with NAPOT, NA4, or OFF: verify `pmpaddr_{i-1}` is NOT locked and remains writable.
+  - Entry 0 (`i=0`) with TOR and `L=1`: verify no out-of-bounds register access or array overflow in RTL.
+  - Entry `i` with TOR and `L=1`: verify writes to `pmpaddr_{i-1}` are ignored, but verify `pmp(i-1)cfg` remains writable if entry `i-1` has `L=0`.
+  - Chained TOR locks: entries `i` and `i-1` both locked with TOR (`L=1`); verify both `pmpaddr_{i-1}` and `pmpaddr_{i-2}` are locked against writes.
+  - Entry `i` locked with NAPOT, NA4, or OFF: verify `pmpaddr_{i-1}` is NOT locked and remains writable.
 
 ### 12.2 Matching modes, predicates, and priority
 - OFF mode: entry ignored (`overlaps = 0`, `contains = 0`).
-- TOR mode: single entry ($i=0$), multi-entry ($i > 0$), lower $\ge$ upper null region.
+- TOR mode: single entry (`i=0`), multi-entry (`i > 0`), lower `≥` upper null region.
 - NA4 mode: exact 4-byte matching.
-- NAPOT mode: 8 B, 16 B, 64 B, 4 KiB, 2 MiB, 1 GiB, full 56-bit address space via $k=53$ and $k=54$.
+- NAPOT mode: 8 B, 16 B, 64 B, 4 KiB, 2 MiB, 1 GiB, full 56-bit address space via `k=53` and `k=54`.
 - First-match priority: higher-priority entry denying access overriding lower-priority entry granting access.
 - First-match priority: higher-priority entry granting access overriding lower-priority entry denying access.
 - Strict boundary overlap and adjacent-region tests:
   - 8-byte access straddling the upper boundary of an NA4 region (4B inside, 4B outside) -> immediate access fault.
   - 8-byte access straddling the lower/upper boundary of a TOR region -> immediate access fault.
   - 8-byte access spanning the boundary between two adjacent PMP entries (entry 0 covers low half, entry 1 covers high half): verify immediate access fault, proving entry 0's partial overlap blocks entry 1 from matching.
-  - Boundary-crossing denial applies unconditionally in M-mode even when $L=0$.
+  - Boundary-crossing denial applies unconditionally in M-mode even when `L=0`.
 
 ### 12.3 Privilege and permissions
-- M-mode bypass of unlocked ($L=0$) matching entry.
-- M-mode enforcement of locked ($L=1$) matching entry.
+- M-mode bypass of unlocked (`L=0`) matching entry.
+- M-mode enforcement of locked (`L=1`) matching entry.
 - M-mode default allow when no entry matches.
-- S-mode and U-mode enforcement on matching entry ($L=0$ and $L=1$).
+- S-mode and U-mode enforcement on matching entry (`L=0` and `L=1`).
 - S-mode and U-mode default deny when no entry matches.
-- Permission enforcement: fetch without $X$, load without $R$, store without $W$.
+- Permission enforcement: fetch without `X`, load without `R`, store without `W`.
 - Comprehensive MPRV matrix:
   - `MPRV=1, MPP=U`: U-mode rules enforced (default deny, permissions checked).
   - `MPRV=1, MPP=S`: S-mode rules enforced (default deny, permissions checked).
@@ -579,14 +579,14 @@ Before PMP implementation freeze, simulation must cover the following test matri
   - Same unmapped address when permitted by PMP: request issued to SoC interconnect, SoC interconnect returns error response -> core receives bus access fault.
 - PMP reconfiguration followed by `SFENCE.VMA x0, x0`:
   - End-to-end scenario: S-mode PTW denied under initial default PMP -> trap to M-mode -> M-mode configures PMP entry granting S-mode read to page tables -> M-mode executes `SFENCE.VMA x0, x0` -> `mret`/`sret` -> subsequent PTW succeeds cleanly.
-- MXR separation: verifying MXR=1 does not bypass a PMP entry with $R=0$.
+- MXR separation: verifying MXR=1 does not bypass a PMP entry with `R=0`.
 - Zero physical side effects: verifying physical RAM content is completely unaltered on denied stores.
 - Delegation: verifying PMP access faults are correctly routed to S-mode when `medeleg` is set, and to M-mode when clear or originating from M-mode.
 
 ### 12.5 High-value formal properties
 1. **Safety**: No physical write strobe (`ram_req_store_o && ram_req_valid_o`) is ever asserted for an address and width not fully permitted by PMP.
 2. **First-match exclusivity**: PMP decision is determined solely by the lowest-indexed overlapping entry, or default if no overlap exists.
-3. **Lock immutability**: For any entry $i$, if $L = 1$, neither `pmpicfg` nor `pmpaddr_i` may change value while reset is low.
+3. **Lock immutability**: For any entry `i`, if `L = 1`, neither `pmpicfg` nor `pmpaddr_i` may change value while reset is low.
 4. **PTW classification**: Any PMP failure occurring during a page table walk produces cause 1, 5, or 7 with `xtval` equal to the input VA.
 
 ---
@@ -595,9 +595,9 @@ Before PMP implementation freeze, simulation must cover the following test matri
 
 The following project decisions are submitted for independent architecture review:
 1. **16 entries**: Balances Linux/OpenSBI capability with Slice-0 gate complexity.
-2. **$G = 0$ (4-byte granularity)**: Implements complete NA4 and NAPOT without restriction.
+2. **`G = 0` (4-byte granularity)**: Implements complete NA4 and NAPOT without restriction.
 3. **Strict partial-match denial via `overlaps` and `contains` predicates**: Any access spanning a PMP boundary fails unconditionally, without inspecting subsequent entries.
-4. **Base PMP WARL legalization ($W_{\text{effective}} = R_{\text{written}} \mathbin{?} W_{\text{written}} : 1'b0$)**: Reserved $W=1, R=0$ combinations are deterministically coerced to $W=0$.
+4. **Base PMP WARL legalization (`W_effective = R_written ? W_written : 1'b0`)**: Reserved `W=1, R=0` combinations are deterministically coerced to `W=0`.
 5. **PTW S-mode physical access model with deadlock-free terminal fault transition**: PTW memory reads require S-mode PMP read permission, terminating immediately on denial without bus transactions, reporting original virtual address in `xtval` (inherited from frozen Sv39 contract).
-6. **Preceding TOR entry lock enforcement**: Writes to `pmpaddr_{i-1}` are suppressed when entry $i$ is locked with $A=\text{TOR}$.
+6. **Preceding TOR entry lock enforcement**: Writes to `pmpaddr_{i-1}` are suppressed when entry `i` is locked with `A=TOR`.
 7. **Architectural `SFENCE.VMA x0, x0` synchronization**: Required in software after PMP modifications under active virtual memory.

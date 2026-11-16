@@ -90,8 +90,8 @@ The SRB maintains the following physical register fields:
 | :--- | :---: | :--- |
 | `srb_busy` | 1 bit | Active status flag. Asserted on capture; deasserted at the conclusion of installation. |
 | `srb_line_pa[55:6]` | 50 bits | Base physical line address (64-byte aligned) of the missing store. |
-| `srb_set[5:0]` | 6 bits | Latched L1D set index ($0 \dots 63$) targeted by the missing store. |
-| `srb_way[1:0]` | 2 bits | Latched L1D victim way ($0 \dots 3$) selected by Tree-PLRU at the capture cycle. |
+| `srb_set[5:0]` | 6 bits | Latched L1D set index (`0 ... 63`) targeted by the missing store. |
+| `srb_way[1:0]` | 2 bits | Latched L1D victim way (`0 ... 3`) selected by Tree-PLRU at the capture cycle. |
 | `srb_victim_dirty` | 1 bit | Latched dirty status of the victim line. |
 | `srb_victim_tag[43:0]` | 44 bits | Latched physical tag of the victim line, used to form DRAM writeback address. |
 | `srb_victim_data[511:0]`| 512 bits | 64-byte data buffer holding the victim line for DRAM writeback. |
@@ -99,7 +99,7 @@ The SRB maintains the following physical register fields:
 | `srb_word_offset[5:3]` | 3 bits | Doubleword offset of the store within the 64-byte line. |
 | `srb_store_data[63:0]` | 64 bits | Store data payload drained from the Store Buffer. |
 | `srb_store_mask[7:0]` | 8 bits | Byte-enable mask drained from the Store Buffer. |
-| `srb_beat_count[2:0]` | 3 bits | Counter tracking beats ($0 \dots 7$) during DRAM eviction and refill bursts. |
+| `srb_beat_count[2:0]` | 3 bits | Counter tracking beats (`0 ... 7`) during DRAM eviction and refill bursts. |
 
 ---
 
@@ -107,24 +107,24 @@ The SRB maintains the following physical register fields:
 
 ### 3.1 P0-1: Atomic Victim Invalidation at Capture
 When a Store Buffer drain request queries L1D and determines a cache miss:
-1. **Selection**: The L1D Tree-PLRU logic evaluates the current 3-bit PLRU state for `set = store_pa[11:6]` and identifies victim way $W \in [0, 3]$.
+1. **Selection**: The L1D Tree-PLRU logic evaluates the current 3-bit PLRU state for `set = store_pa[11:6]` and identifies victim way `W ∈ [0, 3]`.
 2. **Atomic Invalidation**: On the **exact clock edge** where L1D asserts `srb_capture`:
    - The victim line's valid bit in the L1D tag array is cleared:
-     $$\text{l1d\_valid\_array}[\text{store\_pa}[11:6]][W] \leftarrow 1'b0$$
+     `l1d_valid_array[store_pa[11:6]][W] ← 1'b0`
    - The victim line's dirty bit in the L1D tag array is cleared:
-     $$\text{l1d\_dirty\_array}[\text{store\_pa}[11:6]][W] \leftarrow 1'b0$$
+     `l1d_dirty_array[store_pa[11:6]][W] ← 1'b0`
 3. **Victim Invisibility Guarantee**:
-   - Throughout the entire duration where `srb_busy == 1`, way $W$ of that set is marked invalid.
-   - Subsequent loads querying this set will observe way $W$ as invalid. It cannot hit under any circumstances.
-   - If a load queries this set and hits another way ($W' \neq W$), the load hits normally and returns in 1 cycle.
+   - Throughout the entire duration where `srb_busy == 1`, way `W` of that set is marked invalid.
+   - Subsequent loads querying this set will observe way `W` as invalid. It cannot hit under any circumstances.
+   - If a load queries this set and hits another way (`W' ≠ W`), the load hits normally and returns in 1 cycle.
    - If a load queries this set and misses all remaining valid ways, the load detects an L1D miss. However, because `srb_busy == 1`, the load stalls Stage E and cannot allocate a refill until the SRB completes.
 
 ### 3.2 P0-2: Static Victim Ownership and PLRU Preservation
 1. **Static Latching**:
    - At the capture clock edge, the set index and victim way are permanently latched:
-     $$\text{srb\_set} \leftarrow \text{store\_pa}[11:6], \quad \text{srb\_way} \leftarrow W$$
+     `srb_set ← store_pa[11:6], srb_way ← W`
 2. **Immutable Target**:
-   - During the 28–40 cycles of background DRAM activity, Stage-E loads may query the same set, hit other ways ($W'$), and update the set's PLRU state.
+   - During the 28–40 cycles of background DRAM activity, Stage-E loads may query the same set, hit other ways (`W'`), and update the set's PLRU state.
    - **Normative Rule**: Under no circumstances shall PLRU be re-evaluated or queried during or at the conclusion of the refill.
    - When the refill completes, the installation write is directed **strictly and unconditionally** to the latched coordinates: `set = srb_set`, `way = srb_way`.
 3. **PLRU State Update**:
@@ -135,7 +135,7 @@ When a Store Buffer drain request queries L1D and determines a cache miss:
 1. **Drain Gate**:
    - The drain arbiter evaluates `srb_busy`.
    - In any cycle where `srb_busy == 1`, Store Buffer draining is **strictly suspended**:
-     $$\text{sb\_drain\_enable} = \text{sb\_count} > 0 \land \neg \text{srb\_busy} \land \dots$$
+     `sb_drain_enable = sb_count > 0 && ! srb_busy && ...`
    - No second store drain may be presented to the L1D port while an SRB refill is pending.
 2. **Ownership Handshake and SB Pop**:
    - On the capture cycle (`srb_capture == 1`):
@@ -150,13 +150,13 @@ When a Store Buffer drain request queries L1D and determines a cache miss:
 ### 3.4 P1-1: Dual-Source RAW Hazard Detection
 To ensure that Stage-E loads observe all prior stores in program order without hazard windows:
 1. **Store Buffer RAW**: The existing 4-entry doubleword comparison is preserved:
-   $$\text{SB\_RAW} = \bigvee_{i=0}^{3} \left( \text{sb\_valid}[i] \land (\text{load\_pa}[55:3] == \text{sb\_paddr}[i][55:3]) \right)$$
+   `SB_RAW = OR_i=0^3 ( sb_valid[i] && (load_pa[55:3] == sb_paddr[i][55:3]) )`
 2. **SRB Full-Line RAW**: A dedicated comparator checks the load against the active SRB line:
-   $$\text{SRB\_RAW} = \text{srb\_busy} \land (\text{load\_pa}[55:6] == \text{srb\_line\_pa}[55:6])$$
+   `SRB_RAW = srb_busy && (load_pa[55:6] == srb_line_pa[55:6])`
 3. **Unified Hazard Stall**:
-   $$\text{RAW\_Hazard} = \text{SB\_RAW} \lor \text{SRB\_RAW}$$
+   `RAW_Hazard = SB_RAW || SRB_RAW`
 4. **Resolution Policy**:
-   - If $\text{RAW\_Hazard} == 1$:
+   - If `RAW_Hazard == 1`:
      - Stage E asserts `stall_e = 1`.
      - The load does not issue to L1D.
      - If caused by `SRB\_RAW`, Stage E remains stalled until `srb_busy == 0` (the line is fully installed into L1D).
@@ -168,7 +168,7 @@ To ensure that Stage-E loads observe all prior stores in program order without h
 2. **Array Priority Rule**:
    - In the cycle where the 8th beat of the DRAM refill is received and data is merged, the SRB signals installation readiness.
    - On the immediately following cycle, the SRB is granted **unconditional, non-preemptible priority** over the L1D tag and data arrays for exactly **1 cycle**:
-     $$\text{l1d\_port\_grant} = \text{srb\_install\_ready} \mathbin{?} \text{GRANT\_SRB} : (\text{stage\_e\_load\_req} \mathbin{?} \text{GRANT\_LOAD} : \text{GRANT\_SB})$$
+     `l1d_port_grant = srb_install_ready ? GRANT_SRB : (stage_e_load_req ? GRANT_LOAD : GRANT_SB)`
 3. **Load Pipeline Impact**:
    - If a Stage-E load requests L1D in the installation cycle, the load receives an L1D port stall for exactly **1 cycle** (an installation bubble).
    - On the subsequent cycle, the load access proceeds without further delay.
@@ -275,31 +275,31 @@ The SRB is governed by an explicit 7-state Moore FSM:
 ### 5.1 Unified Synchronization Predicate
 To guarantee that memory ordering and architectural boundaries remain completely hazard-free, every serialization mechanism in the core must enforce the **Combined Memory Drain Predicate**:
 
-$$\text{Memory\_Drained} = (\text{sb\_count} == 0) \land (\text{srb\_busy} == 0) \land \text{l1d\_idle}$$
+`Memory_Drained = (sb_count == 0) && (srb_busy == 0) && l1d_idle`
 
 ### 5.2 Specific Operation Semantics
 1. **FENCE**:
-   - Stalls Stage E until $\text{Memory\_Drained} == 1$.
+   - Stalls Stage E until `Memory_Drained == 1`.
 2. **FENCE.I (Instruction-Fetch Fence)**:
-   - Stalls Stage E until $\text{Memory\_Drained} == 1$.
+   - Stalls Stage E until `Memory_Drained == 1`.
    - Executes standard L1D dirty flush across all sets.
    - Awaits DRAM bus idle, pulses L1I flash invalidation, resumes pipeline.
 3. **SFENCE.VMA (Address-Translation Fence)**:
-   - Stalls Stage E until $\text{Memory\_Drained} == 1$.
+   - Stalls Stage E until `Memory_Drained == 1`.
    - Executes L1D dirty flush, awaits DRAM bus idle, invalidates TLBs, resumes pipeline.
 4. **PMP CSR Configuration Writes**:
    - Gated by `commit_fire && csr_valid && csr_write`.
-   - Stalls Stage E until $\text{Memory\_Drained} == 1$.
+   - Stalls Stage E until `Memory_Drained == 1`.
    - Executes L1D dirty flush, updates PMP shadow registers, resumes pipeline.
 5. **Atomic Operations (LR, SC, AMO)**:
-   - Stalls Stage E until $\text{Memory\_Drained} == 1$.
+   - Stalls Stage E until `Memory_Drained == 1`.
    - `SC` and `AMO` execute strictly synchronously directly in L1D.
 6. **Trap Entries and Interrupts**:
    - Traps and interrupts do not purge or discard the SRB.
    - The SRB continues background execution to completion while the trap redirects fetch to `mtvec`/`stvec`.
    - If an interrupt handler executes stores that miss, they queue in the Store Buffer; if the Store Buffer fills, the handler stalls naturally.
 7. **MRET / SRET**:
-   - Stalls Stage E until $\text{Memory\_Drained} == 1$ to ensure privilege domain transitions never leave pending stores in microarchitectural buffers.
+   - Stalls Stage E until `Memory_Drained == 1` to ensure privilege domain transitions never leave pending stores in microarchitectural buffers.
 
 ### 5.3 Coherent Dirty Accounting and Maintenance Flushes
 1. **Dirty Ownership Transfer**:
@@ -327,31 +327,31 @@ $$\text{Memory\_Drained} = (\text{sb\_count} == 0) \land (\text{srb\_busy} == 0)
 The RTL implementation must strictly adhere to the following seven formal invariants:
 
 ### Invariant 1: Victim Invisibility Invariant
-$$\forall t \in [t_{\text{capture}}, t_{\text{install}}), \quad \text{l1d\_hit}(\text{srb\_set}, \text{srb\_way}) \equiv 0$$
+`∀ t ∈ [t_capture, t_install), l1d_hit(srb_set, srb_way) ≡ 0`
 *Between the capture clock edge and the installation clock edge, the designated victim way in the designated set must never produce a cache hit for any load or store.*
 
 ### Invariant 2: Static Way Ownership Invariant
-$$\text{install\_set} \equiv \text{srb\_set}, \quad \text{install\_way} \equiv \text{srb\_way}$$
+`install_set ≡ srb_set, install_way ≡ srb_way`
 *The cache set and way updated at installation must match the exact set and way latched at the capture edge, regardless of any intervening PLRU state modifications.*
 
 ### Invariant 3: SRB Line RAW Exclusion Invariant
-$$(\text{srb\_busy} \land (\text{load\_pa}[55:6] == \text{srb\_line\_pa}[55:6])) \implies \text{stall\_e} = 1$$
+`(srb_busy && (load_pa[55:6] == srb_line_pa[55:6])) ==> stall_e = 1`
 *Any load instruction targeting any doubleword within the 64-byte line currently owned by the SRB must stall in Stage E until the line is installed.*
 
 ### Invariant 4: Store Buffer Drain / SRB Mutual Exclusion Invariant
-$$\text{srb\_busy} \implies \text{sb\_drain\_req} = 0$$
+`srb_busy ==> sb_drain_req = 0`
 *The Store Buffer drain engine shall never assert a drain request to L1D while the SRB is active.*
 
 ### Invariant 5: Coherent Dirty Accounting Invariant
-$$\text{maintenance\_active} \implies \text{srb\_busy} = 0$$
+`maintenance_active ==> srb_busy = 0`
 *No cache maintenance flush (FENCE.I, SFENCE.VMA, PMP sync) shall begin set traversal while the SRB contains an active transaction.*
 
 ### Invariant 6: Single-Cycle Installation Priority Invariant
-$$\text{srb\_install\_ready} \implies (\text{l1d\_grant\_srb} = 1 \land \text{l1d\_grant\_load} = 0)$$
+`srb_install_ready ==> (l1d_grant_srb = 1 && l1d_grant_load = 0)`
 *An installation-ready SRB transaction shall preempt Stage-E load access for exactly one cycle without starvation delay.*
 
 ### Invariant 7: Asynchronous Late Error Invariant
-$$(\text{srb\_busy} \land \text{dram\_bus\_error}) \implies (\text{sync\_trap} = 0 \land \text{fatal\_platform\_error} = 1)$$
+`(srb_busy && dram_bus_error) ==> (sync_trap = 0 && fatal_platform_error = 1)`
 *A DRAM bus fault encountered during background SRB operation shall never raise a synchronous architectural trap on a retired instruction.*
 
 ---
@@ -378,7 +378,7 @@ To validate the corrected architecture, the verification suite must implement th
 | **SRB-RAW-03** | RAW Hazard | Load targets doubleword in SB AND another load targets SRB. | Both hazards correctly detected; pipeline stalls until respective buffers clear. |
 | **SRB-RAW-04** | RAW Hazard | Back-to-back loads: Load 1 targets SRB line, Load 2 independent. | Load 1 stalls pipeline in Stage E; Load 2 held in Stage F until Load 1 unblocks. |
 | **SRB-PRIO-01** | Priority | Stage-E load requests L1D on exact cycle SRB is ready to install. | SRB granted array write; Load stalled for exactly 1 cycle (installation bubble). |
-| **SRB-PRIO-02** | Priority | Load proceeds on cycle immediately following 1-cycle install. | Load completes tag check and returns data on cycle $t+1$. |
+| **SRB-PRIO-02** | Priority | Load proceeds on cycle immediately following 1-cycle install. | Load completes tag check and returns data on cycle `t+1`. |
 | **SRB-PRIO-03** | Priority | Back-to-back load stream contending with install. | SRB steals exactly 1 cycle; stream resumes without further delay. |
 | **SRB-MAINT-01**| Maintenance | `SFENCE.VMA` executes while SRB is active. | `SFENCE.VMA` stalls until `srb_busy == 0`; dirty flush proceeds without double-counting. |
 | **SRB-MAINT-02**| Maintenance | `FENCE.I` executes while SRB is active. | `FENCE.I` stalls until `srb_busy == 0`; dirty flush writes all lines before L1I invalidation. |
@@ -429,7 +429,7 @@ Under normative analytical evaluation:
 | **Finding 4** | **P1** | Loads to refilling line read stale L1D or unmerged DRAM data (RAW hazard). | **Section 3.4 & Invariant 3**: Dual-source RAW check; `load_pa[55:6] == srb_line_pa[55:6]` stalls Stage E until install. |
 | **Finding 5** | **P1** | 2-cycle install starvation mechanism introduces complex timing and stalls. | **Section 3.5 & Invariant 6**: Starvation counter eliminated; SRB gets unconditional 1-cycle priority; loads take 1-cycle bubble. |
 | **Finding 6** | **P1** | Late DRAM bus errors erroneously attempt synchronous trap on retired store. | **Section 3.6 & Invariant 7**: Background errors defined as asynchronous platform fatal errors; synchronous trap strictly forbidden. |
-| **Finding 7** | **P1** | Incomplete serialization, maintenance, dirty accounting, and reset contracts. | **Section 5 & Invariant 5**: Combined drain predicate ($\text{sb\_empty} \land \neg \text{srb\_busy} \land \text{l1d\_idle}$) enforced; clean reset bus drain. |
+| **Finding 7** | **P1** | Incomplete serialization, maintenance, dirty accounting, and reset contracts. | **Section 5 & Invariant 5**: Combined drain predicate (`sb_empty && ! srb_busy && l1d_idle`) enforced; clean reset bus drain. |
 
 ---
 

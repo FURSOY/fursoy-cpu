@@ -6,6 +6,8 @@
 **Predecessor Substrate:** Fursoy Slice-1 Milestone 1 (Verified & Frozen Substrate: PRF80, ROB48, FreeList48, SRAT/ARAT, Recovery)  
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m2-backend-v1.md`
 
+> **Post-Phase-3 RTL Note (`bab4ceb`):** While this document preserves the frozen Milestone 2 integer-backend baseline (`PRF80`, `ROB48`, `IntIQ16`, `8` checkpoints), the production core (`docs/architecture/slice1-core-v1.md`) scales these to `PRF = 160`, `ROB = 128`, `IntIQ = 32`, `NUM_CHECKPOINTS = 16`, and uses the shared 64-bit Kogge-Stone `fursoy_s1_ks_adder` in `fursoy_s1_alu` and `fursoy_s1_branch_unit`.
+
 ---
 
 ## 1. Executive Summary & Milestone Scope
@@ -22,7 +24,7 @@ Fursoy Slice-1 Milestone 1 (M1) established and froze the architectural rename, 
 **Milestone 2 (M2)** turns this bookkeeping substrate into a functional, high-throughput, timing-loop-free **Integer Out-of-Order Execution Backend**.
 
 ### 1.2 In-Scope for Milestone 2
-1. **64-bit Physical Register File (PRF)** data storage array semantics ($80 \times 64\text{-bit}$ registers) with M1-validated write-enable gating.
+1. **64-bit Physical Register File (PRF)** data storage array semantics (`80 × 64-bit` registers) with M1-validated write-enable gating.
 2. **Integer Issue Queue (IntIQ)**: 16-entry out-of-order scheduler with wrap-safe ROB-head-relative age selection and port-aware dual-issue matching.
 3. **Conservative, Loop-Free Pipeline Staging**: Authoritative `DS -> IS -> RF -> EX -> validated WB -> CMT` timing model with zero unvalidated bypass paths.
 4. **Execution Port 0**: ALU0 (64-bit base integer, shifts, Zba, Zbb) + Branch Resolution Unit with lifetime-gated recovery requests.
@@ -65,22 +67,22 @@ Fursoy Slice-1 Milestone 1 (M1) established and froze the architectural rename, 
 ```
 
 #### 2.1.1 Logical Interface & Port Requirements
-- **Storage Capacity**: Exactly 80 physical registers ($p_0$ to $p_{79}$), each 64 bits wide.
+- **Storage Capacity**: Exactly 80 physical registers (`p_0` to `p_79`), each 64 bits wide.
 - **Milestone 2 Port Requirements**:
   - **Read Ports**: 4 logical read ports (2 operands for Port 0, 2 operands for Port 1).
   - **Write Ports**: 2 logical write ports (1 result from Port 0, 1 result from Port 1).
 - **Eventual Full Backend Compatibility**:
   - The abstract PRF interface scales to **6 Read Ports and 3 Write Ports** (6R3W) in M3 when Port 2 (LSU) is activated, preserving M1 allocation namespaces and invariants.
 
-#### 2.1.2 Register $p_0$ Semantics
-- Register $p_0$ is hardwired to `64'h0000_0000_0000_0000`.
-- Any read of physical register $p_0$ unconditionally returns zero on the same cycle without reading array storage.
-- Any writeback targeting $p_0$ is combinationally or synchronously suppressed. $p_0$ is immutable.
+#### 2.1.2 Register `p_0` Semantics
+- Register `p_0` is hardwired to `64'h0000_0000_0000_0000`.
+- Any read of physical register `p_0` unconditionally returns zero on the same cycle without reading array storage.
+- Any writeback targeting `p_0` is combinationally or synchronously suppressed. `p_0` is immutable.
 
 #### 2.1.3 PRF Data Write-Enable Lifetime Gating (Resolution of P0-1)
 - **Correctness Invariant**: A result may modify PRF data storage **ONLY** after the M1 substrate accepts the corresponding completion lifetime.
 - **Write-Enable Logic**:
-  $$\text{prf\_we}[w] = \text{wb\_valid}[w] \land \text{comp\_ack\_o}[w] \land (\text{wb\_pnew}[w] \neq p_0)$$
+  `prf_we[w] = wb_valid[w] && comp_ack_o[w] && (wb_pnew[w] ≠ p_0)`
 - **Stale-Completion Quarantine**:
   When an execution unit finishes, it presents `{data, pnew, rob_idx, rob_epoch}` to the writeback network.
   The M1 substrate validates `comp_epoch_i[w] == rob_entry[idx].epoch`.
@@ -98,7 +100,7 @@ Fursoy Slice-1 Milestone 1 (M1) established and froze the architectural rename, 
 - **RF Read Timing**: Since PRF writes occur on the clock edge following validated writeback, consumers reading PRF in stage `RF` read stable, committed PRF data cells.
 - **Physical Organization Status**:
   - **The abstract logical 4R2W (scalable to 6R3W) interface is FROZEN**.
-  - The underlying physical realization (monolithic multi-ported array vs. 2-way banked $2 \times (3\text{R}2\text{W})$ vs. replicated arrays for FPGA) remains **PROVISIONAL**.
+  - The underlying physical realization (monolithic multi-ported array vs. 2-way banked `2 × (3R2W)` vs. replicated arrays for FPGA) remains **PROVISIONAL**.
 
 ---
 
@@ -136,8 +138,8 @@ The IntIQ contains **16 entries** (provisional capacity). Each entry buffers:
 5. `use_imm` (1 bit): Indicates operand B is taken from `imm` rather than `prs2`.
 6. `prs1` (7 bits) & `prs1_ready` (1 bit): Source 1 register and readiness flag.
 7. `prs2` (7 bits) & `prs2_ready` (1 bit): Source 2 register and readiness flag.
-8. `pnew` (7 bits): Physical destination register ($p_0 \dots p_{79}$).
-9. `rob_idx` (6 bits): Reorder buffer entry index ($0 \dots 47$).
+8. `pnew` (7 bits): Physical destination register (`p_0 ... p_79`).
+9. `rob_idx` (6 bits): Reorder buffer entry index (`0 ... 47`).
 10. `rob_epoch` (4 bits): Slot lifetime generation epoch matching M1 substrate.
 11. `chkpt_id` (3 bits): Branch checkpoint tag for conditional branches.
 12. `pc` (64 bits): Instruction PC.
@@ -151,7 +153,7 @@ The IntIQ contains **16 entries** (provisional capacity). Each entry buffers:
 
 #### 2.2.2 Allocation Handshake (Resolution of P2-3)
 - **Allocation Rule**: IntIQ entry allocation is explicitly gated by M1 accepted rename/dispatch slots:
-  $$\text{iq\_alloc\_valid}[\text{slot}] = \text{renamed\_valid\_o}[\text{slot}] \land \text{rename\_ack\_o}[\text{slot}]$$
+  `iq_alloc_valid[slot] = renamed_valid_o[slot] && rename_ack_o[slot]`
   No IntIQ entry may be created merely because IntIQ itself has free space. If M1 stalls (e.g., Free List empty, ROB full, Checkpoints exhausted, or `sys_blocked`), `rename_ack_o = 2'b00` and zero entries are allocated.
 - **Partial Acceptance**: If `rename_ack_o == 2'b01`, uop0 is allocated into IntIQ; uop1 is NOT allocated and remains held in the rename buffer.
 - **Backpressure Generation**: IntIQ outputs `dispatch_ready_o[1:0]` to M1:
@@ -159,7 +161,7 @@ The IntIQ contains **16 entries** (provisional capacity). Each entry buffers:
   - `dispatch_ready_o[1] = (free_entries >= 2)`
 
 #### 2.2.3 ROB48 Wrap-Safe Age Comparison (Resolution of P2-2 & P3-2)
-- **Mathematical Age Distance**: Rather than maintaining an expensive $16 \times 16$ triangular flip-flop age matrix, IntIQ computes the age of each entry dynamically using its `rob_idx` relative to `rob_head_o` exported by M1:
+- **Mathematical Age Distance**: Rather than maintaining an expensive `16 × 16` triangular flip-flop age matrix, IntIQ computes the age of each entry dynamically using its `rob_idx` relative to `rob_head_o` exported by M1:
 
   ```text
   dist(idx, head) = (idx - head + ROB_DEPTH) mod ROB_DEPTH
@@ -186,23 +188,23 @@ The IntIQ contains **16 entries** (provisional capacity). Each entry buffers:
   - Divider uops additionally require `!divider_busy && !div_buf.valid`.
   - ALU1 uops requiring Port 1 require Port 1 ALU credits (`alu1_fifo_free > alu1_in_flight`).
 - **Deterministic 2-Port Matching Logic**:
-  Let $\mathcal{R}$ be the set of ready uops ordered by age ($u_0$ oldest, $u_1$ second-oldest, etc.).
-  Partition $\mathcal{R}$ into:
-  - $\mathcal{S}_{\text{P0}}$: P0-only uops (Branch, JAL, JALR).
-  - $\mathcal{S}_{\text{P1}}$: P1-only uops (Multiplier, Divider).
-  - $\mathcal{S}_{\text{flex}}$: Symmetric ALU uops (`port_mask = 2'b11`).
+  Let `R` be the set of ready uops ordered by age (`u_0` oldest, `u_1` second-oldest, etc.).
+  Partition `R` into:
+  - `S_P0`: P0-only uops (Branch, JAL, JALR).
+  - `S_P1`: P1-only uops (Multiplier, Divider).
+  - `S_flex`: Symmetric ALU uops (`port_mask = 2'b11`).
 
   **Arbitration Rules**:
-  1. If $u_0 \in \mathcal{S}_{\text{P0}}$: Assign $u_0 \rightarrow \text{Port 0}$. Port 1 selects oldest ready uop in $\mathcal{S}_{\text{P1}} \cup \mathcal{S}_{\text{flex}}$.
-  2. If $u_0 \in \mathcal{S}_{\text{P1}}$: Assign $u_0 \rightarrow \text{Port 1}$. Port 0 selects oldest ready uop in $\mathcal{S}_{\text{P0}} \cup \mathcal{S}_{\text{flex}}$.
-  3. If $u_0 \in \mathcal{S}_{\text{flex}}$:
-     - Inspect $u_1$:
-       - **If $u_1 \in \mathcal{S}_{\text{P0}}$**: Assign $u_1 \rightarrow \text{Port 0}$ and $u_0 \rightarrow \text{Port 1}$ *(Resolves the reviewer critical example: flexible ALU + branch dual-issue in 1 cycle!)*.
-       - **If $u_1 \in \mathcal{S}_{\text{P1}}$**: Assign $u_0 \rightarrow \text{Port 0}$ and $u_1 \rightarrow \text{Port 1}$.
-       - **If $u_1 \in \mathcal{S}_{\text{flex}}$**: Assign $u_0 \rightarrow \text{Port 0}$ and $u_1 \rightarrow \text{Port 1}$.
-       - If no second ready uop exists: Assign $u_0 \rightarrow \text{Port 0}$.
-  4. If both $u_0, u_1 \in \mathcal{S}_{\text{P0}}$: Assign $u_0 \rightarrow \text{Port 0}$. Port 1 selects the oldest ready uop in $\mathcal{S}_{\text{P1}} \cup \mathcal{S}_{\text{flex}}$ (if any).
-  5. If both $u_0, u_1 \in \mathcal{S}_{\text{P1}}$: Assign $u_0 \rightarrow \text{Port 1}$. Port 0 selects the oldest ready uop in $\mathcal{S}_{\text{P0}} \cup \mathcal{S}_{\text{flex}}$ (if any).
+  1. If `u_0 ∈ S_P0`: Assign `u_0 → Port 0`. Port 1 selects oldest ready uop in `S_P1 ∪ S_flex`.
+  2. If `u_0 ∈ S_P1`: Assign `u_0 → Port 1`. Port 0 selects oldest ready uop in `S_P0 ∪ S_flex`.
+  3. If `u_0 ∈ S_flex`:
+     - Inspect `u_1`:
+       - **If `u_1 ∈ S_P0`**: Assign `u_1 → Port 0` and `u_0 → Port 1` *(Resolves the reviewer critical example: flexible ALU + branch dual-issue in 1 cycle!)*.
+       - **If `u_1 ∈ S_P1`**: Assign `u_0 → Port 0` and `u_1 → Port 1`.
+       - **If `u_1 ∈ S_flex`**: Assign `u_0 → Port 0` and `u_1 → Port 1`.
+       - If no second ready uop exists: Assign `u_0 → Port 0`.
+  4. If both `u_0, u_1 ∈ S_P0`: Assign `u_0 → Port 0`. Port 1 selects the oldest ready uop in `S_P1 ∪ S_flex` (if any).
+  5. If both `u_0, u_1 ∈ S_P1`: Assign `u_0 → Port 1`. Port 0 selects the oldest ready uop in `S_P0 ∪ S_flex` (if any).
 
 ---
 
@@ -238,10 +240,10 @@ The conservative M2 contract eliminates speculative wakeup and timing loops acro
 
 ### 2.3.2 Authoritative Latency & Distance Definitions
 1. **ALU Execution Latency**: Exactly **1 cycle** (`EX` stage).
-2. **Producer Result Availability $\rightarrow$ Consumer Selection**: Exactly **1 cycle** (Producer validated at C3 $\rightarrow$ Consumer selected in C4 `IS`).
+2. **Producer Result Availability → Consumer Selection**: Exactly **1 cycle** (Producer validated at C3 → Consumer selected in C4 `IS`).
 3. **Consumer Register Fetch (`RF`)**: Exactly **1 cycle** (Reads stable PRF data storage in C5).
-4. **Producer Issue (`IS`) $\rightarrow$ Consumer Issue (`IS`) Dependency Distance**: Exactly **3 cycles** (C1 $\rightarrow$ C4).
-5. **Dependent ALU Producer `EX` $\rightarrow$ Consumer `EX` Dependency Distance**: Exactly **3 cycles** (C2 $\rightarrow$ C6).
+4. **Producer Issue (`IS`) → Consumer Issue (`IS`) Dependency Distance**: Exactly **3 cycles** (C1 → C4).
+5. **Dependent ALU Producer `EX` → Consumer `EX` Dependency Distance**: Exactly **3 cycles** (C2 → C6).
 6. **No Same-Cycle Wakeup-and-Select**: Combinational loops between arithmetic outputs and scheduler arbitration inputs are strictly forbidden. This eliminates timing closure risks on FPGA and deep sub-micron ASIC flows.
 
 ---
@@ -289,7 +291,7 @@ The conservative M2 contract eliminates speculative wakeup and timing loops acro
 
 ### 2.4.2 Branch Resolution Unit & Prediction Check (Resolution of P1-2)
 - **Supported Control Ops**: `BEQ`, `BNE`, `BLT`, `BGE`, `BLTU`, `BGEU`, `JAL`, `JALR`.
-- **Return Link Calculation**: Computes $\text{Link} = \text{PC} + 4$ (written to $P_{\text{new}}$ for JAL/JALR).
+- **Return Link Calculation**: Computes `Link = PC + 4` (written to `P_new` for JAL/JALR).
 - **Actual-vs-Predicted Evaluation**:
   1. *Conditional Branch*:
      - `actual_taken = eval_cond(rs1, rs2, sub_op)`
@@ -315,9 +317,9 @@ The conservative M2 contract eliminates speculative wakeup and timing loops acro
      - `comp_branch_mispred_i[0] = mispredict`
   3. M1 substrate validates `comp_epoch_i[0] == rob[idx].epoch` and produces `comp_ack_o[0]`.
   4. M2 gates recovery and asserts `recover_valid_i` to M1 combinationally in the SAME cycle using the authoritative recovery equation:
-     $$\text{recover\_valid\_i} = \text{comp\_valid\_i}[0] \land \text{comp\_branch\_mispred\_i}[0] \land \text{comp\_ack\_o}[0] \land \neg \text{flush\_active} \land \neg \text{recovering\_o}$$
-     $$\text{recover\_rob\_idx\_i} = \text{comp\_rob\_idx\_i}[0]$$
-     $$\text{recover\_chkpt\_id\_i} = \text{br\_chkpt\_id}$$
+     `recover_valid_i = comp_valid_i[0] && comp_branch_mispred_i[0] && comp_ack_o[0] && ! flush_active && ! recovering_o`
+     `recover_rob_idx_i = comp_rob_idx_i[0]`
+     `recover_chkpt_id_i = br_chkpt_id`
   5. **Semantics of Authoritative Recovery Gating**:
      - **`recovering_o` Protection**: `recovering_o` is the frozen M1 recovery-active indication exported by `fursoy_s1_substrate.sv`. A younger or in-flight branch completion cannot initiate another recovery while an older recovery walk is already active.
      - **Stale Branch Suppression**: Stale branch completions from older squashed epochs remain strictly suppressed by `comp_ack_o[0] == 1'b0` (`recover_valid_i = 1'b0`).
@@ -370,8 +372,8 @@ The conservative M2 contract eliminates speculative wakeup and timing loops acro
 - **Supported Operations**: `MUL`, `MULH`, `MULHSU`, `MULHU`, `MULW`.
 - **Pipeline Architecture**: Fully pipelined 64-bit multiplier. Accepts up to 1 operation per cycle when downstream credits are available.
 - **Classification & Parameterization**:
-  - **FROZEN SEMANTIC CONTRACT**: Pipelined multiplier architecture, exact RV64M arithmetic, credit-gated issue (`mul_fifo_free_entries > muls_in_pipeline`), lossless completion, and completion FIFO/credit sizing parameterized consistently with $K$. Exact multiplier latency is NOT frozen semantically.
-  - **PROVISIONAL MICROARCHITECTURAL PARAMETER**: Multiplier pipeline depth $K$ with baseline $K=3$ (initial candidates $K \in \{3, 4\}$). The exact depth is selected later using synthesis and physical place-and-route timing evidence.
+  - **FROZEN SEMANTIC CONTRACT**: Pipelined multiplier architecture, exact RV64M arithmetic, credit-gated issue (`mul_fifo_free_entries > muls_in_pipeline`), lossless completion, and completion FIFO/credit sizing parameterized consistently with `K`. Exact multiplier latency is NOT frozen semantically.
+  - **PROVISIONAL MICROARCHITECTURAL PARAMETER**: Multiplier pipeline depth `K` with baseline `K=3` (initial candidates `K ∈ {3, 4}`). The exact depth is selected later using synthesis and physical place-and-route timing evidence.
 
 ### 2.5.3 Iterative Divider Subsystem & RV64M W Semantics (Resolution of P1-4)
 - **Supported Operations**: `DIV`, `DIVU`, `REM`, `REMU`, `DIVW`, `DIVUW`, `REMW`, `REMUW`.
@@ -379,18 +381,18 @@ The conservative M2 contract eliminates speculative wakeup and timing loops acro
 - **Active Cancellation**: Asserting `divider_cancel_i` aborts computation and clears `divider_busy_o` within **1 clock cycle** on branch mispredict or flush.
 - **Normative RV64M Corner Cases & Sign Extension (Exact Compliance)**:
   1. *Division by Zero*:
-     - `DIV`: Returns all-ones (`64'hFFFF_FFFF_FFFF_FFFF`, $-1$).
-     - `DIVU`: Returns all-ones (`64'hFFFF_FFFF_FFFF_FFFF`, $2^{64}-1$).
+     - `DIV`: Returns all-ones (`64'hFFFF_FFFF_FFFF_FFFF`, -1).
+     - `DIVU`: Returns all-ones (`64'hFFFF_FFFF_FFFF_FFFF`, `2^64-1`).
      - `REM`: Returns dividend `rs1`.
      - `REMU`: Returns dividend `rs1`.
-     - `DIVW`: Returns `64'hFFFF_FFFF_FFFF_FFFF` (32-bit $-1$ sign-extended to 64 bits).
-     - **`DIVUW`**: Returns **`64'hFFFF_FFFF_FFFF_FFFF`** (32-bit $2^{32}-1$ sign-extended to 64 bits; NOT zero-extended).
-     - `REMW`: Returns $\text{sext64}(rs1[31:0])$.
-     - `REMUW`: Returns $\text{sext64}(rs1[31:0])$.
-  2. *Signed Overflow* ($rs1 = -2^{63}, rs2 = -1$; or $rs1 = -2^{31}, rs2 = -1$ for W-forms):
-     - `DIV`: Returns $-2^{63}$ (`64'h8000_0000_0000_0000`).
+     - `DIVW`: Returns `64'hFFFF_FFFF_FFFF_FFFF` (32-bit -1 sign-extended to 64 bits).
+     - **`DIVUW`**: Returns **`64'hFFFF_FFFF_FFFF_FFFF`** (32-bit `2^32-1` sign-extended to 64 bits; NOT zero-extended).
+     - `REMW`: Returns `sext64(rs1[31:0])`.
+     - `REMUW`: Returns `sext64(rs1[31:0])`.
+  2. *Signed Overflow* (`rs1 = -2^63, rs2 = -1`; or `rs1 = -2^31, rs2 = -1` for W-forms):
+     - `DIV`: Returns `-2^63` (`64'h8000_0000_0000_0000`).
      - `REM`: Returns `64'h0000_0000_0000_0000`.
-     - `DIVW`: Returns $\text{sext64}(-2^{31}) = \mathbf{64\text{'hFFFF\_FFFF\_8000\_0000}}$.
+     - `DIVW`: Returns `sext64(-2^31) = 64'hFFFF_FFFF_8000_0000`.
      - `REMW`: Returns `64'h0000_0000_0000_0000`.
   3. *Word Operations (`.W`)*:
      - `MULW`, `DIVW`, `DIVUW`, `REMW`, `REMUW` extract 32-bit operands. Signed operations sign-extend; unsigned operations zero-extend into internal execution datapath.
@@ -401,9 +403,9 @@ The conservative M2 contract eliminates speculative wakeup and timing loops acro
 ## 2.6 Provably Lossless Port 1 Completion Network (Resolution of P0-2)
 
 ### 2.6.1 The Collision Dilemma & Maximum In-Flight Pressure
-Port 1 has 3 heterogeneous functional units (Divider: 8–34 cyc, Multiplier: $K$ stages, ALU1: 1 cyc) competing for **1 physical Port 1 writeback port**.
+Port 1 has 3 heterogeneous functional units (Divider: 8–34 cyc, Multiplier: `K` stages, ALU1: 1 cyc) competing for **1 physical Port 1 writeback port**.
 If an arbitrary burst occurs:
-- Multiplier has $K$ operations in flight in stages $1 \dots K$;
+- Multiplier has `K` operations in flight in stages `1 ... K`;
 - ALU1 finishes a 1-cycle operation;
 - Divider completes in the exact same cycle.
 A single 1-entry holding register per unit is mathematically insufficient and would overflow on consecutive multiplier completions while Divider holds writeback.
@@ -412,29 +414,29 @@ A single 1-entry holding register per unit is mathematically insufficient and wo
 To guarantee **ZERO result loss under all legal collision sequences**:
 1. **Dedicated Output Completion Queues**:
    - **Divider Buffer (`div_buf`)**: Exactly **1 entry**. Divider is single-occupancy; `divider_busy` remains asserted until `div_buf` writes back and clears.
-   - **Multiplier FIFO (`mul_fifo`)**: Exactly **$K$ entries** (where $K$ is the multiplier pipeline depth, baseline $K=3$).
-   - **ALU1 FIFO (`alu1_fifo`)**: Exactly **$A$ entries** (where $A \ge 2$).
+   - **Multiplier FIFO (`mul_fifo`)**: Exactly **`K` entries** (where `K` is the multiplier pipeline depth, baseline `K=3`).
+   - **ALU1 FIFO (`alu1_fifo`)**: Exactly **`A` entries** (where `A ≥ 2`).
 2. **Pre-Issue Completion Reservation (Issue Gating)**:
    An operation is issued from IntIQ to Port 1 **IF AND ONLY IF** downstream buffer capacity is guaranteed:
    - **Multiplier Issue Condition**:
-     $$\text{mul\_fifo\_free\_entries} > \text{muls\_in\_pipeline}$$
-     *Proof*: The maximum number of multiplications that can reach `mul_fifo` without draining is bounded by $K$. The FIFO capacity is $K$. **Overflow probability = 0.**
+     `mul_fifo_free_entries > muls_in_pipeline`
+     *Proof*: The maximum number of multiplications that can reach `mul_fifo` without draining is bounded by `K`. The FIFO capacity is `K`. **Overflow probability = 0.**
    - **ALU1 Issue Condition**:
-     $$\text{alu1\_fifo\_free\_entries} > \text{alu1\_in\_flight}$$
-     *Proof*: ALU1 has 1-cycle latency. With $A \ge 2$, even if WB is blocked for 1 cycle, ALU1 safely buffers without dropping.
+     `alu1_fifo_free_entries > alu1_in_flight`
+     *Proof*: ALU1 has 1-cycle latency. With `A ≥ 2`, even if WB is blocked for 1 cycle, ALU1 safely buffers without dropping.
    - **Divider Issue Condition**:
-     $$\neg \text{divider\_busy\_o} \land \neg \text{div\_buf.valid}$$
+     `! divider_busy_o && ! div_buf.valid`
      *Proof*: Divider can never start while an unbuffered or active division exists.
 3. **Lossless Priority Arbiter**:
    Deterministic priority hierarchy:
-   $$\text{Priority 1 (Highest)}: \text{div\_buf} > \text{Priority 2}: \text{mul\_fifo} > \text{Priority 3 (Lowest)}: \text{alu1\_fifo}$$
+   `Priority 1 (Highest): div_buf > Priority 2: mul_fifo > Priority 3 (Lowest): alu1_fifo`
    - When `div_buf` wins: writes to WB, clears `div_buf`, releases `divider_busy`.
    - When `mul_fifo` wins: writes to WB, pops head of `mul_fifo`.
    - When `alu1_fifo` wins: writes to WB, pops head of `alu1_fifo`.
 4. **Starvation-Freedom Proof**:
    - Divider writes back at most once every 8 cycles (1 cycle occupancy on WB).
-   - Multiplier can write back for at most $K$ consecutive cycles before its pipeline empties (if new issues are held).
-   - Therefore, ALU1 is guaranteed writeback access within at most $K + 1$ cycles. No unit is starved indefinitely.
+   - Multiplier can write back for at most `K` consecutive cycles before its pipeline empties (if new issues are held).
+   - Therefore, ALU1 is guaranteed writeback access within at most `K + 1` cycles. No unit is starved indefinitely.
 5. **Squash & Flush of Completion Queues**:
    - On branch mispredict: Any entry in `div_buf`, `mul_fifo`, or `alu1_fifo` younger than the recovering branch is invalidated (`valid <= 0`), immediately freeing buffer capacity.
    - On full flush: All entries in `div_buf`, `mul_fifo`, and `alu1_fifo` are cleared (`valid <= 0`, pointers reset).
@@ -492,7 +494,7 @@ To guarantee **ZERO result loss under all legal collision sequences**:
 5. M1 substrate enters `RECOVER` state: restores SRAT from checkpoint `chkpt_id`, halts rename (`rename_ack_o = 2'b00`), and begins backwards ROB squash walk (2 uops/cycle).
 
 ### 2.8.2 In-Flight Execution Flush Mechanics
-- **Integer Issue Queue**: Entries younger than the mispredicted branch ($\text{dist}(\text{rob\_idx}, \text{head}) > \text{dist}(\text{br\_rob\_idx}, \text{head})$) have `valid <= 1'b0` in cycle 0.
+- **Integer Issue Queue**: Entries younger than the mispredicted branch (`dist(rob_idx, head) > dist(br_rob_idx, head)`) have `valid <= 1'b0` in cycle 0.
 - **Multiplier Pipeline**: Multiplier stages carry `{rob_idx, rob_epoch}`. Stages younger than the recovering branch are cleared (`valid <= 1'b0`).
 - **Divider Cancellation**: If the active division is younger than the branch, `divider_cancel_i = 1'b1` clears the divider FSM in 1 cycle.
 - **Port 1 Completion Queues**: Entries in `mul_fifo`, `alu1_fifo`, and `div_buf` younger than the branch are invalidated.
@@ -504,7 +506,7 @@ To guarantee **ZERO result loss under all legal collision sequences**:
 
 | Subsystem / Parameter | M2 Architectural Specification | Master Classification |
 |---|---|---|
-| **PRF Capacity** | 80 physical registers ($p_0 \dots p_{79}$) | **FROZEN SEMANTIC CONTRACT** |
+| **PRF Capacity** | 80 physical registers (`p_0 ... p_79`) | **FROZEN SEMANTIC CONTRACT** |
 | **PRF Data Width** | 64 bits per register | **FROZEN SEMANTIC CONTRACT** |
 | **PRF Logical Ports (M2)** | 4 Read Ports, 2 Write Ports | **FROZEN SEMANTIC CONTRACT** |
 | **PRF Logical Ports (Full)** | 6 Read Ports, 3 Write Ports (Port 2 reserved) | **FROZEN SEMANTIC CONTRACT** |
@@ -521,7 +523,7 @@ To guarantee **ZERO result loss under all legal collision sequences**:
 | **Port 0 Branch Prediction**| Carries `pred_taken`, `pred_target`, type flags | **FROZEN SEMANTIC CONTRACT** |
 | **Branch Recovery Gating** | `recover_valid_i = comp_valid[0] && comp_mispred[0] && comp_ack[0] && !flush_active && !recovering_o` | **FROZEN SEMANTIC CONTRACT** |
 | **Port 1 Capabilities** | ALU1 (Symmetric) + Multiplier + Iterative Divider | **FROZEN SEMANTIC CONTRACT** |
-| **Multiplier Pipeline Depth**| $K$ stages ($K \in \{3, 4\}$, baseline $K=3$; selected via physical timing) | **PROVISIONAL MICROARCHITECTURAL PARAMETER** |
+| **Multiplier Pipeline Depth**| `K` stages (`K ∈ {3, 4}`, baseline `K=3`; selected via physical timing) | **PROVISIONAL MICROARCHITECTURAL PARAMETER** |
 | **Divider Engine** | Radix-4 non-restoring SRT (8–34 cyc, provisional) | **PROVISIONAL MICROARCHITECTURAL PARAMETER** |
 | **Divider Concurrency & Busy**| 1 active op; `divider_busy_o` backpressure | **FROZEN SEMANTIC CONTRACT** |
 | **Divider Corner Cases** | RV64M normative compliance (exact sign-extended W) | **FROZEN SEMANTIC CONTRACT** |
@@ -538,7 +540,7 @@ To guarantee **ZERO result loss under all legal collision sequences**:
 
 ### 4.1 Dependency & Structural Loop Analysis
 We evaluate the complete execution loop for circular wait conditions:
-$$\text{Free List} \xrightarrow{\text{alloc}} \text{Rename} \xrightarrow{\text{dispatch}} \text{IntIQ} \xrightarrow{\text{issue}} \text{PRF Read} \xrightarrow{\text{exec}} \text{EX} \xrightarrow{\text{buf}} \text{P1 Queues} \xrightarrow{\text{arb}} \text{WB} \xrightarrow{\text{retire}} \text{ROB} \xrightarrow{\text{free}} \text{Free List}$$
+`Free List --(alloc)-> Rename --(dispatch)-> IntIQ --(issue)-> PRF Read --(exec)-> EX --(buf)-> P1 Queues --(arb)-> WB --(retire)-> ROB --(free)-> Free List`
 
 #### Scenario A: IntIQ Full with Stalled Older Multiplier / Divider
 - *Precondition*: IntIQ fills to 16 entries with dependent uops while an older 34-cycle division is active on Port 1.
@@ -546,18 +548,18 @@ $$\text{Free List} \xrightarrow{\text{alloc}} \text{Rename} \xrightarrow{\text{d
 - *Verdict*: **Deadlock-free; strictly acyclic progress**.
 
 #### Scenario B: Sustained Multiplier Pressure with Concurrent Divider Completion
-- *Precondition*: Multiplier has $K$ operations in flight (parameterized depth, baseline $K=3$). Single-cycle ALU1 issues. Divider completes in the same cycle.
+- *Precondition*: Multiplier has `K` operations in flight (parameterized depth, baseline `K=3`). Single-cycle ALU1 issues. Divider completes in the same cycle.
 - *Analysis*:
-  - Divider wins writeback in Cycle $N$.
-  - Multipliers $M_1, M_2, M_3$ enter `mul_fifo` without loss.
+  - Divider wins writeback in Cycle `N`.
+  - Multipliers `M_1, M_2, M_3` enter `mul_fifo` without loss.
   - ALU1 enters `alu1_fifo` without loss.
   - Multiplier issue is blocked because `mul_fifo_free_entries == 0`.
-  - Cycles $N+1 \dots N+3$: `mul_fifo` drains to writeback.
-  - Cycle $N+4$: `alu1_fifo` drains to writeback.
+  - Cycles `N+1 ... N+3`: `mul_fifo` drains to writeback.
+  - Cycle `N+4`: `alu1_fifo` drains to writeback.
 - *Verdict*: **Zero results dropped; exactly bounded drain latency**.
 
 #### Scenario C: Rapid Branch Misprediction with Stale Multiplier Completion
-- *Precondition*: Branch mispredicts at Cycle $N$ while a younger Multiplier uop is in Stage 2. ROB slot is recycled for a new uop at Cycle $N+4$.
+- *Precondition*: Branch mispredicts at Cycle `N` while a younger Multiplier uop is in Stage 2. ROB slot is recycled for a new uop at Cycle `N+4`.
 - *Analysis*: Stale multiplier uop reaches WB with `comp_epoch = 4'd1`. Recycled ROB slot has `epoch = 4'd2`. M1 substrate asserts `comp_ack_o = 1'b0`. Stale completion is dropped: PRF data write suppressed (`prf_we = 0`), PRF status untouched, new uop uncorrupted.
 - *Verdict*: **Zero corruption; complete PRF data and ROB integrity**.
 
@@ -583,13 +585,13 @@ The implementation of Milestone 2 must be proven through a comprehensive test su
 13. **Lifetime-Gated Branch Recovery (P1-3)**: Proving stale branch mispredict does NOT assert `recover_valid_i`.
 14. **Branch Recovery Across ROB Wrap (P2-2)**: Correct squash distance calculation when branch and younger uops span the circular ROB index boundary.
 15. **Multiplier Basic Operations**: `MUL`, `MULH`, `MULHU`, `MULHSU`, `MULW` arithmetic correctness.
-16. **MULHSU Signed $\times$ Unsigned Boundary Vectors**: Positive/negative boundary vector verification.
-17. **Multiplier Pipeline Concurrency**: Sustained multiplier issue filling all $K$ pipeline stages.
+16. **MULHSU Signed `×` Unsigned Boundary Vectors**: Positive/negative boundary vector verification.
+17. **Multiplier Pipeline Concurrency**: Sustained multiplier issue filling all `K` pipeline stages.
 18. **Divider Basic Operations**: `DIV`, `DIVU`, `REM`, `REMU`, `DIVW`, `DIVUW`, `REMW`, `REMUW`.
 19. **Divider Zero Quotient & Remainder**: Division of 0 by non-zero dividend.
 20. **Divider Division by Zero**: Verification of normative RISC-V all-ones return and dividend remainder.
 21. **DIVUW / REMUW Sign-Extension Vectors (P1-4)**: Proving `DIVUW` by zero returns `64'hFFFF_FFFF_FFFF_FFFF`.
-22. **Divider Signed Overflow**: $-2^{63} / -1$ returning $-2^{63}$ and remainder 0; $-2^{31} / -1$ sign-extended for `DIVW`.
+22. **Divider Signed Overflow**: `-2^63 / -1` returning `-2^63` and remainder 0; `-2^31 / -1` sign-extended for `DIVW`.
 23. **Divider Busy Backpressure**: Younger division stalled while divider is active.
 24. **Sustained Multiplier Completion Pressure (P0-2)**: Back-to-back multiplier completions against stalled writeback.
 25. **Simultaneous Tri-Unit Collision (DIV + MUL + ALU1)**: All 3 units completing same cycle; zero-drop drain.
@@ -599,7 +601,7 @@ The implementation of Milestone 2 must be proven through a comprehensive test su
 29. **Branch Misprediction Active Divide Cancel**: Divider aborted within 1 cycle via `divider_cancel_i`.
 30. **Stale Completion PRF Data Immunity (P0-1)**: Proving stale writeback CANNOT overwrite 64-bit PRF data.
 31. **Stale Completion Bypass / Wakeup Immunity (P0-1)**: Proving stale writeback CANNOT wake or bypass into consumers.
-32. **PRF $p_0$ Read/Write Immunity**: Writing non-zero data to $p_0$ and verifying readback remains strictly `64'd0`.
+32. **PRF `p_0` Read/Write Immunity**: Writing non-zero data to `p_0` and verifying readback remains strictly `64'd0`.
 33. **IntIQ Allocation Handshake & Partial Acceptance (P2-3)**: Verifying `rename_ack_o == 2'b01` allocates uop0 only.
 34. **Simultaneous Flush + WB / Recovery + WB**: Handling full flush or branch recovery occurring concurrently with writeback.
 35. **Same-Cycle IntIQ Issue + Two Allocations**: Issue clearing entries while two new uops allocate in the same cycle.
@@ -614,13 +616,13 @@ The implementation of Milestone 2 must be proven through a comprehensive test su
 4. `assert property (@(posedge clk_i) !(divider_busy && divider_accept_new));`  
    *(Divider must never accept a new operation while busy).*
 5. `assert property (@(posedge clk_i) (prs_read_p0_val == 64'd0));`  
-   *(Physical register $p_0$ must always evaluate to zero).*
+   *(Physical register `p_0` must always evaluate to zero).*
 
 ---
 
 ## 6. Performance Targets (Design Targets Only)
 
-- **Long-Term Full-Core Target**: Exceed Slice-0's measured IPC of $\sim 0.648$ to achieve $\ge 1.20$ IPC on representative Linux workloads once the complete core (with LSU and Frontend) is integrated.
+- **Long-Term Full-Core Target**: Exceed Slice-0's measured IPC of `~ 0.648` to achieve `≥ 1.20` IPC on representative Linux workloads once the complete core (with LSU and Frontend) is integrated.
 - **Milestone 2 Backend Throughput Target**:
   - Peak structural throughput: **2.0 uops / cycle** on compute-bound integer ALU blocks.
   - Multiplier throughput: **1.0 product / cycle** (when unthrottled).

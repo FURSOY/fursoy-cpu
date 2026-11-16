@@ -20,6 +20,8 @@
 `4d6fc54a6efb0d0deb94d4416926bd769c0783871499075f5de434959206d7cb`  
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/platform-sbi-v1.md`, `docs/architecture/sv39-mmu-v1.md`, `docs/architecture/plic-v1.md`, `docs/architecture/pmp-v1.md`, `docs/architecture/s-mode-bare-v1.md`.
 
+> **Post-Phase-3 Closeout & RTL Note (`bab4ceb`):** In post-Phase-3 Slice-1 RTL (`fursoy_s1_soc`), `fursoy_s0_clint.sv` uses unified `rsp_valid_q`/`rsp_error_q` across both loads and stores, `fursoy_s0_uart.sv` supports aligned 1B/2B/4B MMIO accesses, `fursoy_s0_plic.sv` supports per-source `in_service_q` preemption (`PLIC-29`), and `satp` implements 16-bit ASIDs (`[59:44]`) matching `fursoy_s1_itlb`/`fursoy_s1_dtlb` (`G == 1` `SFENCE.VMA` preservation). Fresh Linux 6.6.50 + BusyBox closeout telemetry (`results/s1-m9-closeout.json`) passes all 4 closeout properties (`PROP_M9_27..PROP_M9_30`) in `90,304,592` cycles with `76,281,757` commits (`0.8447` IPC), `2,253` demand page faults (`0` access faults), `0` CPI conservation errors, and a `-24.82%` `C_be_rename` reduction following `NUM_CHECKPOINTS = 16` scaling.
+
 ---
 
 ## 1. Executive Summary & Scope Definition
@@ -183,8 +185,8 @@ The core's CSR subsystem (`fursoy_s1_csr.sv`) implements complete standard inter
    - `mip.SEIP` reflects `irq_seip_i` ORed with software-writable supervisor external interrupt bit.
 2. **`mie` (Machine Interrupt Enable)**: Standard WARL enable mask for individual interrupt sources.
 3. **`mideleg` (Machine Interrupt Delegation)**:
-   - When bit $k$ in `mideleg` is 1 and the core executes in Supervisor or User mode, interrupt $k$ is delegated to S-mode: it traps directly to `stvec`, recording cause in `scause` (with MSB `1'b1`), saving PC in `sepc`, and updating `sstatus.SPIE` and `sstatus.SPP`.
-   - If bit $k$ is 0, or if executing in Machine mode, the trap vectors to `mtvec`.
+   - When bit `k` in `mideleg` is 1 and the core executes in Supervisor or User mode, interrupt `k` is delegated to S-mode: it traps directly to `stvec`, recording cause in `scause` (with MSB `1'b1`), saving PC in `sepc`, and updating `sstatus.SPIE` and `sstatus.SPP`.
+   - If bit `k` is 0, or if executing in Machine mode, the trap vectors to `mtvec`.
 
 ### 3.3 Out-of-Order Interrupt Delivery Contract (ROB Head Invariant)
 In an out-of-order superscalar pipeline, asynchronous interrupts **must not disrupt instruction execution mid-stream**.
@@ -222,8 +224,8 @@ In an out-of-order superscalar pipeline, asynchronous interrupts **must not disr
 
 **Formal Delivery Rules**:
 1. An interrupt is candidate for delivery if and only if:
-   $$\text{PendingMasked} = (\text{mip} \ \& \ \text{mie})$$
-   $$\text{InterruptDeliverable} = (\text{priv\_mode} < M) \ \lor \ ((\text{priv\_mode} == M) \land \text{mstatus.MIE})$$
+   `PendingMasked = (mip & mie)`
+   `InterruptDeliverable = (priv_mode < M) || ((priv_mode == M) && mstatus.MIE)`
 2. If an interrupt is deliverable, the ROB head arbitration halts further instruction retirements.
 3. When instructions reside in the ROB, the instruction currently at the ROB head is **not retired**; its architectural program counter is preserved and written to `mepc` (or `sepc` if delegated). If an asynchronous interrupt arrives while the ROB is empty (e.g., during frontend instruction starvation, pipeline drain, or `WFI` sleep wakeup), the PC captured in `mepc`/`sepc` is the current architectural next-instruction fetch / redirect PC (`fe_pc`), vectoring cleanly without corrupting architectural state.
 4. The interrupt cause is formatted as `(1'b1 << 63) | cause_idx` (e.g. `0x8000_0000_0000_0007` for MTIP, `0x8000_0000_0000_0009` for SEIP).
@@ -502,8 +504,8 @@ To guarantee absolute verification rigor and eliminate vacuous test passing, Mil
 - **`PROP_M9_01`**: Asynchronous interrupt arrival while `mstatus.MIE == 0` is buffered in `mip` without interrupting program execution.
 - **`PROP_M9_02`**: Asynchronous interrupt arrival while `mstatus.MIE == 1` vectors strictly at the boundary of the instruction currently at the ROB head; the instruction at the ROB head is not retired.
 - **`PROP_M9_03`**: Interrupt delivery causes zero register leakage: squashed younger speculative instructions return allocated physical registers to the Free List.
-- **`PROP_M9_04`**: When `mideleg[k] == 1` and `priv_mode <= S`, interrupt $k$ vectors strictly to `stvec`, recording cause in `scause` and updating `sstatus.SPIE`.
-- **`PROP_M9_05`**: When `mideleg[k] == 0`, interrupt $k$ vectors strictly to `mtvec`, recording cause in `mcause` and updating `mstatus.MPIE`.
+- **`PROP_M9_04`**: When `mideleg[k] == 1` and `priv_mode <= S`, interrupt `k` vectors strictly to `stvec`, recording cause in `scause` and updating `sstatus.SPIE`.
+- **`PROP_M9_05`**: When `mideleg[k] == 0`, interrupt `k` vectors strictly to `mtvec`, recording cause in `mcause` and updating `mstatus.MPIE`.
 - **`PROP_M9_06`**: `WFI` instruction sleep/wakeup: core enters sleep when no interrupt is pending, waking immediately upon assertion of an unmasked interrupt.
 
 ### 8.2 Uncached MMIO Datapath Properties (Phase B)

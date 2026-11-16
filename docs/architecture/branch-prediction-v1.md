@@ -158,7 +158,7 @@ To support exact recovery from mispredictions, false BTB hits, traps, and interr
 ## 5. Pipeline Timing, Stage-F Lookup & Next-PC Selection
 
 ### 5.1 Stage-F Combinational Lookup Timing
-In cycle $t$, Stage F evaluates the registered fetch PC `pc_f_q`:
+In cycle `t`, Stage F evaluates the registered fetch PC `pc_f_q`:
 
 ```
 Cycle t:
@@ -229,7 +229,7 @@ typedef struct packed {
 ## 6. Stage-E Resolution & Misprediction Recovery
 
 ### 6.1 Authoritative Execution & Condition Check
-In cycle $t+1$, the instruction in `fe_q` is decoded and executed in Stage E:
+In cycle `t+1`, the instruction in `fe_q` is decoded and executed in Stage E:
 * `actual_taken`:
   * Conditional Branch: Evaluated from integer ALU register comparisons (`rs1_val`, `rs2_val`).
   * JAL / JALR: Always taken (`actual_taken = 1`).
@@ -294,7 +294,7 @@ When Stage E experiences an LSU stall (`lsu_stall`), memory drain stall (`memory
 Predictor updates (`btb_update_en`, `pht_update_en`, `ras_update_en`, `btb_dealloc_en`) must be asserted **if and only if `commit_fire == 1`**.
 * The ambiguous independent `mispredict_fire` signal is **permanently eliminated**.
 * Under `stall_e == 1`, all BPU write-enable signals MUST be combinationally forced to `0`.
-* A branch instruction held in Stage E across $N$ stall cycles triggers **exactly one** update to the BTB and saturating counters on the final cycle it retires.
+* A branch instruction held in Stage E across `N` stall cycles triggers **exactly one** update to the BTB and saturating counters on the final cycle it retires.
 * Trapped, interrupted, or flushed wrong-path instructions generate **zero** predictor updates.
 
 ### 7.2 Stage F Frozen Under Backpressure
@@ -408,7 +408,7 @@ The test suite (`verification/bpu_s0_tb.cpp`, `tools/run_bpu_s0.py`) must implem
 | **BPU-AL-03** | Aliasing | False BTB hit on non-control ALU instruction | Stage E detects non-control type; redirects to fall-through (1 bubble); ALU instruction commits. |
 | **BPU-AL-04** | Aliasing | False-BTB-hit deallocation | False BTB hit deallocates offending entry (`valid=0`); subsequent fetch at same PC does not mispredict. |
 | **BPU-TG-01** | Target | Indirect JALR changes target address between calls | Stage E detects target mismatch; redirects to new target; updates BTB target. |
-| **BPU-B2B-01** | Sequence | Back-to-back conditional branches (Cycle $t$ and Cycle $t+1$) | Both evaluated correctly; pipeline in-order semantics strictly preserved. |
+| **BPU-B2B-01** | Sequence | Back-to-back conditional branches (Cycle `t` and Cycle `t+1`) | Both evaluated correctly; pipeline in-order semantics strictly preserved. |
 | **BPU-B2B-02** | Sequence | Branch in delay slot of mispredicted branch | Speculative branch cleanly flushed; zero spurious predictor state updates. |
 | **BPU-STL-01** | Stalls | Stage E stalls for 10 cycles on LSU load while branch in `fe_q` | Predictor counter updated exactly once on commit cycle, not 10 times. |
 | **BPU-STL-02** | Stalls | Stage F stalls on L1I cache miss during predicted target fetch | `pc_q` holds target; speculative RAS actions suppressed while stalled; target instruction arrives cleanly. |
@@ -450,28 +450,28 @@ Following architectural review, the previous cycle recovery estimate of 1.25M–
 1. **Unconditional JAL (199,000 commits):**
    * Static target, always taken.
    * Realistic BTB capacity hit rate across kernel text: 75.0%.
-   * **Gross Cycles Saved:** $199{,}000 \times 0.75 = \mathbf{+149{,}250\text{ cycles}}$.
+   * **Gross Cycles Saved:** `199,000 × 0.75 = +149,250 cycles`.
 2. **Indirect Returns via 16-Entry RAS (~290,000 commits):**
    * Realistic RAS hit rate accounting for deep call stacks, cold call misses, and context switches: 75.0%.
-   * **Gross Cycles Saved:** $290{,}000 \times 0.75 = \mathbf{+217{,}500\text{ cycles}}$.
+   * **Gross Cycles Saved:** `290,000 × 0.75 = +217,500 cycles`.
 3. **Indirect Jumps via BTB (~75,000 commits):**
    * Hit rate on monomorphic function pointers and switch dispatch: 45.0%.
-   * **Gross Cycles Saved:** $75{,}000 \times 0.45 = \mathbf{+33{,}750\text{ cycles}}$.
+   * **Gross Cycles Saved:** `75,000 × 0.45 = +33,750 cycles`.
 4. **Conditional Taken Branches (1,059,000 commits):**
    * 2-way 512-entry BTB hit rate + 2-bit bimodal accuracy: 65.0%.
-   * **Gross Cycles Saved:** $1{,}059{,}000 \times 0.65 = \mathbf{+688{,}350\text{ cycles}}$.
+   * **Gross Cycles Saved:** `1,059,000 × 0.65 = +688,350 cycles`.
 5. **Conditional Untaken Branches (565,000 commits):**
    * 88.0% correctly predicted Not-Taken (0 cycle delta vs baseline).
    * 12.0% (67,800) mispredicted as Taken:
      * Incurs a 1-cycle corrective redirect to fall-through (`fe_q.pc + 4`) that was not present in the non-speculative baseline.
-   * **Cycle Penalty:** $565{,}000 \times 0.12 \times (-1) = \mathbf{-67{,}800\text{ cycles}}$.
+   * **Cycle Penalty:** `565,000 × 0.12 × (-1) = -67,800 cycles`.
 6. **Gross Direct Bubble Reduction:**
-   $$149{,}250 + 217{,}500 + 33{,}750 + 688{,}350 - 67{,}800 = \mathbf{+1{,}021{,}050\text{ cycles}}$$
+   `149,250 + 217,500 + 33,750 + 688,350 - 67,800 = +1,021,050 cycles`
 7. **Stall Migration into Memory Subsystem:**
    * Eliminating branch bubbles accelerates instruction retirement, increasing the issue density of loads and stores into the single-ported L1D and 4-entry Store Buffer.
-   * Based on empirical stall migration observed during the SB and SRB milestones, approximately **25% to 30%** of gross cycle savings migrate into L1D load arbitration contention and Store Buffer full backpressure ($\approx -255{,}000\text{ to } -306{,}000\text{ cycles}$).
+   * Based on empirical stall migration observed during the SB and SRB milestones, approximately **25% to 30%** of gross cycle savings migrate into L1D load arbitration contention and Store Buffer full backpressure (`≈ -255,000 to -306,000 cycles`).
 8. **Conservative Net Projected Performance Range:**
-   * **Net Cycle Reduction:** **650,000 – 850,000 cycles** (midpoint $\approx \mathbf{740{,}000\text{ cycles}}$).
+   * **Net Cycle Reduction:** **650,000 – 850,000 cycles** (midpoint `≈ 740,000 cycles`).
    * **Projected Execution Cycles:** **26,470,000 – 26,670,000 cycles** (down from 27.32M).
    * **Projected IPC:** **0.560 – 0.565 IPC** (vs 0.547041 baseline; net **+2.4% to +3.3% throughput gain**).
    * **Projected CPI:** **1.77 – 1.79** (down from 1.828).

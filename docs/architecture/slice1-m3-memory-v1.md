@@ -8,6 +8,8 @@
 - Milestone 2 (Verified & Frozen: PRF Data Storage, IntIQ, ALU0/1, Branch, Multiplier, Divider, Lossless Port 1 Completion)
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m2-backend-v1.md`
 
+> **Post-Phase-3 RTL Note (`bab4ceb`):** While this document captures the frozen Milestone 3 memory baseline (`MemIQ12`, `4`-entry `TRT`, single AGU on Port 2), the production Slice-1 RTL scales these to `MemIQ = 32`, `TRT = 32`, dual AGUs (`Port 2 AGU0` + `Port 3 AGU1` loads), 8-bank (`PA[5:3]`) L1D with true 3-bit Tree-PLRU (`fursoy_s1_l1d.sv`), standalone `fursoy_s1_dtlb.sv`, shared `fursoy_s1_ks_adder` in `fursoy_s1_agu`, and `rob_head_i` serialization for `LR.W/D` in `fursoy_s1_lsu_queues.sv`. See `docs/architecture/slice1-core-v1.md`.
+
 ---
 
 ## 1. Executive Summary & Milestone Scope
@@ -67,10 +69,10 @@ Fursoy Slice-1 Milestones 1 and 2 established and froze the 2-wide out-of-order 
   - `R5`: Port 2 Store Data operand (`prs2`);
   - `W0`: Port 0 writeback;
   - `W1`: Port 1 writeback;
-  - `W2`: Port 2 Load writeback into $P_{\text{new}}$.
+  - `W2`: Port 2 Load writeback into `P_new`.
 
 ### 1.3 In-Scope for Milestone 3
-1. **Execution Port 2 & AGU**: 64-bit effective address calculation ($EA = \text{base} + \text{imm}$), natural alignment check, size/sign attributes, byte mask generation, and exception reporting.
+1. **Execution Port 2 & AGU**: 64-bit effective address calculation (`EA = base + imm`), natural alignment check, size/sign attributes, byte mask generation, and exception reporting.
 2. **Memory Issue Queue (MemIQ)**: 12-entry out-of-order memory scheduler with wrap-safe circular ROB age selection, base-operand readiness gating, and decoupled store-data readiness.
 3. **Load Queue (LQ)**: 16-entry tracking structure for speculative loads, address resolution, cache request state, forwarding metadata, and completion status.
 4. **Store Queue (SQ)**: 16-entry tracking structure for speculative stores, address resolution, store-data buffering, committed retirement state, and in-order cache drain.
@@ -121,7 +123,7 @@ Every architectural parameter and design decision is strictly classified:
 | **Memory Exception Timing** | Precise; attaches to ROB slot; alters state ONLY at retirement | **FROZEN SEMANTIC CONTRACT** |
 | **Faulting Load PRF Write**| `prf_we[2] = comp_valid[2] && comp_ack[2] && !comp_exception[2] && (pnew != 0)` | **FROZEN SEMANTIC CONTRACT** |
 | **MMIO / Uncached Execution**| Non-speculative at ROB head; drains older memory ops; non-interruptible | **FROZEN SEMANTIC CONTRACT** |
-| **VIPT Synonym Safety** | Way Size $\le 4\text{ KiB}$ ($64\text{ sets} \times 64\text{ bytes} = 4\text{ KiB/way}$) | **FROZEN SEMANTIC CONTRACT** |
+| **VIPT Synonym Safety** | Way Size `≤ 4 KiB` (`64 sets × 64 bytes = 4 KiB/way`) | **FROZEN SEMANTIC CONTRACT** |
 | **L1D Capacity / Config** | 16 KiB 4-Way (baseline) or 32 KiB 8-Way (candidate); both 64 sets | **PROVISIONAL MICROARCHITECTURAL PARAMETER** |
 | **L1D Cache Policy** | Physically tagged, write-back, write-allocate, non-blocking | **FROZEN SEMANTIC CONTRACT** |
 | **Cache Priority Contract** | Refill Install > Committed Store Drain > Speculative Load Issue | **FROZEN SEMANTIC CONTRACT** |
@@ -185,18 +187,18 @@ Every architectural parameter and design decision is strictly classified:
 
 ### 3.1 Address Generation & Natural Alignment
 - **Effective Address (EA)**:
-  $$\text{EA}[63:0] = \text{base}[63:0] + \text{imm}[63:0]$$
+  `EA[63:0] = base[63:0] + imm[63:0]`
 - **Alignment Checks & Precise Traps**:
   - `LB` / `LBU` / `SB`: Byte operations, naturally aligned.
-  - `LH` / `LHU` / `SH`: Halfword operations, require $\text{EA}[0] == 1\text{'b}0$.
-  - `LW` / `LWU` / `SW`: Word operations, require $\text{EA}[1:0] == 2\text{'b}00$.
-  - `LD` / `SD`: Doubleword operations, require $\text{EA}[2:0] == 3\text{'b}000$.
+  - `LH` / `LHU` / `SH`: Halfword operations, require `EA[0] == 1'b0`.
+  - `LW` / `LWU` / `SW`: Word operations, require `EA[1:0] == 2'b00`.
+  - `LD` / `SD`: Doubleword operations, require `EA[2:0] == 3'b000`.
   - If natural alignment fails, AGU asserts `align_fault = 1'b1`. The operation skips DTLB and cache lookups, recording a precise exception in its queue entry (Cause 4 Load Address Misaligned, Cause 6 Store/AMO Address Misaligned). For stores, this immediately asserts `exception_pending = 1'b1`, enabling instant exceptional completion to the ROB without waiting for store data.
 
 ### 3.2 Faulting Load PRF Write Suppression (Resolution of P1-6)
 - **Correctness Rule**: A load that incurs an exception (misaligned, page fault, access fault) must **NEVER** write data into its destination physical register, and must **NEVER** wake dependent instructions or forward speculative fault data via bypass.
 - **Authoritative Port 2 PRF Write-Enable Equation**:
-  $$\text{prf\_we}[2] = \text{comp\_valid\_i}[2] \land \text{comp\_ack\_o}[2] \land \neg \text{comp\_exception\_i}[2] \land (\text{comp\_preg\_i}[2] \neq 7\text{'d}0)$$
+  `prf_we[2] = comp_valid_i[2] && comp_ack_o[2] && ! comp_exception_i[2] && (comp_preg_i[2] ≠ 7'd0)`
 - **Dependent Wakeup & Bypass Suppression**:
   When `comp_exception_i[2] == 1'b1`, Port 2 writeback asserts exception status to M1 ROB, but suppresses tag wakeup broadcasts to IntIQ/MemIQ and forces execution bypass validity to `0`.
 
@@ -213,7 +215,7 @@ The MemIQ contains **12 entries** (provisional parameter). Each entry buffers:
 5. `imm` (64 bits): Sign-extended 12-bit I-type displacement (loads) or S-type displacement (stores).
 6. `prs1` (7 bits) & `prs1_ready` (1 bit): Base address physical register and readiness flag.
 7. `prs2` (7 bits) & `prs2_ready` (1 bit): Store data physical register and readiness flag (stores only).
-8. `pnew` (7 bits): Physical destination register ($p_0 \dots p_{79}$) for loads.
+8. `pnew` (7 bits): Physical destination register (`p_0 ... p_79`) for loads.
 9. `rob_idx` (6 bits) & `rob_epoch` (4 bits): ROB lifetime generation identity matching M1 substrate.
 10. `lq_idx` (4 bits): Assigned Load Queue slot (loads only).
 11. `sq_idx` (4 bits): Assigned Store Queue slot (stores only).
@@ -225,19 +227,19 @@ The MemIQ contains **12 entries** (provisional parameter). Each entry buffers:
   2. Free slot in LQ (for loads) or SQ (for stores);
   3. M1 substrate assertion of `rename_ack_o[slot]`.
 - The core dispatch controller combines IntIQ, MemIQ, LQ, and SQ free counts:
-  $$\text{mem\_can\_dispatch}[s] = (\text{memiq\_free} > s) \land (\text{is\_load}[s] \implies \text{lq\_free} > s) \land (\text{is\_store}[s] \implies \text{sq\_free} > s)$$
+  `mem_can_dispatch[s] = (memiq_free > s) && (is_load[s] ==> lq_free > s) && (is_store[s] ==> sq_free > s)`
 
 ### 4.3 Issue Eligibility & Store-Data Decoupling
 - **Load Issue Eligibility**:
-  $$\text{load\_can\_issue} = \text{valid} \land (\text{uop\_class} == \text{UOP\_LOAD}) \land \text{prs1\_ready}$$
+  `load_can_issue = valid && (uop_class == UOP_LOAD) && prs1_ready`
 - **Store AGU Issue Eligibility (Decoupled Store Data)**:
-  $$\text{store\_agu\_can\_issue} = \text{valid} \land (\text{uop\_class} == \text{UOP\_STORE}) \land \text{prs1\_ready} \land \neg \text{sq\_entry.addr\_issued}$$
+  `store_agu_can_issue = valid && (uop_class == UOP_STORE) && prs1_ready && ! sq_entry.addr_issued`
   Store address generation requires **ONLY `prs1` (base)**. Store data (`prs2`) is NOT required to issue to AGU! Once the store address is generated and written to the SQ, the physical address is visible to all younger loads.
 - **Store Data Asynchronous Capture**:
   Store data register `prs2` is monitored by the Store Queue. When `prs2_ready` asserts (or when data is forwarded from `W0`/`W1`/`W2`), `prs2` reads PRF Read Port 5 (`R5`) and writes directly into `sq_entry.data`.
 - **Selection Policy**:
   MemIQ selects the **oldest ready uop** using the frozen wrap-safe circular ROB distance:
-  $$\text{rob\_dist}(\text{rob\_idx}, \text{rob\_head\_o}) = (\text{rob\_idx} - \text{head} + 48) \pmod{48}$$
+  `rob_dist(rob_idx, rob_head_o) = (rob_idx - head + 48) mod{48}`
 
 ---
 
@@ -246,13 +248,13 @@ The MemIQ contains **12 entries** (provisional parameter). Each entry buffers:
 ### 5.1 Structurally Safe SQ Age Tracking (Resolution of P0-1)
 To eliminate aliasing across circular Store Queue pointer wrapping, the raw `sq_tail_at_alloc` pointer is replaced by an **explicit older-store bitmask with slot lifetime isolation**:
 - **Allocation Snapshot (`sq_older_mask[15:0]`)**:
-  When a load allocates into the Load Queue at cycle $T$, it captures:
-  $$\text{lq\_entry.sq\_older\_mask}[i] = \text{sq\_entry}[i].\text{valid} \quad (\forall i \in [0, 15])$$
-  Bit $i = 1$ if and only if SQ physical slot $i$ contains an active store older than this load in program order at allocation time.
+  When a load allocates into the Load Queue at cycle `T`, it captures:
+  `lq_entry.sq_older_mask[i] = sq_entry[i].valid (∀ i ∈ [0, 15])`
+  Bit `i = 1` if and only if SQ physical slot `i` contains an active store older than this load in program order at allocation time.
 - **Comprehensive Dependency Clearing on SQ Slot Deallocation**:
   The older-store mask must clear when the corresponding older store ceases to exist as an active memory dependency for **ANY legal reason**. For every live Load Queue entry:
-  $$\text{lq\_entry.sq\_older\_mask}[i] \Leftarrow 1\text{'b}0$$
-  when SQ slot $i$ is deallocated because of:
+  `lq_entry.sq_older_mask[i] ← 1'b0`
+  when SQ slot `i` is deallocated because of:
   1. **Normal committed cache drain** (committed store finishes write to L1D and deallocates);
   2. **Branch-mispredict recovery squash** (uncommitted speculative store is squashed by older branch recovery);
   3. **Architectural / trap / full speculative flush** (speculative store is wiped by pipeline flush);
@@ -263,14 +265,14 @@ To eliminate aliasing across circular Store Queue pointer wrapping, the raw `sq_
   - store-to-load forwarding fully satisfies the load; or
   - its memory effect becomes visible according to M3 ordering rules when it completes its cache drain and deallocates.
 - **Slot Lifetime Isolation (Wrap Immunity)**:
-  When a NEW younger store allocates into SQ slot $i$, it asserts `sq_entry[i].valid`. However, this allocation **MUST NOT and DOES NOT reassert bit $i$** in any already-allocated, older load's `sq_older_mask`!
-- **Explicit SQ Wrap Example (Slots 15 $\rightarrow$ 0)**:
-  1. Store $S_{14}$ occupies slot 14; Store $S_{15}$ occupies slot 15.
-  2. Load $L_A$ allocates: captures $\text{sq\_older\_mask} = 16\text{'b1100\_0000\_0000\_0000}$ (bits 14 and 15 set).
-  3. Store $S_{14}$ drains: deallocates slot 14 $\rightarrow$ broadcasts clear pulse $14 \rightarrow L_A.\text{sq\_older\_mask} = 16\text{'b1000\_0000\_0000\_0000}$.
-  4. Store $S_{15}$ drains: deallocates slot 15 $\rightarrow$ broadcasts clear pulse $15 \rightarrow L_A.\text{sq\_older\_mask} = 16\text{'b0000\_0000\_0000\_0000}$.
-  5. A new younger Store $S_{16}$ allocates into physical slot 0; Store $S_{17}$ allocates into physical slot 1; Store $S_{31}$ allocates into physical slot 15 (reusing slot 15).
-  6. $L_A.\text{sq\_older\_mask}[15]$ remains **`0`**. $L_A$ correctly classifies $S_{31}$ as younger, never inspecting, waiting on, or forwarding from $S_{31}$.
+  When a NEW younger store allocates into SQ slot `i`, it asserts `sq_entry[i].valid`. However, this allocation **MUST NOT and DOES NOT reassert bit `i`** in any already-allocated, older load's `sq_older_mask`!
+- **Explicit SQ Wrap Example (Slots 15 → 0)**:
+  1. Store `S_14` occupies slot 14; Store `S_15` occupies slot 15.
+  2. Load `L_A` allocates: captures `sq_older_mask = 16'b1100_0000_0000_0000` (bits 14 and 15 set).
+  3. Store `S_14` drains: deallocates slot 14 → broadcasts clear pulse `14 → L_A.sq_older_mask = 16'b1000_0000_0000_0000`.
+  4. Store `S_15` drains: deallocates slot 15 → broadcasts clear pulse `15 → L_A.sq_older_mask = 16'b0000_0000_0000_0000`.
+  5. A new younger Store `S_16` allocates into physical slot 0; Store `S_17` allocates into physical slot 1; Store `S_31` allocates into physical slot 15 (reusing slot 15).
+  6. `L_A.sq_older_mask[15]` remains **`0`**. `L_A` correctly classifies `S_31` as younger, never inspecting, waiting on, or forwarding from `S_31`.
 
 ### 5.2 Store Completion Boundary & Atomic Retirement Handshake (Resolution of P0-3 & P0-1 Closeout)
 - **Bifurcated Store Completion Architecture**:
@@ -322,14 +324,14 @@ To eliminate aliasing across circular Store Queue pointer wrapping, the raw `sq_
   1. When a successfully completed store reaches the head of the ROB, the ROB verifies no older traps exist.
   2. The ROB asserts `retire_valid_o` for the store.
   3. In the exact same cycle, the Store Queue asserts:
-     $$\text{sq\_entry}[\text{sq\_head}].\text{committed} \Leftarrow 1\text{'b}1$$
+     `sq_entry[sq_head].committed ← 1'b1`
   4. Responsibility transfers **atomically** from the speculative ROB domain to the committed Store Queue domain.
   5. The ROB deallocates the entry. The committed store persists in the SQ as an irrevocable architectural memory obligation.
   6. **Trap / Flush Immunity**: A later trap, interrupt, or full architectural flush **CANNOT discard a committed store**. Committed stores drain to L1D unconditionally.
 
 ### 5.3 Speculative Store Containment (Resolution of P1-1)
 - **Baseline Non-Mutating Contract**:
-  Uncommitted stores ($\text{committed} == 1\text{'b}0$) may execute AGU, query DTLB, resolve PA, capture store data, and participate in SQ forwarding.
+  Uncommitted stores (`committed == 1'b0`) may execute AGU, query DTLB, resolve PA, capture store data, and participate in SQ forwarding.
 - **Strict Prohibition on Speculative Side Effects**:
   Uncommitted stores are **STRICTLY FORBIDDEN** from:
   1. Mutating L1D cache tags or data arrays;
@@ -342,14 +344,14 @@ To eliminate aliasing across circular Store Queue pointer wrapping, the raw `sq_
 - **Branch Recovery Protocol (`recover_valid_i`)**:
   When a branch misprediction resolves on Port 0 with recovery ROB index `br_rob_idx`:
   1. **Selective LQ Squash**: All Load Queue entries younger than the branch in program order:
-     $$\text{is\_squashed} = \text{rob\_dist}(\text{lq\_entry.rob\_idx}, \text{rob\_head\_o}) > \text{rob\_dist}(\text{br\_rob\_idx}, \text{rob\_head\_o})$$
+     `is_squashed = rob_dist(lq_entry.rob_idx, rob_head_o) > rob_dist(br_rob_idx, rob_head_o)`
      are immediately invalidated (`lq_entry.valid <= 1'b0`).
   2. **Selective SQ Squash**: All uncommitted Store Queue entries younger than the branch:
-     $$\text{is\_squashed} = (\text{sq\_entry.committed} == 1\text{'b}0) \land (\text{rob\_dist}(\text{sq\_entry.rob\_idx}, \text{rob\_head\_o}) > \text{rob\_dist}(\text{br\_rob\_idx}, \text{rob\_head\_o}))$$
+     `is_squashed = (sq_entry.committed == 1'b0) && (rob_dist(sq_entry.rob_idx, rob_head_o) > rob_dist(br_rob_idx, rob_head_o))`
      are immediately invalidated (`sq_entry.valid <= 1'b0`). The SQ speculative allocation tail rolls back to match the checkpointed SQ tail state.
   3. **Older-Mask Deallocation Broadcasting on Squash**:
-     Each SQ slot $i$ deallocated by branch recovery immediately asserts a deallocation pulse `sq_squash_dealloc[i]`. For every surviving live Load Queue entry, the corresponding older dependency bit is cleared:
-     $$\text{lq\_entry.sq\_older\_mask}[i] \Leftarrow 1\text{'b}0$$
+     Each SQ slot `i` deallocated by branch recovery immediately asserts a deallocation pulse `sq_squash_dealloc[i]`. For every surviving live Load Queue entry, the corresponding older dependency bit is cleared:
+     `lq_entry.sq_older_mask[i] ← 1'b0`
      This guarantees surviving loads never deadlock waiting on squashed stores.
   4. **Committed Store Protection**: Stores already marked `committed == 1'b1` are older than any speculative branch checkpoint. They are **never squashed** and continue draining to L1D.
 - **Architectural Trap / Full Speculative Flush Protocol (`flush_active`)**:
@@ -366,17 +368,17 @@ To eliminate aliasing across circular Store Queue pointer wrapping, the raw `sq_
 
 ### 6.1 Conservative Load Issue Contract
 - **Normative Rule**:
-  A load micro-op $L$ in the Load Queue is eligible to access the L1D cache or evaluate forwarding if and only if **all older stores recorded in $L.\text{sq\_older\_mask}$ have resolved physical addresses (`pa_valid == 1`)**:
-  $$\text{load\_can\_disambiguate} = \forall i \in [0, 15] : (L.\text{sq\_older\_mask}[i] \implies \text{sq\_entry}[i].\text{pa\_valid})$$
+  A load micro-op `L` in the Load Queue is eligible to access the L1D cache or evaluate forwarding if and only if **all older stores recorded in `L.sq_older_mask` have resolved physical addresses (`pa_valid == 1`)**:
+  `load_can_disambiguate = ∀ i ∈ [0, 15] : (L.sq_older_mask[i] ==> sq_entry[i].pa_valid)`
 - **Data-Independent Concurrency**:
-  Older store **data (`data_valid`) is NOT required** for non-overlapping loads! If all older stores have `pa_valid == 1` and none overlap with load $L$, load $L$ issues to L1D immediately.
+  Older store **data (`data_valid`) is NOT required** for non-overlapping loads! If all older stores have `pa_valid == 1` and none overlap with load `L`, load `L` issues to L1D immediately.
 
 ---
 
 ## 7. Formal Store-to-Load Forwarding Mechanics (Resolution of P1-7)
 
-Let $A_L = \text{PA}(L)$ and $A_S = \text{PA}(S)$ be physical addresses.
-Let $M_L[7:0]$ and $M_S[7:0]$ be active byte lane masks relative to the aligned 8-byte word ($PA[55:3]$).
+Let `A_L = PA(L)` and `A_S = PA(S)` be physical addresses.
+Let `M_L[7:0]` and `M_S[7:0]` be active byte lane masks relative to the aligned 8-byte word (`PA[55:3]`).
 
 ```
 +===================================================================================================+
@@ -391,40 +393,40 @@ Let $M_L[7:0]$ and $M_S[7:0]$ be active byte lane masks relative to the aligned 
 ```
 
 ### 7.1 Forwarding Evaluation Algorithm
-An older store $S$ (with $L.\text{sq\_older\_mask}[S] == 1$) genuinely overlaps load $L$ if and only if:
-$$\text{Overlap}(L, S) = (A_L[55:3] == A_S[55:3]) \land ((M_L \land M_S) \neq 8\text{'b0000\_0000})$$
-Stores with disjoint masks ($M_L \land M_S == 8\text{'b0}$) or different word addresses do **not** overlap and do **not** shadow older stores!
+An older store `S` (with `L.sq_older_mask[S] == 1`) genuinely overlaps load `L` if and only if:
+`Overlap(L, S) = (A_L[55:3] == A_S[55:3]) && ((M_L && M_S) ≠ 8'b0000_0000)`
+Stores with disjoint masks (`M_L && M_S == 8'b0`) or different word addresses do **not** overlap and do **not** shadow older stores!
 
 **Forwarding Steps**:
-1. Filter older stores to the set of genuinely overlapping stores $\mathcal{S}_{\text{overlap}} = \{S \in \text{SQ} \mid L.\text{sq\_older\_mask}[S] \land \text{Overlap}(L, S)\}$.
-2. If $\mathcal{S}_{\text{overlap}} == \emptyset$: **No dependency**. Load $L$ accesses L1D directly.
-3. Identify the **youngest older overlapping store** $S_{\text{youngest}} \in \mathcal{S}_{\text{overlap}}$ (highest age in program order).
+1. Filter older stores to the set of genuinely overlapping stores `S_overlap = {S ∈ SQ | L.sq_older_mask[S] && Overlap(L, S)}`.
+2. If `S_overlap == ∅`: **No dependency**. Load `L` accesses L1D directly.
+3. Identify the **youngest older overlapping store** `S_youngest ∈ S_overlap` (highest age in program order).
 4. **Coverage Evaluation**:
-   - **Full Single-Store Coverage**: If $(M_L \land M_{S_{\text{youngest}}}) == M_L$:
-     - If $S_{\text{youngest}}.\text{data\_valid} == 1$: **Forward directly**! Extract matching byte lanes, format sign/zero extension, and complete load in 1 cycle.
-     - If $S_{\text{youngest}}.\text{data\_valid} == 0$: **Stall Load** in LQ awaiting store data capture.
-   - **Partial Overlap**: If $(M_L \land M_{S_{\text{youngest}}}) \neq M_L$:
-     - **Forwarding is strictly prohibited**. The load stalls in the LQ until $S_{\text{youngest}}$ commits and drains to L1D.
+   - **Full Single-Store Coverage**: If `(M_L && M_{S_youngest}) == M_L`:
+     - If `S_youngest.data_valid == 1`: **Forward directly**! Extract matching byte lanes, format sign/zero extension, and complete load in 1 cycle.
+     - If `S_youngest.data_valid == 0`: **Stall Load** in LQ awaiting store data capture.
+   - **Partial Overlap**: If `(M_L && M_{S_youngest}) ≠ M_L`:
+     - **Forwarding is strictly prohibited**. The load stalls in the LQ until `S_youngest` commits and drains to L1D.
 5. **Multi-Store Merge Prohibition**:
    Even if multiple older stores jointly supply all required bytes, **multi-store merging is prohibited in baseline M3**. The load stalls until the older stores drain to L1D.
 
 ### 7.2 Explicit Byte Forwarding Examples
 - **Example 1 (Contained 32-bit Load from 64-bit Store)**:
-  - Store $S$: $PA = \text{0x1000}$, Size = 8B, $M_S = 8\text{'b1111\_1111}$, Data = `0x0123_4567_89AB_CDEF`.
-  - Load $L$: $PA = \text{0x1000}$, Size = 4B (LW), $M_L = 8\text{'b0000\_1111}$.
-  - Overlap check: $M_L \land M_S = 8\text{'b0000\_1111} == M_L$ (Full Coverage).
-  - *Result*: Forwards bytes $3 \dots 0$ (`0x89AB_CDEF`), sign-extended to 64 bits.
+  - Store `S`: `PA = 0x1000`, Size = 8B, `M_S = 8'b1111_1111`, Data = `0x0123_4567_89AB_CDEF`.
+  - Load `L`: `PA = 0x1000`, Size = 4B (LW), `M_L = 8'b0000_1111`.
+  - Overlap check: `M_L && M_S = 8'b0000_1111 == M_L` (Full Coverage).
+  - *Result*: Forwards bytes `3 ... 0` (`0x89AB_CDEF`), sign-extended to 64 bits.
 - **Example 2 (Partial Overlap Stall)**:
-  - Store $S$: $PA = \text{0x1000}$, Size = 2B (SH), $M_S = 8\text{'b0000\_0011}$.
-  - Load $L$: $PA = \text{0x1000}$, Size = 4B (LW), $M_L = 8\text{'b0000\_1111}$.
-  - Overlap check: $M_L \land M_S = 8\text{'b0000\_0011} \neq M_L$ (Partial Overlap).
-  - *Result*: Load stalls in LQ until Store $S$ commits and drains to L1D.
+  - Store `S`: `PA = 0x1000`, Size = 2B (SH), `M_S = 8'b0000_0011`.
+  - Load `L`: `PA = 0x1000`, Size = 4B (LW), `M_L = 8'b0000_1111`.
+  - Overlap check: `M_L && M_S = 8'b0000_0011 ≠ M_L` (Partial Overlap).
+  - *Result*: Load stalls in LQ until Store `S` commits and drains to L1D.
 - **Example 3 (Disjoint Mask Non-Shadowing)**:
-  - Older Store $S_1$: $PA = \text{0x1000}$, Size = 4B, $M_{S1} = 8\text{'b0000\_1111}$ (Bytes 0–3).
-  - Younger Store $S_2$: $PA = \text{0x1004}$, Size = 4B, $M_{S2} = 8\text{'b1111\_0000}$ (Bytes 4–7).
-  - Load $L$: $PA = \text{0x1000}$, Size = 4B (LW), $M_L = 8\text{'b0000\_1111}$ (Bytes 0–3).
-  - Overlap check: $S_2$ has $M_L \land M_{S2} == 8\text{'b0000\_0000}$ (Disjoint; does NOT overlap).
-  - *Result*: $S_2$ does not shadow $S_1$. Overlap search selects $S_1$, fully covers load $\rightarrow$ forwards from $S_1$!
+  - Older Store `S_1`: `PA = 0x1000`, Size = 4B, `M_S1 = 8'b0000_1111` (Bytes 0–3).
+  - Younger Store `S_2`: `PA = 0x1004`, Size = 4B, `M_S2 = 8'b1111_0000` (Bytes 4–7).
+  - Load `L`: `PA = 0x1000`, Size = 4B (LW), `M_L = 8'b0000_1111` (Bytes 0–3).
+  - Overlap check: `S_2` has `M_L && M_S2 == 8'b0000_0000` (Disjoint; does NOT overlap).
+  - *Result*: `S_2` does not shadow `S_1`. Overlap search selects `S_1`, fully covers load → forwards from `S_1`!
 
 ---
 
@@ -467,16 +469,16 @@ The L1D controller exposes an explicit ready/valid semantic interface:
 
 ### 8.2 Internal Cache Arbitration Priority (Resolution of P1-8)
 To prevent structural resource deadlocks and guarantee forward progress:
-$$\text{Priority 1 (Highest)}: \text{Refill Install} > \text{Priority 2}: \text{Committed Store Drain} > \text{Priority 3 (Lowest)}: \text{Speculative Load Issue}$$
+`Priority 1 (Highest): Refill Install > Priority 2: Committed Store Drain > Priority 3 (Lowest): Speculative Load Issue`
 - *Refill Install* has highest priority to clear MSHRs and free external bus resources immediately.
 - *Committed Store Drain* has second priority to relieve SQ capacity pressure and unblock the ROB head.
 - *Speculative Load Issue* takes remaining cycles.
 
 ### 8.3 VIPT Synonym Safety (Resolution of P3-2)
 Both candidate cache configurations strictly adhere to the 4 KiB way size bound:
-- **16 KiB 4-Way**: $16\text{ KiB} / 4\text{ ways} = 4\text{ KiB/way}$ (64 sets $\times$ 64 B).
-- **32 KiB 8-Way**: $32\text{ KiB} / 8\text{ ways} = 4\text{ KiB/way}$ (64 sets $\times$ 64 B).
-Because both configurations have exactly 64 sets, the index is bits $[11:6]$, falling completely within the 4 KiB page offset. **VIPT synonym safety is mathematically guaranteed**.
+- **16 KiB 4-Way**: `16 KiB / 4 ways = 4 KiB/way` (64 sets `×` 64 B).
+- **32 KiB 8-Way**: `32 KiB / 8 ways = 4 KiB/way` (64 sets `×` 64 B).
+Because both configurations have exactly 64 sets, the index is bits `[11:6]`, falling completely within the 4 KiB page offset. **VIPT synonym safety is mathematically guaranteed**.
 
 ---
 
@@ -516,18 +518,18 @@ Because both configurations have exactly 64 sets, the index is bits $[11:6]$, fa
 
 ### 9.1 Selective Waiter Squash on Branch Recovery
 When a branch recovery occurs with recovery ROB index `br_rob_idx`:
-1. For each active MSHR $m$ and for each waiter $w$ where $m.\text{waiter\_mask}[w] == 1$:
-   - Check if waiter $w$ is younger than the branch:
-     $$\text{is\_squashed} = \text{rob\_dist}(m.\text{waiter}[w].\text{rob\_idx}, \text{rob\_head\_o}) > \text{rob\_dist}(\text{br\_rob\_idx}, \text{rob\_head\_o})$$
+1. For each active MSHR `m` and for each waiter `w` where `m.waiter_mask[w] == 1`:
+   - Check if waiter `w` is younger than the branch:
+     `is_squashed = rob_dist(m.waiter[w].rob_idx, rob_head_o) > rob_dist(br_rob_idx, rob_head_o)`
    - If squashed:
-     $$m.\text{waiter\_mask}[w] \Leftarrow 1\text{'b}0, \quad m.\text{waiter}[w].\text{waiter\_valid} \Leftarrow 1\text{'b}0$$
+     `m.waiter_mask[w] ← 1'b0, m.waiter[w].waiter_valid ← 1'b0`
 2. **Surviving Waiter Integrity**:
-   Older waiter entries ($\text{is\_squashed} == 1\text{'b}0$) **remain completely active**.
+   Older waiter entries (`is_squashed == 1'b0`) **remain completely active**.
 3. **Refill Service**:
    When refill data arrives:
-   - For every surviving waiter ($m.\text{waiter\_mask}[w] == 1$), data is extracted from the 64-byte line at `line_offset`, formatted, and presented to Port 2 writeback.
+   - For every surviving waiter (`m.waiter_mask[w] == 1`), data is extracted from the 64-byte line at `line_offset`, formatted, and presented to Port 2 writeback.
    - For squashed waiters, writeback signaling is **suppressed**.
-   - If ALL waiters were squashed ($m.\text{waiter\_mask} == 16\text{'b0}$), the incoming refill line still installs into the L1D cache, but **ZERO writeback or ROB completion is generated**.
+   - If ALL waiters were squashed (`m.waiter_mask == 16'b0`), the incoming refill line still installs into the L1D cache, but **ZERO writeback or ROB completion is generated**.
    - The MSHR does NOT abort or squash wholesale; line caching proceeds safely.
 
 ### 9.2 Secondary Miss Merging Contract
@@ -672,7 +674,7 @@ The TRT contains **4 persistent request entries** (provisional parameter):
 1. `valid` (1 bit): Request table entry occupancy flag.
 2. `is_store` (1 bit): 1 for Store/AMO queue slot; 0 for Load queue slot.
 3. `q_idx` (4 bits): Physical index of target LQ or SQ slot.
-4. `vpn` (27 bits): Virtual Page Number ($EA[38:12]$) used for defense-in-depth sanity checking.
+4. `vpn` (27 bits): Virtual Page Number (`EA[38:12]`) used for defense-in-depth sanity checking.
 5. `access_type` (2 bits): Read, Write, Execute / AMO attribute check.
 6. `waiter_valid` (1 bit): Indicates whether the original memory micro-op is still alive.
 
@@ -731,7 +733,7 @@ The TRT contains **4 persistent request entries** (provisional parameter):
 - **`SC.W` / `SC.D` (Exact Size Matching)**:
   - Executes non-speculatively at the head of the ROB.
   - Validates:
-    $$\text{sc\_success} = \text{reservation\_valid} \land (\text{reservation\_pa} == \text{store\_pa}) \land (\text{reservation\_size} == \text{sc\_size})$$
+    `sc_success = reservation_valid && (reservation_pa == store_pa) && (reservation_size == sc_size)`
   - *Size Mismatch Failure*: An `LR.W` reservation does **NOT** permit an incompatible `SC.D`! `SC.D` fails, suppresses memory write, returns `1` to PRF, and clears reservation.
 - **AMOs**: Single micro-op; executed indivisibly at ROB head when the Store Queue is completely empty.
 
@@ -767,11 +769,11 @@ The TRT contains **4 persistent request entries** (provisional parameter):
 
 ### Scenario B: ROB Head Store Waiting for Cache Access (P1-8)
 - *Precondition*: Core is blocked at ROB head on a committed store. L1D is busy with load traffic.
-- *Resolution*: Committed Store Drain has higher arbitration priority than Speculative Load Issue ($\text{Priority 2} > \text{Priority 3}$). The store drains to L1D in the next cycle, unblocking the ROB head.
+- *Resolution*: Committed Store Drain has higher arbitration priority than Speculative Load Issue (`Priority 2 > Priority 3`). The store drains to L1D in the next cycle, unblocking the ROB head.
 
 ### Scenario C: Speculative Load Waits on Unresolved Older Store Address
-- *Precondition*: Load $L$ is stalled because older store $S$ has not resolved address (`pa_valid == 0`).
-- *Resolution*: Store $S$ progresses through integer ALU and AGU independently. Store address calculation never depends on younger loads. Store $S$ resolves PA, asserting `pa_valid = 1`, and unblocks load $L$.
+- *Precondition*: Load `L` is stalled because older store `S` has not resolved address (`pa_valid == 0`).
+- *Resolution*: Store `S` progresses through integer ALU and AGU independently. Store address calculation never depends on younger loads. Store `S` resolves PA, asserting `pa_valid = 1`, and unblocks load `L`.
 
 ### Scenario D: Divider-Produced Store Data
 - *Precondition*: Store data depends on an active 34-cycle division.
@@ -819,7 +821,7 @@ The implementation of Milestone 3 must be proven through a comprehensive test su
 28. **Non-Blocking Hit-Under-Miss**: Load hit servicing concurrently with active MSHR miss.
 29. **Non-Blocking Miss-Under-Miss**: Independent misses to different lines progressing concurrently.
 30. **DTLB Hit**: Single-cycle physical address translation.
-31. **DTLB Miss $\rightarrow$ Pending $\rightarrow$ Replay (P1-2)**: DTLB miss releasing AGU and replaying on translation return.
+31. **DTLB Miss → Pending → Replay (P1-2)**: DTLB miss releasing AGU and replaying on translation return.
 32. **Translation Stale-Response Attack & Persistent Request Ownership (P1-2 Closeout)**: Old translation request launched (`tr_id` allocated in TRT). Requesting memory uop squashed by branch mispredict; TRT marks `waiter_valid = 0` while holding `tr_id`. Target queue slot reused many times across multiple allocations. Delayed translation response returns: verified that response is dropped cleanly and NO new or reused LQ/SQ entry is modified! Also verifying that a new waiter in the reused slot intentionally issues a translation after slot reuse, allocates a distinct `tr_id`, and receives only its own response.
 33. **Translation Page Fault with Pending Data**: Load and store page faults triggering Cause 13 / 15 at ROB head. Store page fault with store data pending from an active division completes immediately as an exception without waiting for store data.
 34. **PMP Access Fault Denial with Pending Data**: PMP denial on physical address triggering Cause 5 / 7. Store access fault with store data pending completes immediately as an exception without waiting for store data.
@@ -871,7 +873,7 @@ The testbench must implement an **independent byte-addressable C++ architectural
 
 ## 18. Performance Intent (Design Goals Only)
 
-- **Long-Term Full-Core Target**: Exceed Slice-0's measured IPC of $\sim 0.648$ to achieve $\ge 1.20$ IPC on representative Linux server workloads (with stretch target $\ge 1.50$ IPC) once the complete core is integrated.
+- **Long-Term Full-Core Target**: Exceed Slice-0's measured IPC of `~ 0.648` to achieve `≥ 1.20` IPC on representative Linux server workloads (with stretch target `≥ 1.50` IPC) once the complete core is integrated.
 - **Milestone 3 Memory Parallelism Target**:
   - Sustained load throughput: **1.0 load / cycle** on L1D cache hits.
   - Zero load stalls behind non-overlapping stores.

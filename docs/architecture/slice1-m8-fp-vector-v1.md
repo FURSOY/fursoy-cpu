@@ -18,6 +18,8 @@
   `30e5f88882c78c413eee9aaa88527b42df402a3fc0ac682a74786d8d5fbf6003`
 **Reference Documents:** `docs/architecture/slice1-core-v1.md`, `docs/architecture/slice1-m3-memory-v1.md`, `docs/architecture/slice1-m5-performance-v1.md`, `docs/architecture/slice1-m6-frontend-opt-v1.md`, `docs/architecture/slice1-m7-multibank-l1d-v1.md`.
 
+> **Post-Phase-3 RTL Note (`bab4ceb`):** Phase 2–3 RTL (`docs/architecture/slice1-core-v1.md`) upgraded scalar FP and RVV 1.0 execution beyond this initial M8 draft: `fursoy_s1_fconv.sv` is 2-stage pipelined (`500 MHz` STA met at `+0.009 ns` WNS) with `IntIQ` `int2fp` backpressure via `fconv_fprf_busy`, SP subnormal `fcvt.d.s` fix, and dynamic `rm==7 && frm>=5` illegal-op trapping; the vector subsystem expanded `VRF_NUM_PREGS` from `48` to `64` with a 4th read port (`old_vd`), replaced `vecq_q[8]` and `test_viq_*` with **`fursoy_s1_vrat.sv`** (`p32..p63` bitmap freelist, 16 checkpoints, non-contiguous group map tables) + **`fursoy_s1_vec_iq.sv` (`VIQ8`)** OoO vector ALU + ROB-head vector memory, 128-bit dual-lane SIMD beats, indexed `vluxei`/`vsoxei` support, `calc_vec_emul_info` legality traps, and age-qualified non-zero `vstart` serialization, verified against `sail-riscv v0.16` across 8 suites (`0` mismatches).
+
 ---
 
 ## 1. Milestone Objective, Phased Charter & Scope Boundaries
@@ -511,7 +513,7 @@ To maintain the mathematical conservation law without unclassified cycle leakage
 8. `C_idle_other` (Priority 8): Quiescent or unclassified idle cycles.
 
 By construction, these 8 master categories remain strictly mutually exclusive and exhaustive:
-$$\sum_{k=0}^7 C_k == \Delta\text{mcycle}$$
+`sum_k=0^7 C_k == Δmcycle`
 Zero cycle leakage is guaranteed across every simulation cycle.
 
 ---
@@ -582,8 +584,8 @@ Milestone 8 shall be declared formally **FROZEN** only when all of the following
 5. **IEEE 754-2008 Compliance Gate**:
    - 1,000,000+ vectors from TestFloat-3 pass with zero bit mismatches across all rounding modes and corner cases (subnormals, NaNs, infinities).
 6. **Randomized Stress Torture Gate**:
-   - Multi-seed randomized stress testing: $\ge 150,000$ operations across canonical seeds (42, 20260920, 20261009) with 0 mismatches against golden C++ reference model and 0 watchdog timeouts.
+   - Multi-seed randomized stress testing: `≥ 150,000` operations across canonical seeds (42, 20260920, 20261009) with 0 mismatches against golden C++ reference model and 0 watchdog timeouts.
 7. **Telemetry & CPI Conservation Gate**:
-   - Zero-leakage verification: $\sum_{k=0}^7 C_k == \Delta\text{mcycle}$ verified over every simulation run.
+   - Zero-leakage verification: `sum_k=0^7 C_k == Δmcycle` verified over every simulation run.
 8. **Empirical Benchmarking Gate**:
    - Canonical numerical kernels (Linpack, SciMark2, Whetstone) run to clean completion with measured speedup documented in `results/s1-m8-closeout.json`.

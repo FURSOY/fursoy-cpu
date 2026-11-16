@@ -43,10 +43,10 @@ The following features are explicitly deferred from the v1 milestone:
 ## 2. Cache Organization and Geometry
 
 ### 2.1 Capacity, Associativity, and Line Size
-- **Total Data Capacity**: **16 KiB** ($16,384$ bytes), matching the L1I cache geometry for silicon symmetry.
-- **Line Size**: **64 bytes** ($512$ bits, eight 64-bit doublewords), identical to L1I refill geometry.
+- **Total Data Capacity**: **16 KiB** (16,384 bytes), matching the L1I cache geometry for silicon symmetry.
+- **Line Size**: **64 bytes** (512 bits, eight 64-bit doublewords), identical to L1I refill geometry.
 - **Associativity**: **4-way set-associative**.
-- **Number of Sets**: **64 sets** ($64 \text{ sets} \times 4 \text{ ways} \times 64 \text{ bytes/line} = 16,384 \text{ bytes}$).
+- **Number of Sets**: **64 sets** (`64 sets × 4 ways × 64 bytes/line = 16,384 bytes`).
 - **Replacement Policy**: **Tree-based Pseudo-LRU (Tree-PLRU)** (3 bits of replacement state per set, identical to L1I).
 - **Valid and Dirty State**: 
   - 1 valid bit per line (256 valid bits total).
@@ -60,7 +60,7 @@ The Fursoy architecture utilizes 56-bit physical addresses (`PA[55:0]`) produced
 | **Byte Offset** | `PA[5:0]` | 6 bits | Selects byte within the 64-byte line |
 | ↳ *Doubleword Select* | `PA[5:3]` | 3 bits | Selects one of eight 64-bit doublewords |
 | ↳ *Subword Byte Offset* | `PA[2:0]` | 3 bits | Selects byte within 64-bit doubleword |
-| **Set Index** | `PA[11:6]` | 6 bits | Selects one of 64 sets ($0 \dots 63$) |
+| **Set Index** | `PA[11:6]` | 6 bits | Selects one of 64 sets (`0 ... 63`) |
 | **Physical Tag** | `PA[55:12]` | 44 bits | Compared against way tags for hit determination |
 
 ```
@@ -75,10 +75,10 @@ The Fursoy architecture utilizes 56-bit physical addresses (`PA[55:0]`) produced
 
 ### 2.3 Physical vs Virtual Indexing (VIPT with PIPT Equivalence)
 - **Choice**: **Virtually Indexed, Physically Tagged (VIPT) with Identical PIPT Semantics (Zero Aliasing)**.
-- **Invariance Proof**: In RISC-V Sv39, standard page size is 4 KiB ($2^{12}$ bytes). Address bits `[11:0]` constitute the unpaged page offset, meaning:
-  $$\text{VA}[11:0] \equiv \text{PA}[11:0]$$
+- **Invariance Proof**: In RISC-V Sv39, standard page size is 4 KiB (`2^12` bytes). Address bits `[11:0]` constitute the unpaged page offset, meaning:
+  `VA[11:0] ≡ PA[11:0]`
   Because the L1D set index uses bits `[11:6]` and line offset uses bits `[5:0]`, the entire cache index resides strictly within the page offset:
-  $$\text{Index} = \text{PA}[11:6] = \text{VA}[11:6]$$
+  `Index = PA[11:6] = VA[11:6]`
   Consequently, indexing with virtual address bits yields the exact same physical set as indexing with physical address bits. **Virtual aliasing (synonyms) is physically impossible**.
 - **Tagging**: Tag matching strictly compares the translated physical address `PA[55:12]` against the stored way physical tags.
 
@@ -101,7 +101,7 @@ To guarantee absolute security and architectural integrity, every load instructi
 1. **Effective Address Calculation**: In Stage E, `addr = rs1 + imm`.
 2. **Alignment Verification**: If `addr[size-1:0] != 0`, immediately assert `lsu_misaligned`. The instruction aborts and traps to `load-address-misaligned` (cause 4). L1D is not queried.
 3. **DTLB Translation**:
-   - In bare M-mode (`satp.MODE == 0` or M-mode with `mstatus.MPRV == 0`), $\text{PA} = \text{VA}$.
+   - In bare M-mode (`satp.MODE == 0` or M-mode with `mstatus.MPRV == 0`), `PA = VA`.
    - In S/U-mode (or M-mode with MPRV active), query DTLB.
    - If DTLB misses: Stage E asserts `stall_e` while hardware PTW resolves the page table.
    - If page fault occurs (invalid PTE, insufficient read privilege, violation of MXR/SUM): Stage E aborts and raises a precise `load-page-fault` (cause 13).
@@ -132,7 +132,7 @@ To guarantee absolute security and architectural integrity, every load instructi
   - `LD`: Full 64-bit doubleword.
 
 ### 3.4 Line Boundary and Misalignment Invariant
-- **Rule**: Naturally aligned accesses of size 1, 2, 4, or 8 bytes cannot cross a 64-byte line boundary ($64 \pmod 8 = 0$).
+- **Rule**: Naturally aligned accesses of size 1, 2, 4, or 8 bytes cannot cross a 64-byte line boundary (`64 mod 8 = 0`).
 - **Invariant**: Because unaligned accesses unconditionally trap in Stage E prior to cache initiation, an access that would cross a 64-byte line boundary never reaches the L1D tag check.
 
 ---
@@ -147,7 +147,7 @@ To guarantee absolute security and architectural integrity, every load instructi
 | **DRAM Data Traffic** | **No reduction in DRAM store traffic**. All 2.58M stores hit the DRAM bus. | **~85–90% reduction**. Only dirty evictions write to DRAM. |
 | **DRAM Bus Contention** | High. 2.58M stores contend with L1I refills on the shared single-port DRAM bus. | **Low**. Slashes total DRAM bus requests from 6.92M to <1.5M, freeing bus for L1I. |
 | **Store-to-Load Forwarding** | Complex. Requires multi-entry CAM, byte-enable tracking, and partial-overlap stall logic. | **Trivial**. Store updates cache line directly; younger load simply reads the cache line. |
-| **Store Miss Latency** | Low (no allocation, direct write-through). | **High** (~20.8 cycles for victim writeback + refill). Requires high hit rate ($H_{\text{store}} \ge 95.2\%$) to achieve net speedup. |
+| **Store Miss Latency** | Low (no allocation, direct write-through). | **High** (~20.8 cycles for victim writeback + refill). Requires high hit rate (`H_store ≥ 95.2%`) to achieve net speedup. |
 | **Cache Line States** | Simple. Lines are never dirty; victim replacement requires no writeback. | Requires 1 dirty bit per line; dirty victims require 64-byte burst writeback. |
 
 ### 4.2 Normative Decision: Write-Back with Write-Allocate (WB-WA)
@@ -156,7 +156,7 @@ To guarantee absolute security and architectural integrity, every load instructi
 **Justification**:
 1. **Hazard Elimination**: An asynchronous store buffer introduces complex Store-to-Load Forwarding (STLF) hazards, byte-lane merging bugs, and full-buffer backpressure. WB-WA updates the resident cache line immediately on hit, guaranteeing coherent program order without STLF hardware.
 2. **DRAM Contention Relief**: The measured baseline executed 2,578,727 DRAM store requests. A Write-Through architecture keeps all 2.58M writes on the shared DRAM bus. Because the DRAM interface requires multiple cycles per transaction, bursts quickly fill a store buffer. WB-WA absorbs repeated writes to the same cache line (e.g. stack allocation, memset, memcpy), reducing off-core traffic by >80%.
-3. **Breakeven Requirement**: As established in Section 13, because an uncached store in Slice-0 only stalled ~1 cycle while a write-allocate store miss costs ~20.8 cycles, WB-WA requires a high store hit rate ($H_{\text{store}} \ge 95.2\%$) to achieve a net speedup on the store path alone. WB-WA is chosen under the architectural hypothesis that typical Linux data working sets exhibit high spatial/temporal write locality, and because of the massive system-level benefit of unblocking the shared DRAM interface for L1I.
+3. **Breakeven Requirement**: As established in Section 13, because an uncached store in Slice-0 only stalled ~1 cycle while a write-allocate store miss costs ~20.8 cycles, WB-WA requires a high store hit rate (`H_store ≥ 95.2%`) to achieve a net speedup on the store path alone. WB-WA is chosen under the architectural hypothesis that typical Linux data working sets exhibit high spatial/temporal write locality, and because of the massive system-level benefit of unblocking the shared DRAM interface for L1I.
 
 ### 4.3 Strict Synchronous Dirty Eviction Semantics
 To eliminate any background race conditions, CAM forwarding, or asynchronous eviction buffer complexity:
@@ -175,14 +175,14 @@ To eliminate any background race conditions, CAM forwarding, or asynchronous evi
 
 ### 5.1 Refill Interface Geometry
 - **Data Bus Width**: 64 bits (`dmem_req_data` / `dmem_rsp_data`).
-- **Burst Length**: 8 beats ($8 \times 8 \text{ bytes} = 64 \text{ bytes}$).
+- **Burst Length**: 8 beats (`8 × 8 bytes = 64 bytes`).
 - **Addressing**: Line-base aligned (`addr[5:0] == 6'b000000`).
 
 ### 5.2 Handshake Protocol and Arbitrary Wait States
 - Refill requests follow standard valid/ready handshakes:
   - `dmem_req_valid_o` held high until `dmem_req_ready_i` is asserted.
   - Inbound beats signaled by `dmem_rsp_valid_i` with `dmem_rsp_ready_o = 1`.
-- The L1D state machine tolerates arbitrary delays between beats ($0 \dots \infty$ cycles) and arbitrary memory controller latency.
+- The L1D state machine tolerates arbitrary delays between beats (`0 ... ∞` cycles) and arbitrary memory controller latency.
 
 ### 5.3 Partial Refill Buffering and Hit Invalidation
 - **Buffer Isolation**: Refill beats accumulate into a private internal register array `refill_buf_q[8]`.
@@ -212,7 +212,7 @@ To eliminate any background race conditions, CAM forwarding, or asynchronous evi
 ## 6. Memory Ordering and Consistency (RVWMO)
 
 ### 6.1 Program Order Preservation
-Fursoy Slice-0 is a single-hart in-order processor. Instructions issue, execute, and retire strictly in program order. Inherent RVWMO single-hart ordering constraints ($PPO$) are satisfied without speculation.
+Fursoy Slice-0 is a single-hart in-order processor. Instructions issue, execute, and retire strictly in program order. Inherent RVWMO single-hart ordering constraints (`PPO`) are satisfied without speculation.
 
 ### 6.2 FENCE Instruction
 - **Semantics**: In standard RISC-V RVWMO, `FENCE` orders preceding memory operations with subsequent memory operations for the local hart.
@@ -229,7 +229,7 @@ To prevent stale instruction fetch races where L1I might refetch instructions fr
 1. **`FENCE.I` reaches Stage E**: Decoded as an instruction-fetch fence.
 2. **Freeze Stage F**: Assert a fetch-disable control signal to Stage F. No new instruction fetches or L1I misses can initiate.
 3. **Quiesce Active L1D**: Allow any in-flight load/store/refill to complete.
-4. **Conservative L1D Dirty Flush**: The L1D Flush FSM traverses all 64 sets ($4 \text{ ways} \times 64 = 256 \text{ lines}$). Any line with `valid == 1 && dirty == 1` is written back to DRAM via an 8-beat burst, and its dirty bit cleared.
+4. **Conservative L1D Dirty Flush**: The L1D Flush FSM traverses all 64 sets (`4 ways × 64 = 256 lines`). Any line with `valid == 1 && dirty == 1` is written back to DRAM via an 8-beat burst, and its dirty bit cleared.
 5. **Wait for DRAM Idle**: Wait until all 8 beats of the final writeback are acknowledged by the memory controller and the DRAM write path is completely idle.
 6. **Pulse L1I Invalidation**: Only after step 5 is fully complete, assert `fence_i_flush_i` to `fursoy_s0_l1i` for 1 cycle, which flash-invalidates all L1I valid bits.
 7. **Pipeline Drain & Resume Fetch**: Flush Stage E (`fe_q.valid <= 0`), re-enable Stage F fetch, and redirect the program counter to `fe_q.pc + 4`.
@@ -265,11 +265,11 @@ The frozen RV64A specification (`docs/architecture/rv64a-v1.md`) mandates exact 
 - **`LR.W` / `LR.D`**:
   - Executes as a normal load through L1D. Hits return data in 1 cycle; misses trigger line refill.
   - Registers reservation:
-    $$\text{res\_valid} \leftarrow 1, \quad \text{res\_exact\_pa} \leftarrow \text{PA}[55:0], \quad \text{res\_size} \leftarrow \text{size}$$
+    `res_valid ← 1, res_exact_pa ← PA[55:0], res_size ← size`
   - Reservation granule is `res_exact_pa[55:6]` (exact 64-byte line alignment).
 - **`SC.W` / `SC.D` Exact Semantics**:
   - Evaluates reservation condition:
-    $$\text{match} = \text{res\_valid} \land (\text{PA}[55:0] == \text{res\_exact\_pa}) \land (\text{size} == \text{res\_size})$$
+    `match = res_valid && (PA[55:0] == res_exact_pa) && (size == res_size)`
   - **Case 1: Reservation Mismatch (`match == 0`)**:
     - Fails immediately.
     - Suppresses store to L1D and DRAM. Zero cache lines modified; zero refills initiated.
@@ -428,7 +428,7 @@ The verification suite (`verification/l1d_s0_tb.cpp`, `tools/run_l1d_s0.py`) mus
 
 1. **Load Hit / Miss**: Sequential hits across 4 ways; compulsory miss allocation; 8-beat line refills.
 2. **Store Hit / Miss**: Store byte, halfword, word, doubleword hitting resident line; dirty bit verification; store miss line allocation.
-3. **RAW Store-to-Load Dependency**: Store to byte $B$, followed immediately by load from byte $B$, word containing $B$, and adjacent doubleword; verified without pipeline flush.
+3. **RAW Store-to-Load Dependency**: Store to byte `B`, followed immediately by load from byte `B`, word containing `B`, and adjacent doubleword; verified without pipeline flush.
 4. **Partial-Byte Overlapping Accesses**: Same-line byte/halfword stores followed by differently sized loads; verified exact byte lane merging.
 5. **Cache Line Boundary**: Access at offset 60 (word), offset 56 (doubleword); verified no spill to next line.
 6. **Misaligned Rejection**: Naturally unaligned addresses trigger `load/store-address-misaligned` exception before L1D lookup.
@@ -465,23 +465,23 @@ The verification suite (`verification/l1d_s0_tb.cpp`, `tools/run_l1d_s0.py`) mus
 
 ### 13.2 Rigorous Store Hit-Rate Breakeven Analysis (Resolving P1-5)
 In the baseline uncached core, stores retire immediately upon DRAM request handshake:
-$$\text{Cost}_{\text{baseline\_store}} \approx 1.000 \text{ cycle/store}$$
+`Cost_baseline_store ≈ 1.000 cycle/store`
 
 Under Write-Back with Write-Allocate (WB-WA):
 - A store hit costs **0 wait cycles**.
 - A store miss requires an 8-beat line refill (average 16 cycles).
-- If the victim way is dirty (assumed dirty eviction probability $P_{\text{dirty}} \approx 0.30$), an additional 8-beat writeback burst (16 cycles) must complete first.
+- If the victim way is dirty (assumed dirty eviction probability `P_dirty ≈ 0.30`), an additional 8-beat writeback burst (16 cycles) must complete first.
 - Therefore, the average store miss penalty is:
-  $$C_{\text{store\_miss}} \approx 16 + (0.30 \times 16) \approx 20.8 \text{ cycles}$$
-- The average stall per store instruction under WB-WA as a function of store hit rate $H_{\text{store}}$ is:
-  $$\overline{\text{Stall}}_{\text{store}} = (1 - H_{\text{store}}) \times 20.8 \text{ cycles}$$
+  `C_store_miss ≈ 16 + (0.30 × 16) ≈ 20.8 cycles`
+- The average stall per store instruction under WB-WA as a function of store hit rate `H_store` is:
+  `avg(Stall)_store = (1 - H_store) × 20.8 cycles`
 
 **Breakeven Calculation**:
 For WB-WA to achieve a net reduction in store stall cycles relative to the uncached baseline:
-$$(1 - H_{\text{store}}) \times 20.8 \le 1.0 \implies 1 - H_{\text{store}} \le \frac{1.0}{20.8} \approx 0.04808 \implies \mathbf{H_{\text{store}} \ge 95.19\% \approx 95.2\%}$$
+`(1 - H_store) × 20.8 ≤ 1.0 ==> 1 - H_store ≤ 1.0 / 20.8 ≈ 0.04808 ==> H_store ≥ 95.19% ≈ 95.2%`
 
 #### Store Hit-Rate Sensitivity Table (Analytical Projection)
-| Store Hit Rate ($H_{\text{store}}$) | Avg Stall / Store (cycles) | Total Store Stall Cycles | Net Store Delta vs Baseline (2.59M) |
+| Store Hit Rate (`H_store`) | Avg Stall / Store (cycles) | Total Store Stall Cycles | Net Store Delta vs Baseline (2.59M) |
 | :---: | :---: | :---: | :---: |
 | 90.0% | 2.08 cycles | 5,388,585 cycles | **+2,797,785 cycles (SLOWER)** |
 | 92.0% | 1.66 cycles | 4,310,868 cycles | **+1,720,068 cycles (SLOWER)** |
@@ -494,15 +494,15 @@ $$(1 - H_{\text{store}}) \times 20.8 \le 1.0 \implies 1 - H_{\text{store}} \le \
 **Architectural Evaluation**:
 - **Critical Caveat**: If store hit rate falls below **95.2%**, WB-WA increases store stall cycles because a 20.8-cycle miss penalty outweighs 20 single-cycle store hits.
 - **Net Performance Justification**:
-  1. **Load Savings Dominate**: Loads account for 5.15M stall cycles. Even if stores break even ($H_{\text{store}} = 95.2\%$), a 92% load hit rate eliminates ~1.85M to ~3.2M load stall cycles.
+  1. **Load Savings Dominate**: Loads account for 5.15M stall cycles. Even if stores break even (`H_store = 95.2%`), a 92% load hit rate eliminates ~1.85M to ~3.2M load stall cycles.
   2. **DRAM Bandwidth Relief**: Sashing DRAM store requests by >90% eliminates bus congestion that currently causes ~0.8M cycles of L1I fetch hold.
   3. **High Write Locality**: Kernel stack push/pop and buffer initialization exhibit high spatial reuse within 64-byte lines.
   - *Requirement*: All store hit rate and speedup projections remain **unverified analytical assumptions** that must be empirically measured during RTL verification.
 
 ### 13.3 Analytical Performance Projections (Conditional on Locality Assumptions)
-Assuming empirical workload execution demonstrates $H_{\text{load}} \approx 92.0\%$ and $H_{\text{store}} \approx 96.5\%$:
-- **Removable Load Stalls**: $5,146,042 - (2,572,841 \times 0.08 \times 20.8) \approx \mathbf{+864,841 \text{ cycles}}$ (up to $+2.2\text{M}$ with critical word first).
-- **Removable Store Stalls**: $2,590,800 - (2,590,666 \times 0.035 \times 20.8) \approx \mathbf{+705,714 \text{ cycles}}$.
+Assuming empirical workload execution demonstrates `H_load ≈ 92.0%` and `H_store ≈ 96.5%`:
+- **Removable Load Stalls**: `5,146,042 - (2,572,841 × 0.08 × 20.8) ≈ +864,841 cycles` (up to `+2.2M` with critical word first).
+- **Removable Store Stalls**: `2,590,800 - (2,590,666 × 0.035 × 20.8) ≈ +705,714 cycles`.
 - **L1I Refill Bus Unblocking**: Removing ~2.4M DRAM store bursts saves an estimated **~700,000 cycles** of L1I fetch hold.
 - **Total Projected Cycle Savings**: **~2.27M – 3.60M cycles** (approx. 8.0% – 12.7% runtime reduction).
 - **Projected IPC**: **~0.574 – 0.605 IPC** (up from 0.528 IPC).

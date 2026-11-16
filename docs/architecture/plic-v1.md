@@ -33,7 +33,7 @@ Throughout this specification, provisions are categorized as:
 |---|---|---|---|
 | **Max Interrupt Sources** | Up to 1023 sources (IDs 1..1023) | **31 sources** (IDs 1..31) | Additional external sources |
 | **Source Triggering** | Level or Edge | **Level-sensitive only** | Configurable Edge / Level gateways |
-| **Implemented Target Contexts** | Up to 15,872 contexts | **2 contexts** (Hart 0 M, Hart 0 S) | Standard $2H$ / $2H+1$ stride convention |
+| **Implemented Target Contexts** | Up to 15,872 contexts | **2 contexts** (Hart 0 M, Hart 0 S) | Standard `2H` / `2H+1` stride convention |
 | **Priority Width** | 1 to 32 bits (typically 3 or 7) | **3 bits** (priorities 0..7) | Preserved at 3 bits (8 priority levels) |
 | **Priority Threshold Width** | Matches priority width | **3 bits** (thresholds 0..7) | Preserved at 3 bits |
 | **MMIO Access Width** | 32-bit naturally aligned | **Strict 32-bit aligned only** | 32-bit aligned (64-bit optional on interconnect) |
@@ -83,12 +83,14 @@ Throughout this specification, provisions are categorized as:
 |---|---|---|---|
 | **0** | *Reserved / None* | N/A | Hardwired zero; represents "no interrupt" |
 | **1..31** | External Interrupt Inputs `irq_source_i[1..31]` | Level-sensitive (active-high) | Generic platform interrupt lines; concrete peripheral bindings deferred to later SoC integration milestones |
-| **$\ge 32$** | *Unimplemented* | N/A | Exceeds v1 capacity; accesses handled per Section 15 |
+| **`≥ 32`** | *Unimplemented* | N/A | Exceeds v1 capacity; accesses handled per Section 15 |
 
 **Core / Platform Separation Rule**:
 CLINT interrupts (`irq_timer_i` / MTIP and `irq_software_i` / MSIP) are direct core interrupt
 inputs driven by the CLINT block (`fursoy_s0_clint.sv`). They are architecturally distinct
 from external interrupts and are **not** routed through PLIC sources.
+
+> **Slice-1 Phase 3 Preemption Note:** `rtl/platform/fursoy_s0_plic.sv` tracks `pending_q[31:1]` and `in_service_q[31:1]` independently per source, permitting higher-priority interrupt preemption while a lower-priority source remains in-service (verified in `PLIC-29`).
 
 ---
 
@@ -108,7 +110,11 @@ Fursoy v1 implements **2 target contexts** for the single Slice-0 core (Hart 0):
 **Fursoy Platform Context Stride Convention**:
 The RISC-V PLIC specification does not mandate a universal context numbering scheme across all
 implementations. For the Fursoy platform, the numbering convention is fixed as:
-$$\text{Context Index for Hart } H, \text{ Mode } M = \begin{cases} 2H & \text{for M-mode} \\ 2H + 1 & \text{for S-mode} \end{cases}$$
+```text
+Context Index for Hart H, Mode M =
+  2H      for M-mode
+  2H + 1  for S-mode
+```
 This aligns with standard RISC-V platform convention (e.g., QEMU `virt`).
 Slice-0 and Slice-1 physically instantiate Contexts 0 and 1 for Hart 0 while preserving
 the linear stride in the MMIO layout.
@@ -138,10 +144,10 @@ The Fursoy PLIC contract eliminates this ambiguity through explicit architectura
      Architecture, `mideleg[11]` is hardwired to 0; MEIP is always an M-mode interrupt.
    - In the core, `mip[9]` (`SEIP`) is architecturally the logical-OR of the software-injected
      latch (`seip_q`, set via M-mode `mip` write) and the external interrupt line `irq_seip_i`:
-     $$\text{mip}[9] = \text{seip\_q} \lor \text{irq\_seip\_i}$$
+     `mip[9] = seip_q || irq_seip_i`
    - When M-mode firmware configures `mideleg[9] = 1`, any assertion of Context 1 (`irq_seip_o = 1`)
      is delivered **directly to S-mode** as an S-mode external interrupt (`scause = 9`, `stvec`)
-     whenever S-mode interrupt conditions are satisfied ($P < S$ or ($P = S$ and `sstatus.SIE = 1`)).
+     whenever S-mode interrupt conditions are satisfied (`P < S` or (`P = S` and `sstatus.SIE = 1`)).
    - **Zero M-mode Intermediation**: S-mode external interrupts do NOT trap to M-mode, do NOT require
      M-mode software emulation, and do NOT experience double-delegation.
    - If `mideleg[9] == 0` (non-delegated), `mip[9]` targets M-mode directly per the frozen core
@@ -153,7 +159,7 @@ The Fursoy PLIC contract eliminates this ambiguity through explicit architectura
 
 ### 4.1 Field width and supported range
 
-**Choice**: Fursoy PLIC v1 implements **3-bit priority fields** ($P = 3$).
+**Choice**: Fursoy PLIC v1 implements **3-bit priority fields** (`P = 3`).
 - Stored within 32-bit MMIO Priority registers.
 - Bits `[2:0]` are Read-Write (RW).
 - Bits `[31:3]` are WARL (Write-Any, Read-Legal) hardwired to 0 (RO0); writes are ignored.
@@ -171,11 +177,11 @@ The PLIC specification strictly separates interrupt notification (signaled via e
 the core) from interrupt claim arbitration (performed when software reads the Claim register).
 Crucially: **the claim operation is not affected by the priority threshold register.**
 
-The architecture defines two distinct predicates for source $i \in \{1 \dots 31\}$ and context $c \in \{0, 1\}$:
+The architecture defines two distinct predicates for source `i ∈ 1 ... 31` and context `c ∈ {0, 1}`:
 
 #### 1. Claim Eligibility
-$$\text{claim\_eligible}(c, i) = \text{pending}[i] \land \text{enable}[c][i] \land (\text{priority}[i] > 0)$$
-- A source is eligible to be claimed by context $c$ if it is pending, enabled in context $c$,
+`claim_eligible(c, i) = pending[i] && enable[c][i] && (priority[i] > 0)`
+- A source is eligible to be claimed by context `c` if it is pending, enabled in context `c`,
   and has a non-zero priority.
 - **The context priority threshold is NOT evaluated for claim eligibility.**
 - Software reading the Claim register may successfully claim an interrupt even while the context
@@ -183,14 +189,14 @@ $$\text{claim\_eligible}(c, i) = \text{pending}[i] \land \text{enable}[c][i] \la
   masks notification.
 
 #### 2. Notification Eligibility
-$$\text{notify\_eligible}(c, i) = \text{claim\_eligible}(c, i) \land (\text{priority}[i] > \text{threshold}[c])$$
+`notify_eligible(c, i) = claim_eligible(c, i) && (priority[i] > threshold[c])`
 - An interrupt source stimulates the context interrupt notification line (`irq_meip_o` or `irq_seip_o`)
   if and only if it is claim-eligible **and** its priority is strictly greater than `threshold[c]`.
 - The physical context external interrupt output is asserted high if and only if:
-  $$\text{context\_irq}[c] = \exists i \in \{1 \dots 31\} : \text{notify\_eligible}(c, i)$$
+  `context_irq[c] = ∃ i ∈ 1 ... 31 : notify_eligible(c, i)`
 
 #### Summary of Gating Controls:
-- **Enable**: Gating for both notification and claim. If disabled (`enable[c][i] == 0`), source $i$ can neither notify context $c$ nor be claimed by context $c$.
+- **Enable**: Gating for both notification and claim. If disabled (`enable[c][i] == 0`), source `i` can neither notify context `c` nor be claimed by context `c`.
 - **Threshold**: Gating **only for notification**. Threshold masks MEIP/SEIP assertion, but does not prevent software from polling and claiming `claim_eligible` sources.
 - **Priority 0**: Completely disabled. Never notifies and can never be claimed.
 
@@ -210,12 +216,12 @@ source ID during a Claim read):
 ### 5.1 Semantics and access policy
 
 **Required**:
-- The PLIC maintains an internal pending state bit $\text{pending}[i]$ for each physical
-  interrupt source $i \in \{1 \dots 31\}$.
+- The PLIC maintains an internal pending state bit `pending[i]` for each physical
+  interrupt source `i ∈ 1 ... 31`.
 - **Read-Only (RO) to Software**: Software can inspect the pending status of all sources by
   reading the Pending register (offset `0x001000`). Writes to the Pending register are silently
   ignored and have zero side effects on pending bits or gateway state.
-- $\text{pending}[0]$ is hardwired to 0 (RO0).
+- `pending[0]` is hardwired to 0 (RO0).
 
 ### 5.2 Triggering model (v1 baseline)
 
@@ -235,13 +241,13 @@ Each target context has its own independent interrupt enable bitmask:
 - Context 1 Enable Word 0 is located at offset **`0x002080`**.
 - Enable bit 0 of each word corresponds to Source ID 0 and is hardwired to 0 (RO0).
 - Enable bits `[31:1]` are Read-Write (RW).
-- Enable bits for unimplemented source IDs ($\ge 32$) are unmapped or RO0.
+- Enable bits for unimplemented source IDs (`≥ 32`) are unmapped or RO0.
 
 ### 6.2 Reset state and isolation
 
 **Required**:
 - Upon hardware reset, all enable bits in all contexts reset to **0** (all interrupts disabled).
-- Enable bits are completely independent per context: enabling Source $i$ in Context 1 does
+- Enable bits are completely independent per context: enabling Source `i` in Context 1 does
   not enable it in Context 0.
 
 ---
@@ -263,7 +269,7 @@ Each target context has a dedicated **Priority Threshold** register:
 **Required**:
 To stimulate the context external interrupt notification line, an interrupt's priority must be
 **strictly greater than** the context threshold:
-$$\text{Priority} > \text{Threshold}$$
+`Priority > Threshold`
 
 | Threshold Value | Notified Source Priorities | Notification Behavior | Claim Behavior via Claim Read |
 |---|---|---|---|
@@ -290,63 +296,63 @@ hardware gateway and the core interrupt service routine (ISR).
 ### 8.1 Claim read semantics
 
 **Required**:
-Reading the Claim/Complete register for context $c$ (Context 0 at `0x200004`, Context 1 at `0x201004`)
+Reading the Claim/Complete register for context `c` (Context 0 at `0x200004`, Context 1 at `0x201004`)
 triggers an **atomic claim transaction**:
 
-1. **Evaluation**: The PLIC core evaluates all currently **claim-eligible** sources for context $c$:
-   $$\text{claim\_eligible}(c, i) = \text{pending}[i] \land \text{enable}[c][i] \land (\text{priority}[i] > 0)$$
+1. **Evaluation**: The PLIC core evaluates all currently **claim-eligible** sources for context `c`:
+   `claim_eligible(c, i) = pending[i] && enable[c][i] && (priority[i] > 0)`
    **Notice**: `threshold[c]` is NOT evaluated during claim.
 2. **Selection**:
    - If no sources are claim-eligible, the read returns **0**.
    - If one or more sources are claim-eligible, the PLIC selects the source with the highest priority
-     (breaking ties in favor of the lowest numerical source ID). Let this selected source be $k \in \{1 \dots 31\}$.
+     (breaking ties in favor of the lowest numerical source ID). Let this selected source be `k ∈ 1 ... 31`.
 3. **Atomic Side Effects**:
-   - The read data returned on the bus is $k$.
-   - The pending bit for source $k$ is **atomically cleared**: $\text{pending}[k] \leftarrow 0$.
-   - The gateway marks source $k$ as **in-service** (claimed): $\text{in\_service}[k] \leftarrow 1$.
-   - The interrupt notification output for context $c$ (`irq_meip_o` or `irq_seip_o`) is immediately
-     re-evaluated; if no `notify_eligible` interrupts remain for context $c$, the context line deasserts.
+   - The read data returned on the bus is `k`.
+   - The pending bit for source `k` is **atomically cleared**: `pending[k] ← 0`.
+   - The gateway marks source `k` as **in-service** (claimed): `in_service[k] ← 1`.
+   - The interrupt notification output for context `c` (`irq_meip_o` or `irq_seip_o`) is immediately
+     re-evaluated; if no `notify_eligible` interrupts remain for context `c`, the context line deasserts.
    - If no sources were claim-eligible (read returned 0), **zero state changes occur**.
 
 ### 8.2 Complete write semantics and cross-context protection
 
 **Required**:
-Writing a 32-bit value $k$ to the Claim/Complete register for context $c$ triggers a
+Writing a 32-bit value `k` to the Claim/Complete register for context `c` triggers a
 **completion transaction**.
 
 1. **Completion Validation**:
    The completion transaction is valid if and only if all of the following conditions hold:
-   $$\text{valid\_complete}(c, k) = (1 \le k \le 31) \land \text{enable}[c][k] \land \text{in\_service}[k]$$
-   - $k$ must be a valid implemented physical source ID ($1 \le k \le 31$).
-   - Source $k$ must be currently **in-service** ($\text{in\_service}[k] == 1$).
-   - Source $k$ must be **enabled in context $c$** ($\text{enable}[c][k] == 1$).
+   `valid_complete(c, k) = (1 ≤ k ≤ 31) && enable[c][k] && in_service[k]`
+   - `k` must be a valid implemented physical source ID (`1 ≤ k ≤ 31`).
+   - Source `k` must be currently **in-service** (`in_service[k] == 1`).
+   - Source `k` must be **enabled in context `c`** (`enable[c][k] == 1`).
    *(Note: The PLIC specification does not require tracking which specific context claimed the source,
    nor matching the last claimed ID; however, checking `enable[c][k]` ensures that an unauthorized context
    cannot inadvertently complete an interrupt it does not own).*
 
 2. **Valid Completion State Actions**:
-   If $\text{valid\_complete}(c, k)$ is true:
-   - The gateway clears the in-service state: $\text{in\_service}[k] \leftarrow 0$.
+   If `valid_complete(c, k)` is true:
+   - The gateway clears the in-service state: `in_service[k] ← 0`.
    - **Level Re-evaluation**: The gateway immediately samples the physical input line `irq_source_i[k]`:
      - If `irq_source_i[k] == 1` (the peripheral still holds its level line high), the gateway
-       **immediately re-asserts pending**: $\text{pending}[k] \leftarrow 1$.
+       **immediately re-asserts pending**: `pending[k] ← 1`.
      - If `irq_source_i[k] == 0` (the ISR successfully serviced and cleared the peripheral),
-       $\text{pending}[k]$ remains 0, and the source returns to `IDLE`.
+       `pending[k]` remains 0, and the source returns to `IDLE`.
 
 3. **Invalid / Spurious Completion**:
-   If $\text{valid\_complete}(c, k)$ is false (including writing $k = 0$, out-of-range $k \ge 32$,
-   source not in service, or source disabled in context $c$):
+   If `valid_complete(c, k)` is false (including writing `k = 0`, out-of-range `k ≥ 32`,
+   source not in service, or source disabled in context `c`):
    - The write is **silently ignored with zero state effect**:
-     - $\text{in\_service}[k]$ remains asserted.
+     - `in_service[k]` remains asserted.
      - No pending bits are cleared or manufactured.
      - The gateway does not release or resample the source line.
 
 4. **Cross-Context Completion Protection Example**:
-   - Source $k$ is configured such that $\text{enable}[0][k] == 1$ and $\text{enable}[1][k] == 0$.
-   - Context 0 claims source $k$, setting $\text{in\_service}[k] = 1$.
-   - Context 1 writes $k$ to its Complete register (`0x201004`):
-     Because $\text{enable}[1][k] == 0$, $\text{valid\_complete}(1, k)$ evaluates to false.
-     The write is silently ignored, and source $k$ remains securely in-service until Context 0 completes it.
+   - Source `k` is configured such that `enable[0][k] == 1` and `enable[1][k] == 0`.
+   - Context 0 claims source `k`, setting `in_service[k] = 1`.
+   - Context 1 writes `k` to its Complete register (`0x201004`):
+     Because `enable[1][k] == 0`, `valid_complete(1, k)` evaluates to false.
+     The write is silently ignored, and source `k` remains securely in-service until Context 0 completes it.
 
 ---
 
@@ -355,9 +361,9 @@ Writing a 32-bit value $k$ to the Claim/Complete register for context $c$ trigge
 ### 9.1 Lifecycle state machine
 
 **Required**:
-For each physical interrupt source $i \in \{1 \dots 31\}$, the gateway maintains two state bits:
-- $\text{pending}[i]$: Indicates that an unserviced interrupt request is waiting for target claim.
-- $\text{in\_service}[i]$: Indicates that the interrupt has been claimed by a target context and
+For each physical interrupt source `i ∈ 1 ... 31`, the gateway maintains two state bits:
+- `pending[i]`: Indicates that an unserviced interrupt request is waiting for target claim.
+- `in_service[i]`: Indicates that the interrupt has been claimed by a target context and
   has not yet completed.
 
 ```
@@ -382,22 +388,22 @@ For each physical interrupt source $i \in \{1 \dots 31\}$, the gateway maintains
 
 1. **Mutual Exclusion of Ownership**: A source can never have more than one outstanding claim
    ownership across the entire system:
-   $$\text{assert}(\text{in\_service}[i] \le 1)$$
-2. **Suppression of Re-pending While Claimed**: While $\text{in\_service}[i] == 1$, changes on
-   `irq_source_i[i]` (including high levels or repeated transitions) **cannot set $\text{pending}[i]$**.
+   `assert(in_service[i] ≤ 1)`
+2. **Suppression of Re-pending While Claimed**: While `in_service[i] == 1`, changes on
+   `irq_source_i[i]` (including high levels or repeated transitions) **cannot set `pending[i]`**.
    This guarantees that no target can claim the same source a second time before the servicing context
    completes the transaction.
 3. **No Lost Level Interrupts**: If an active-high level interrupt source remains asserted across
-   valid completion, the transition $\text{IN\_SERVICE} \rightarrow \text{PENDING}$ guarantees the
+   valid completion, the transition `IN_SERVICE → PENDING` guarantees the
    interrupt will immediately re-enter arbitration.
 4. **Deassertion Before Completion**: If a peripheral asserts an interrupt, the interrupt is claimed
-   (entering $\text{IN\_SERVICE}$), and the ISR services the peripheral such that `irq_source_i[i]`
+   (entering `IN_SERVICE`), and the ISR services the peripheral such that `irq_source_i[i]`
    deasserts to 0 *before* software writes completion, the completion write cleanly transitions the
-   gateway $\text{IN\_SERVICE} \rightarrow \text{IDLE}$ without generating a spurious second interrupt.
+   gateway `IN_SERVICE → IDLE` without generating a spurious second interrupt.
 5. **Transient Level Pulse Latching**: If an external level source asserts high long enough to latch
    pending on an active clock edge and then drops low *before* being claimed:
-   - The pending bit remains latched ($\text{pending}[i] = 1$).
-   - A subsequent Claim read successfully claims source $i$, clearing pending and entering $\text{IN\_SERVICE}$.
+   - The pending bit remains latched (`pending[i] = 1`).
+   - A subsequent Claim read successfully claims source `i`, clearing pending and entering `IN_SERVICE`.
    - When software writes valid completion, the gateway samples `irq_source_i[i] == 0` and returns
      directly to `IDLE` without re-pending.
 
@@ -428,18 +434,18 @@ All addresses are offsets from `PLIC_BASE_ADDR` (`0x0000_0000_0C00_0000`):
 | `0x000000` | `PRIORITY[0]` | Source 0 | 32b | RO | `0x00000000` | Hardwired to 0 (no interrupt) |
 | `0x000004` .. `0x00007C` | `PRIORITY[1..31]` | Sources 1..31 | 32b | RW | `0x00000000` | Bits [2:0] priority (0..7); [31:3] RO0 |
 | `0x000080` .. `0x000FFC` | *Unimplemented Priority* | Sources 32..1023 | 32b | RAZ/WI | `0x00000000` | Read-As-Zero, Writes-Ignored |
-| `0x001000` | `PENDING[0]` | Sources 0..31 | 32b | RO | `0x00000000` | Bit $i$ indicates source $i$ pending. Bit 0 is RO0. Writes ignored. |
+| `0x001000` | `PENDING[0]` | Sources 0..31 | 32b | RO | `0x00000000` | Bit `i` indicates source `i` pending. Bit 0 is RO0. Writes ignored. |
 | `0x001004` .. `0x00107C` | *Unimplemented Pending* | Sources 32..1023 | 32b | RAZ/WI | `0x00000000` | Read-As-Zero, Writes-Ignored |
 | `0x002000` | `ENABLE_C0[0]` | Context 0, Word 0 | 32b | RW | `0x00000000` | Enable mask for sources 0..31 in Context 0 (Hart 0 M). Bit 0 is RO0. |
 | `0x002004` .. `0x00207C` | *Unimplemented C0 Enable* | Context 0, Words 1..31 | 32b | RAZ/WI | `0x00000000` | Read-As-Zero, Writes-Ignored |
 | `0x002080` | `ENABLE_C1[0]` | Context 1, Word 0 | 32b | RW | `0x00000000` | Enable mask for sources 0..31 in Context 1 (Hart 0 S). Bit 0 is RO0. |
 | `0x002084` .. `0x0020FC` | *Unimplemented C1 Enable* | Context 1, Words 1..31 | 32b | RAZ/WI | `0x00000000` | Read-As-Zero, Writes-Ignored |
-| `0x002100` .. `0x1FFFFC` | *Reserved Enable Space* | Contexts $\ge 2$ | 32b | Error | N/A | Generates platform bus access error |
+| `0x002100` .. `0x1FFFFC` | *Reserved Enable Space* | Contexts `≥ 2` | 32b | Error | N/A | Generates platform bus access error |
 | `0x200000` | `THRESHOLD_C0` | Context 0 (Hart 0 M) | 32b | RW | `0x00000000` | Priority threshold for Context 0. Bits [2:0] RW; [31:3] RO0. |
 | `0x200004` | `CLAIM_C0` | Context 0 (Hart 0 M) | 32b | RW | `0x00000000` | Read = Claim; Write = Complete for Context 0 |
 | `0x201000` | `THRESHOLD_C1` | Context 1 (Hart 0 S) | 32b | RW | `0x00000000` | Priority threshold for Context 1. Bits [2:0] RW; [31:3] RO0. |
 | `0x201004` | `CLAIM_C1` | Context 1 (Hart 0 S) | 32b | RW | `0x00000000` | Read = Claim; Write = Complete for Context 1 |
-| `0x202000` .. `0x3FFFFC` | *Reserved Context Space* | Contexts $\ge 2$ | 32b | Error | N/A | Generates platform bus access error |
+| `0x202000` .. `0x3FFFFC` | *Reserved Context Space* | Contexts `≥ 2` | 32b | Error | N/A | Generates platform bus access error |
 
 ### 10.3 Access constraints and bus rules
 
@@ -482,7 +488,7 @@ All addresses are offsets from `PLIC_BASE_ADDR` (`0x0000_0000_0C00_0000`):
 
 **Required**:
 1. **Unprivileged MMIO Slave Hardware**: The PLIC hardware block is an MMIO slave on the SoC
-   interconnect. It does **not** inspect processor execution privilege mode ($M, S, U$) on its
+   interconnect. It does **not** inspect processor execution privilege mode (`M, S, U`) on its
    bus interface.
 2. **Software and Architectural Protection**:
    - Access permission to PLIC registers is governed exclusively by:
@@ -491,7 +497,7 @@ All addresses are offsets from `PLIC_BASE_ADDR` (`0x0000_0000_0C00_0000`):
      - **Virtual Memory (Sv39)**: When virtual memory is enabled (`satp.MODE = Sv39`), S-mode
        operating systems access PLIC registers via page tables. The OS maps Context 1 registers
        (enable and threshold/claim pages) to supervisor virtual addresses while omitting Context 0
-       or setting $U=0$ to prevent user-mode tampering.
+       or setting `U=0` to prevent user-mode tampering.
 3. **No Artificial Hardware Restrictions**: The PLIC will not artificially block S-mode physical
    accesses to Context 0 or M-mode physical accesses to Context 1; memory protection is the
    responsibility of PMP and page table configuration.
@@ -518,20 +524,20 @@ The PLIC exports two independent active-high level interrupt notification lines 
 
 Inside `fursoy_s0_core.sv`:
 - `mip[11]` (MEIP) reflects `irq_external_i` (`irq_meip_o`).
-- `mip[9]` (SEIP) reflects $\text{seip\_q} \lor \text{irq\_seip\_i}$.
+- `mip[9]` (SEIP) reflects `seip_q || irq_seip_i`.
 - `mideleg[9]` controls whether SEIP is delegated to S-mode.
 - When delegated (`mideleg[9] = 1`), assertion of `irq_seip_o` directly stimulates S-mode interrupt
   eligibility:
-  $$\text{s\_irq\_eligible\_sei} = \text{mip}[9] \land \text{sie}[9] \land \text{mideleg}[9] \land \text{s\_irq\_global\_en}$$
-  where $\text{s\_irq\_global\_en} = (P < S) \lor (P == S \land \text{sstatus.SIE} == 1)$.
+  `s_irq_eligible_sei = mip[9] && sie[9] && mideleg[9] && s_irq_global_en`
+  where `s_irq_global_en = (P < S) || (P == S && sstatus.SIE == 1)`.
 
 ### 13.3 Preservation of frozen core interrupt priorities
 
 The core interrupt priority order frozen in `docs/architecture/s-mode-bare-v1.md` and
 `fursoy_s0_core.sv` remains completely preserved:
 1. Eligible M-target interrupts take absolute priority over S-target interrupts.
-2. Within M-target: $\text{MEI} > \text{MSI} > \text{MTI} > \text{SEI} > \text{SSI} > \text{STI}$.
-3. Within S-target: $\text{SEI} > \text{SSI} > \text{STI}$.
+2. Within M-target: `MEI > MSI > MTI > SEI > SSI > STI`.
+3. Within S-target: `SEI > SSI > STI`.
 4. If Context 0 (MEIP) and Context 1 (SEIP) are both simultaneously asserted by the PLIC:
    - When running in M-mode with `mstatus.MIE = 1`, MEIP is taken (cause 11 to `mtvec`).
    - When running in S-mode with `sstatus.SIE = 1`, if `mideleg[9] = 1`, MEIP takes precedence
@@ -559,11 +565,11 @@ Hardware assertion of `rst_i` places the PLIC into a fully deterministic, quiesc
    states remain continuously cleared (`0`).
 2. **First Clock Edge Post-Reset**:
    - If an external interrupt line `irq_source_i[k]` is asserted high when reset is deasserted,
-     source $k$ transitions to `PENDING` on the **first active clock edge following reset release**
-     ($\text{pending}[k] \leftarrow 1$).
+     source `k` transitions to `PENDING` on the **first active clock edge following reset release**
+     (`pending[k] ← 1`).
 3. **No Spurious Interrupts Upon Reset Release**:
    - Because all priority registers reset to `0` and all enable registers reset to `0`,
-     $\text{claim\_eligible}(c, k)$ and $\text{notify\_eligible}(c, k)$ evaluate to **false** for all
+     `claim_eligible(c, k)` and `notify_eligible(c, k)` evaluate to **false** for all
      contexts.
    - Consequently, external interrupt notification outputs (`irq_meip_o`, `irq_seip_o`) remain
      quiescent at `0` upon reset release, and Claim reads return `0`, until software explicitly
@@ -578,7 +584,7 @@ Hardware assertion of `rst_i` places the PLIC into a fully deterministic, quiesc
 | **Valid 32-bit read to RW register** | `rsp_valid = 1, rsp_error = 0, rsp_data = RegVal` | None | Normal register load |
 | **Valid 32-bit write to RW register** | `rsp_valid = 1, rsp_error = 0` | Register updated | Normal register store |
 | **Valid 32-bit read to Claim register** | `rsp_valid = 1, rsp_error = 0, rsp_data = ClaimID` | If ClaimID != 0: atomic claim of ClaimID (clears pending, sets in-service) | Normal load; atomic side effect on claimed source |
-| **Valid 32-bit write to Complete register** | `rsp_valid = 1, rsp_error = 0` | If $\text{valid\_complete}(c, k)$: clears in-service, re-samples level | Normal store |
+| **Valid 32-bit write to Complete register** | `rsp_valid = 1, rsp_error = 0` | If `valid_complete(c, k)`: clears in-service, re-samples level | Normal store |
 | **Write to Read-Only register (Pending, Priority 0, Enable 0)** | `rsp_valid = 1, rsp_error = 0` | **Zero effect** (write ignored) | Normal store completes without error |
 | **Spurious Complete write (ID 0, unowned ID, out-of-range ID, or disabled in context)** | `rsp_valid = 1, rsp_error = 0` | **Zero effect** (silently ignored) | Normal store completes without error |
 | **Misaligned Claim read (`addr[1:0] != 0`)** | `rsp_valid = 1, rsp_error = 1, access_error = 1` | **Zero effect** (no claim side effect; pending & in-service unchanged) | Load Access Fault (`cause = 5`) |
@@ -602,17 +608,17 @@ Hardware assertion of `rst_i` places the PLIC into a fully deterministic, quiesc
 | **PLIC-05** | Enable Masking | Pending source with priority > threshold asserts context interrupt only when its enable bit is set in that context. |
 | **PLIC-06** | Threshold Masking on Notification | Priority <= Threshold suppresses `irq_meip_o` / `irq_seip_o`; Priority > Threshold asserts IRQ line; Threshold = 7 blocks all notifications. |
 | **PLIC-07** | **Claim While Threshold Masks Notification** | Source is pending, enabled, with Priority <= Threshold (`context_irq == 0`); Claim read **still successfully returns source ID**, pending clears, and source enters in-service. |
-| **PLIC-08** | **Disabled Source Claim** | Source is pending with Priority > 0, but disabled in context $c$ (`enable[c][k] == 0`); Claim read in context $c$ returns 0; pending bit remains set. |
+| **PLIC-08** | **Disabled Source Claim** | Source is pending with Priority > 0, but disabled in context `c` (`enable[c][k] == 0`); Claim read in context `c` returns 0; pending bit remains set. |
 | **PLIC-09** | Highest Priority Selection | Given multiple claim-eligible sources with distinct priorities, Claim read returns the source with highest priority. |
-| **PLIC-10** | Equal-Priority Lowest-ID Tie-Break | Given sources $A < B$ with identical eligible priorities, Claim read returns $A$. |
+| **PLIC-10** | Equal-Priority Lowest-ID Tie-Break | Given sources `A < B` with identical eligible priorities, Claim read returns `A`. |
 | **PLIC-11** | Empty Claim Return | Claim read with no claim-eligible interrupts returns 0 and produces zero internal state side effects. |
-| **PLIC-12** | Claim Atomic Side Effect | Claim read returning source $k$ atomically clears $\text{pending}[k]$, sets $\text{in\_service}[k]$, and deasserts context line if no other interrupts eligible. |
-| **PLIC-13** | Gateway In-Service Lockout | While source $k$ is claimed ($\text{in\_service}[k] == 1$), further level changes on source $k$ cannot set $\text{pending}[k]$; claim cannot return $k$ again. |
-| **PLIC-14** | Completion While Level Still High | Writing valid $k$ to Complete while `irq_source_i[k] == 1` clears in-service and immediately re-asserts $\text{pending}[k]$. |
-| **PLIC-15** | Completion After Level Deassertion | Writing valid $k$ to Complete after `irq_source_i[k] == 0` clears in-service and leaves source in `IDLE` ($\text{pending}[k] = 0$). |
-| **PLIC-16** | **Cross-Context Invalid Completion** | Source $k$ enabled only in Context 0 and claimed by Context 0; Context 1 writes $k$ to Complete: write is ignored, and $\text{in\_service}[k]$ remains asserted. |
-| **PLIC-17** | Spurious / Unowned Completion | Writing an unowned source ID, ID 0, or ID $\ge 32$ to complete has zero effect on pending or in-service states. |
-| **PLIC-18** | **Shared-Source Multi-Context Contention** | Source $k$ enabled in both Context 0 and Context 1; both notification lines assert; first context to claim $k$ succeeds and clears global pending; other context notification line deasserts; subsequent Claim there returns 0. |
+| **PLIC-12** | Claim Atomic Side Effect | Claim read returning source `k` atomically clears `pending[k]`, sets `in_service[k]`, and deasserts context line if no other interrupts eligible. |
+| **PLIC-13** | Gateway In-Service Lockout | While source `k` is claimed (`in_service[k] == 1`), further level changes on source `k` cannot set `pending[k]`; claim cannot return `k` again. |
+| **PLIC-14** | Completion While Level Still High | Writing valid `k` to Complete while `irq_source_i[k] == 1` clears in-service and immediately re-asserts `pending[k]`. |
+| **PLIC-15** | Completion After Level Deassertion | Writing valid `k` to Complete after `irq_source_i[k] == 0` clears in-service and leaves source in `IDLE` (`pending[k] = 0`). |
+| **PLIC-16** | **Cross-Context Invalid Completion** | Source `k` enabled only in Context 0 and claimed by Context 0; Context 1 writes `k` to Complete: write is ignored, and `in_service[k]` remains asserted. |
+| **PLIC-17** | Spurious / Unowned Completion | Writing an unowned source ID, ID 0, or ID `≥ 32` to complete has zero effect on pending or in-service states. |
+| **PLIC-18** | **Shared-Source Multi-Context Contention** | Source `k` enabled in both Context 0 and Context 1; both notification lines assert; first context to claim `k` succeeds and clears global pending; other context notification line deasserts; subsequent Claim there returns 0. |
 | **PLIC-19** | **Transient Level Before Claim** | Source asserts to latch pending, then deasserts before Claim: pending remains latched; subsequent Claim returns source; valid complete while low returns gateway to `IDLE` without re-pending. |
 | **PLIC-20** | Context 0 (MEIP) Delivery | Eligible interrupt in Context 0 asserts `irq_meip_o`; core takes trap cause 11 to `mtvec`. |
 | **PLIC-21** | Context 1 (SEIP) Delivery | Eligible interrupt in Context 1 asserts `irq_seip_o`; with `mideleg[9] = 1`, core takes direct trap cause 9 to `stvec`. |
@@ -621,7 +627,7 @@ Hardware assertion of `rst_i` places the PLIC into a fully deterministic, quiesc
 | **PLIC-24** | Sub-word Access Error Rejection | Byte (`size = 0`) or Halfword (`size = 1`) read/write produces `rsp_error = 1`; stores make zero register modifications. |
 | **PLIC-25** | Misaligned Access Rejection | Unaligned address (`addr[1:0] != 0`) produces `rsp_error = 1`; zero state changes. |
 | **PLIC-26** | **Rejected Claim Access Side Effect** | Misaligned or sub-word Claim read produces bus error (`rsp_error = 1`); **zero claim side effects** (pending and in-service unchanged). |
-| **PLIC-27** | Unmapped Address Rejection | Access to reserved context windows ($\ge 2$) produces `rsp_error = 1` and causes bus access fault in core. |
+| **PLIC-27** | Unmapped Address Rejection | Access to reserved context windows (`≥ 2`) produces `rsp_error = 1` and causes bus access fault in core. |
 | **PLIC-28** | PMP Denial Precedence | PMP-denied load/store to PLIC generates local core access fault; request never reaches PLIC; zero side effects. |
 | **PLIC-29** | Multiple Pending Sources | Multiple simultaneous pending sources are serviced sequentially in strict priority/ID order across successive claim/complete cycles. |
 | **PLIC-30** | Reset During In-Service State | Reset asserted while sources are in `PENDING` and `IN_SERVICE` cleanly clears all state to quiescent `IDLE`. |
@@ -677,5 +683,5 @@ The following components and features are explicitly excluded from this mileston
 - **Concrete Peripherals**: UART, console, RTC, timer, network, storage.
 - **CLINT Integration into PLIC**: CLINT MSIP/MTIP remain separate core interrupts, not PLIC sources.
 - **SBI / OS Boot Flow**: Software firmware and kernel boot flows are subsequent milestones.
-- **Hardware Multicore Routing**: Beyond defining standard context numbering offsets ($2H, 2H+1$), multicore hardware buses and crossbar routing are excluded.
+- **Hardware Multicore Routing**: Beyond defining standard context numbering offsets (`2H, 2H+1`), multicore hardware buses and crossbar routing are excluded.
 - **Interrupt Virtualization**: No hypervisor interrupt virtualization extensions (H-extension / AIA).

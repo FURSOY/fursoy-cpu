@@ -126,13 +126,13 @@ To prevent race conditions, timing loopbacks, and corruption of draining entries
 ### 4.1 Strict Tail-Only Merging Rule
 A new store arriving in Stage E may merge **strictly into the youngest unissued tail entry** (`sb_tail - 1`). It is **NEVER** permitted to search or merge into arbitrary older SB entries, and **NEVER** permitted to merge into the active/draining head.
 
-A merge into tail entry $T = (\text{sb\_tail} - 1) \bmod 4$ is permitted **IF AND ONLY IF ALL** of the following conditions are simultaneously true:
+A merge into tail entry `T = (sb_tail - 1) mod 4` is permitted **IF AND ONLY IF ALL** of the following conditions are simultaneously true:
 1. `sb_count > 0` (buffer is not empty).
 2. `sb_valid[T] == 1` (tail entry is valid).
 3. `new_store_pa[55:3] == sb_paddr[T][55:3]` (exact 8-byte aligned doubleword address match).
-4. Entry $T$ is **NOT** currently selected for drain (`T != sb_head` or drain arbiter is idle).
-5. No L1D request derived from entry $T$ has been issued or accepted (`sb_req_valid_o` is not active for entry $T$).
-6. Entry $T$ remains completely mutable in the current clock cycle.
+4. Entry `T` is **NOT** currently selected for drain (`T != sb_head` or drain arbiter is idle).
+5. No L1D request derived from entry `T` has been issued or accepted (`sb_req_valid_o` is not active for entry `T`).
+6. Entry `T` remains completely mutable in the current clock cycle.
 
 If any of conditions 1–6 is false:
 - Merging is prohibited.
@@ -140,12 +140,16 @@ If any of conditions 1–6 is false:
 - If `sb_count == 4`, Stage E stalls with backpressure until `sb_head` pops.
 
 ### 4.2 Byte-Mask Merge Semantics
-When a safe tail merge occurs into entry $T$:
-1. **Younger Byte Overwrite Precedence**: For each byte lane $b \in [0, 7]$:
-   $$\text{sb\_data}[T][8b+7:8b] \leftarrow \begin{cases} \text{new\_store\_data}[8b+7:8b] & \text{if } \text{new\_store\_mask}[b] == 1 \\ \text{sb\_data}[T][8b+7:8b] & \text{if } \text{new\_store\_mask}[b] == 0 \end{cases}$$
+When a safe tail merge occurs into entry `T`:
+1. **Younger Byte Overwrite Precedence**: For each byte lane `b ∈ [0, 7]`:
+   ```text
+   sb_data[T][8b+7:8b] ←
+     new_store_data[8b+7:8b]  if new_store_mask[b] == 1
+     sb_data[T][8b+7:8b]      if new_store_mask[b] == 0
+   ```
 2. **Byte Mask Accumulation**:
-   $$\text{sb\_byte\_mask}[T] \leftarrow \text{sb\_byte\_mask}[T] \lor \text{new\_store\_mask}$$
-3. Untouched bytes already present in entry $T$ remain strictly preserved.
+   `sb_byte_mask[T] ← sb_byte_mask[T] | new_store_mask`
+3. Untouched bytes already present in entry `T` remain strictly preserved.
 4. `sb_tail` does **not** advance; `sb_count` does **not** increment.
 5. The store retires in Stage E in 1 cycle.
 
@@ -180,17 +184,17 @@ If an SB entry were popped upon L1D request acceptance (`sb_req_ready_i == 1`), 
 ### 6.1 Conservative Doubleword Hazard Detection
 When a load instruction executes in Stage E:
 1. `load_pa[55:0]` is translated by DTLB and validated by PMP.
-2. `load_pa[55:3]` (the 8-byte aligned doubleword address) is compared against `sb_paddr[i][55:3]` for all valid entries $i \in [0, 3]$.
+2. `load_pa[55:3]` (the 8-byte aligned doubleword address) is compared against `sb_paddr[i][55:3]` for all valid entries `i ∈ [0, 3]`.
 3. **Hazard Equation**:
-   $$\text{RAW\_Hazard} = \bigvee_{i=0}^{3} \left( \text{sb\_valid}[i] \land (\text{load\_pa}[55:3] == \text{sb\_paddr}[i]) \right)$$
+   `RAW_Hazard = OR_i=0^3 ( sb_valid[i] && (load_pa[55:3] == sb_paddr[i]) )`
 4. **Resolution Policy**:
-   - If $\text{RAW\_Hazard} == 1$:
+   - If `RAW_Hazard == 1`:
      - Stage E asserts `stall_e = 1`.
      - The load does not issue to L1D.
      - The drain arbiter prioritizes draining the Store Buffer.
      - Stage E remains stalled until all matching entries have received `l1d_store_ack_o` and deallocated.
-     - Once $\text{RAW\_Hazard} == 0$, the load queries L1D, reading the updated, fully merged data directly from the cache array.
-   - If $\text{RAW\_Hazard} == 0$:
+     - Once `RAW_Hazard == 0`, the load queries L1D, reading the updated, fully merged data directly from the cache array.
+   - If `RAW_Hazard == 0`:
      - The load queries L1D directly without stalling (subject to L1D arbitration per Section 7).
 
 ### 6.2 Handling of Overlap Corner Cases
@@ -200,7 +204,7 @@ When a load instruction executes in Stage E:
 | **Exact Doubleword Match** | Load doubleword matches buffered store (`LD A` after `SD A`). | Stalls until store receives `l1d_store_ack_o`. Reads L1D in 1 cycle. |
 | **Partial Overlap** | Store writes byte 1; Load reads word (`LW` at offset 0). | Stalls until store applied to L1D. L1D sub-word logic reads merged data. |
 | **Same-Doubleword Non-Overlapping** | Store writes byte 0; Load reads byte 1 (`PA[55:3]` matches). | **Stalls until store applied to L1D**. Conservative doubleword granularity guarantees zero false forwarding or stale partial reads. |
-| **Multiple Matching Entries** | Store 1 and Store 2 both target doubleword $A$; Load reads $A$. | Stalls until both stores have received `l1d_store_ack_o`. |
+| **Multiple Matching Entries** | Store 1 and Store 2 both target doubleword `A`; Load reads `A`. | Stalls until both stores have received `l1d_store_ack_o`. |
 | **Different Sizes** | `SB` followed by `LD`; or `SD` followed by `LB`. | Stalls until applied. L1D sign/zero extension handles formatting. |
 | **Same Line, Different Doublewords** | Store targets doubleword 0; Load reads doubleword 1. | **Zero stall cycles**. Addresses differ (`load_pa[55:3] != sb_paddr[55:3]`). Load reads L1D directly. |
 
@@ -226,7 +230,7 @@ At every clock cycle where L1D is idle and available:
   - L1D is idle, AND
   - A Stage-E load requests L1D, AND
   - The load is granted over SB drain.
-  $$\text{sb\_starve\_count} \leftarrow \min(\text{sb\_starve\_count} + 1, 4)$$
+  `sb_starve_count ← min(sb_starve_count + 1, 4)`
 - **Reset Condition**: `sb_starve_count` resets to `0` whenever:
   - An SB drain request is granted L1D access, OR
   - `sb_count == 0` (buffer becomes empty).
@@ -241,7 +245,7 @@ To preserve the frozen RV64A specification (`docs/architecture/rv64a-v1.md`):
 - **Contract**: Whenever an ordinary store instruction (`SB`, `SH`, `SW`, `SD`) successfully enqueues into the Store Buffer and architecturally retires in Stage E:
   - Its physical line address `store_pa[55:6]` is compared against the registered reservation address `res_pa[55:6]`.
   - If `store_pa[55:6] == res_pa[55:6]`:
-    $$\text{res\_valid} \leftarrow 0$$
+    `res_valid ← 0`
   - This invalidation occurs **at the exact architectural retirement/enqueue cycle in Stage E**.
   - It is **NEVER deferred** to when the store drains or writes to L1D.
 - **Sequence Verification (`LR -> ordinary store -> SC`)**:

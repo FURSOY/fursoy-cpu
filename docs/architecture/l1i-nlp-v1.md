@@ -42,32 +42,32 @@ Following independent broad architectural review of the initial L1I-NLP v1 propo
 6. **Decoupled Storage (No Directory Aliasing):** Prefetched instructions are captured in a dedicated 1-line Prefetch Buffer (PFB). Unpromoted prefetch data never marks a main L1I directory way valid. A physical line cannot exist simultaneously in both main L1I and the PFB.
 7. **Instant Invalidation on Maintenance:** `FENCE.I`, `SFENCE.VMA`, `satp` writes, PMP CSR modifications, and resets instantly flush queued, active, completed, and dormant prefetch states.
 8. **Strict Single-Port Datapath Compliance (P1-1):** Demand lookups strictly dominate tag-array access. Prefetch residency checks are scheduled during idle/stall cycles, and directory promotion utilizes a deterministic 1-cycle bubble if colliding with a concurrent demand lookup.
-9. **Bounded Protocol Preemption (P1-3):** Preemption occurs at clean 1-beat transaction boundaries. The demand preemption delay is architecturally bounded to $0$ cycles if prefetch is in request phase, or $(1 + t_{\text{rsp\_remain}})$ cycles if awaiting response for an already-accepted beat.
+9. **Bounded Protocol Preemption (P1-3):** Preemption occurs at clean 1-beat transaction boundaries. The demand preemption delay is architecturally bounded to 0 cycles if prefetch is in request phase, or `(1 + t_rsp_remain)` cycles if awaiting response for an already-accepted beat.
 
 ---
 
 ## 2. Authoritative Address & Permission Qualification Contract (Resolving P0-3)
 
 ### 2.1 Physical Address Generation
-When a prefetch trigger fires for physical line $L = \text{trigger\_line\_pa}[55:6]$:
-$$\text{cand\_line\_pa}[55:0] = \{\text{trigger\_line\_pa}[55:6] + 50'd1, 6'b000000\}$$
-The candidate address is naturally 64-byte aligned and represents the strictly sequential next line $L+1$.
+When a prefetch trigger fires for physical line `L = trigger_line_pa[55:6]`:
+`cand_line_pa[55:0] = {trigger_line_pa[55:6] + 50'd1, 6'b000000}`
+The candidate address is naturally 64-byte aligned and represents the strictly sequential next line `L+1`.
 
 ### 2.2 Translation & Same-Page Boundary Guard
 * **Page Boundary Evaluation:**
-  $$\text{same\_page} = (\text{cand\_line\_pa}[55:12] == \text{trigger\_line\_pa}[55:12])$$
+  `same_page = (cand_line_pa[55:12] == trigger_line_pa[55:12])`
 * **Contract:**
-  - If `same_page == 1'b0`: The candidate line resides in an adjacent 4 KiB page. Because crossing page boundaries requires resolving a separate page-table translation (or ITLB walk), potentially crossing non-contiguous physical pages or different page-level permissions ($U, X$), **cross-page prefetching is strictly forbidden**. The candidate is immediately suppressed with zero bus or MMU interaction.
-  - If `same_page == 1'b1`: The candidate inherits the identical virtual-to-physical translation, page attributes ($R, W, X, U, G$), and canonical address validity established by the authoritative demand translation of the current page.
+  - If `same_page == 1'b0`: The candidate line resides in an adjacent 4 KiB page. Because crossing page boundaries requires resolving a separate page-table translation (or ITLB walk), potentially crossing non-contiguous physical pages or different page-level permissions (`U, X`), **cross-page prefetching is strictly forbidden**. The candidate is immediately suppressed with zero bus or MMU interaction.
+  - If `same_page == 1'b1`: The candidate inherits the identical virtual-to-physical translation, page attributes (`R, W, X, U, G`), and canonical address validity established by the authoritative demand translation of the current page.
 
 ### 2.3 Evaluation of PMP Authorization Options (P0-3)
-The Reviewer correctly noted that `pmp_check_range()` was a phantom construct, `fursoy_s0_pmp_check` natively supports only $\le 8$-byte accesses (`req_size_i` $0 \dots 3$), and frozen L1I has no direct PMP register ports. Three architectural implementations were evaluated:
+The Reviewer correctly noted that `pmp_check_range()` was a phantom construct, `fursoy_s0_pmp_check` natively supports only `≤ 8`-byte accesses (`req_size_i` `0 ... 3`), and frozen L1I has no direct PMP register ports. Three architectural implementations were evaluated:
 
 | Criterion | Option A: Core/MMU-Generated Candidate Authorization | Option B: Beat/Address-Granular Authorization | Option C: Conservative Eligibility Restriction (Selected Baseline) |
 | :--- | :--- | :--- | :--- |
-| **Concept** | MMU evaluates candidate line $L+1$ and outputs dedicated `itrans_pmp_allow_cand_o` to L1I. | Authorize each speculative 8-byte prefetch beat using an existing 8-byte PMP check prior to issuing that beat. | Authorize candidate only when demand PMP match is mathematically proven to cover the entire candidate line (NAPOT $k \ge 12$ or default M-mode). |
+| **Concept** | MMU evaluates candidate line `L+1` and outputs dedicated `itrans_pmp_allow_cand_o` to L1I. | Authorize each speculative 8-byte prefetch beat using an existing 8-byte PMP check prior to issuing that beat. | Authorize candidate only when demand PMP match is mathematically proven to cover the entire candidate line (NAPOT `k ≥ 12` or default M-mode). |
 | **Required Ports** | New `cand_pmp_allow_o` on MMU; `cand_pmp_allow_i` on L1I. | 8-byte PMP request/grant handshake or routing PMP checker ports to L1I. | Minimal: single-bit `pmp_page_uniform_x_o` from MMU to L1I (or derived from demand PMP match). |
-| **New Logic** | Either 64-byte PMP checker expansion or dual boundary (start/end) check in MMU. | 8 serialized PMP checks per line, or 8 parallel checker instances (massive area). | 1 comparator bit checking matching NAPOT mask $k \ge 12$ and $X=1$ without lock violations. |
+| **New Logic** | Either 64-byte PMP checker expansion or dual boundary (start/end) check in MMU. | 8 serialized PMP checks per line, or 8 parallel checker instances (massive area). | 1 comparator bit checking matching NAPOT mask `k ≥ 12` and `X=1` without lock violations. |
 | **Frozen Interface Change** | 1 bit between MMU and L1I. | Complex bus or port expansion. | 1 bit between MMU and L1I (`itrans_pmp_uniform_x_o`). |
 | **PMP Correctness** | 100% exact. | 100% exact. | 100% exact (conservative subset: suppresses prefetch on TOR/sub-page PMP boundaries). |
 | **Timing Impact** | Potential combinational critical-path stretch in MMU. | Tight beat-issue timing in prefetch FSM. | Zero timing penalty (registered/latched alongside demand translation). |
@@ -77,11 +77,11 @@ The Reviewer correctly noted that `pmp_check_range()` was a phantom construct, `
 To ensure absolute correctness without phantom functions, L1I-NLP v1 adopts **Option C as the primary baseline qualification**, with a formal **Option A single-bit interface**:
 
 1. **The PMP Page-Uniformity Invariant (Option C):**
-   In standard RISC-V systems (including the frozen Fursoy Linux platform where DRAM is mapped via a 256 MiB NAPOT entry with $k = 28$), executable regions are mapped via NAPOT entries where region size $\ge 4\text{ KiB}$ ($k \ge 12$).
-   - If the demand access hits a NAPOT PMP entry with $k \ge 12$ (or no entry matches in M-mode without locks), the entire containing 4 KiB physical page has **strictly uniform, immutable execute permission**.
+   In standard RISC-V systems (including the frozen Fursoy Linux platform where DRAM is mapped via a 256 MiB NAPOT entry with `k = 28`), executable regions are mapped via NAPOT entries where region size `≥ 4 KiB` (`k ≥ 12`).
+   - If the demand access hits a NAPOT PMP entry with `k ≥ 12` (or no entry matches in M-mode without locks), the entire containing 4 KiB physical page has **strictly uniform, immutable execute permission**.
    - Under this condition, because the candidate line is guaranteed to reside on the same 4 KiB page (`same_page == 1'b1`), **the candidate line is mathematically guaranteed to have authoritative PMP execute permission**.
 2. **Conservative Denial on Non-Uniform PMP:**
-   If the demand access matched a TOR entry, NA4 entry, or small NAPOT entry ($k < 12$), PMP permissions could theoretically change at an arbitrary sub-page boundary within the 4 KiB page.
+   If the demand access matched a TOR entry, NA4 entry, or small NAPOT entry (`k < 12`), PMP permissions could theoretically change at an arbitrary sub-page boundary within the 4 KiB page.
    - Under this condition, `cand_pmp_ok` is asserted low (`1'b0`).
    - Speculative prefetch is **strictly suppressed**.
    - Zero bus transactions are emitted.
@@ -92,8 +92,8 @@ To ensure absolute correctness without phantom functions, L1I-NLP v1 adopts **Op
 
 ### 2.5 Cacheability and DRAM Aperture Enforcement
 The candidate physical address is verified against the architectural DRAM boundaries:
-$$\text{cand\_is\_dram} = (\text{cand\_line\_pa} \ge \text{DRAM\_BASE}) \land ((\text{cand\_line\_pa} + 63) \le \text{DRAM\_END})$$
-where $\text{DRAM\_BASE} = \text{56'h0000\_0000\_8000\_0000}$ and $\text{DRAM\_END} = \text{56'h0000\_0000\_8FFF\_FFFF}$.
+`cand_is_dram = (cand_line_pa ≥ DRAM_BASE) && ((cand_line_pa + 63) ≤ DRAM_END)`
+where `DRAM_BASE = 56'h0000_0000_8000_0000` and `DRAM_END = 56'h0000_0000_8FFF_FFFF`.
 Prefetching into MMIO space (CLINT, PLIC, UART) or unmapped aperture is strictly suppressed.
 
 ---
@@ -101,24 +101,23 @@ Prefetching into MMIO space (CLINT, PLIC, UART) or unmapped aperture is strictly
 ## 3. Demand Dominance & Bounded Bus Preemption (Resolving P1-3)
 
 ### 3.1 Policy B: Beat-Preemptible Refill Architecture
-Speculative prefetch executes as a series of 8 independent, single-beat handshakes ($b \in [0 \dots 7]$). Each beat follows the 2-cycle protocol (`PF_REQ` $\to$ `PF_RSP`):
+Speculative prefetch executes as a series of 8 independent, single-beat handshakes (`b ∈ [0 ... 7]`). Each beat follows the 2-cycle protocol (`PF_REQ` `→` `PF_RSP`):
 - `PF_REQ`: `imem_req_valid_o = 1`, waiting for `imem_req_ready_i = 1`.
 - `PF_RSP`: `imem_rsp_ready_o = 1`, waiting for `imem_rsp_valid_i = 1`.
 
 ### 3.2 Formal Protocol Latency Bounds (Resolving P1-3)
 The demand preemption penalty is formally defined in protocol terms:
 
-$$
-\text{Demand Preemption Penalty} =
-\begin{cases}
-0\text{ cycles}, & \text{if prefetch is in }\text{PF-IDLE}\text{ or }\text{PF-REQ}\text{ (before req handshake)} \\
-(1 + t_{\text{remain}})\text{ cycles}, & \text{if prefetch is in }\text{PF-RSP}\text{ (awaiting response for accepted beat)}
-\end{cases}
-$$
+```text
+Demand Preemption Penalty =
 
-where $t_{\text{rsp\_remain}}$ is the remaining latency until the memory subsystem delivers `imem_rsp_valid_i` for the in-flight beat.
-* **In Frozen Simulation Platform:** Memory delivers zero-wait single-cycle responses ($t_{\text{rsp}} = 1$). Therefore, worst-case preemption delay is **$\le 2$ cycles** (1 request cycle + 1 response cycle).
-* **In General Memory Systems:** If the memory controller exhibits a response latency $t_{\text{rsp}}$, demand may wait at most $(1 + t_{\text{rsp}})$ cycles to cleanly drain the active beat response.
+  0 cycles,  if prefetch is in PF-IDLE or PF-REQ (before req handshake)
+  (1 + t_remain) cycles,  if prefetch is in PF-RSP (awaiting response for accepted beat)
+```
+
+where `t_rsp_remain` is the remaining latency until the memory subsystem delivers `imem_rsp_valid_i` for the in-flight beat.
+* **In Frozen Simulation Platform:** Memory delivers zero-wait single-cycle responses (`t_rsp = 1`). Therefore, worst-case preemption delay is **`≤ 2` cycles** (1 request cycle + 1 response cycle).
+* **In General Memory Systems:** If the memory controller exhibits a response latency `t_rsp`, demand may wait at most `(1 + t_rsp)` cycles to cleanly drain the active beat response.
 * **Zero Orphaned Responses:** Once a beat request has handshaked (`imem_req_valid_o && imem_req_ready_i`), the controller must accept that single response beat to maintain memory bus alignment. Preemption aborts the burst at that exact beat boundary; it never cancels mid-beat or creates unconsumed responses.
 
 ---
@@ -128,12 +127,12 @@ where $t_{\text{rsp\_remain}}$ is the remaining latency until the memory subsyst
 ### 4.1 Storage Datapath
 Prefetched instructions are captured in a dedicated 1-line Prefetch Buffer (PFB) completely separate from the main L1I array:
 - `pfb_valid_q`: 1 bit. Indicates PFB contains valid line data (either complete or partial).
-- `pfb_line_pa_q[55:6]`: 50 bits. Physical line base address ($PA[55:6]$).
+- `pfb_line_pa_q[55:6]`: 50 bits. Physical line base address (`PA[55:6]`).
 - `pfb_data_q[7:0][63:0]`: 512 bits. Eight 64-bit instruction doublewords.
 - `pfb_beat_valid_q[7:0]`: 8 bits. Per-beat arrival tracking.
 - `pfb_beat_error_q[7:0]`: 8 bits. Per-beat error status.
 - `pfb_complete_q`: 1 bit. Asserted when all 8 beats are valid and error-free:
-  $$\text{pfb\_complete\_q} = (\text{pfb\_beat\_valid\_q} == 8\text{'hFF}) \land (\text{pfb\_beat\_error\_q} == 8\text{'h00})$$
+  `pfb_complete_q = (pfb_beat_valid_q == 8'hFF) && (pfb_beat_error_q == 8'h00)`
 - `pfb_priv_q[1:0]`: 2 bits. Privilege mode under which prefetch was authorized.
 
 ### 4.2 Formal PFB Lifecycle State Machine
@@ -176,7 +175,7 @@ Prefetched instructions are captured in a dedicated 1-line Prefetch Buffer (PFB)
 * **`PFB_IDLE`:** Buffer contains no valid data.
 * **`PFB_ACTIVE_FILLING`:** Prefetch controller is actively handshaking beats on the memory bus (`pf_state == PF_REQ || pf_state == PF_RSP`).
 * **`PFB_COMPLETE`:** All 8 beats have arrived cleanly. Ready for instantaneous 1-cycle hit and atomic promotion to main L1I.
-* **`PFB_DORMANT_PARTIAL`:** Prefetch was interrupted/preempted before Beat 7 completed. Prefetch FSM has returned to `PF_IDLE`. Buffer holds a subset of valid beats ($b < 7$). **No memory transaction is in flight.**
+* **`PFB_DORMANT_PARTIAL`:** Prefetch was interrupted/preempted before Beat 7 completed. Prefetch FSM has returned to `PF_IDLE`. Buffer holds a subset of valid beats (`b < 7`). **No memory transaction is in flight.**
 
 ---
 
@@ -197,10 +196,10 @@ wire pf_is_active = (pf_state == PF_REQ) || (pf_state == PF_RSP);
 * **Latency:** **1 cycle** (identical to a main L1I cache hit).
 * **Delivery:** Instruction is extracted combinationally from `pfb_data_q[demand_beat]` and staged into `held_*`. `fetched_valid_o = 1` asserts to Stage E.
 * **Promotion:** The line is promoted atomically into main L1I (see §9). PFB is cleared (`pfb_valid_q <= 0`).
-* **Trigger:** Generates next-line prefetch candidate $L+1$ upon consumption (see §8).
+* **Trigger:** Generates next-line prefetch candidate `L+1` upon consumption (see §8).
 
 #### Case 2: Demand Hits Active PFB; Demanded Beat Already Arrived (`pf_is_active && pfb_beat_valid_q[demand_beat] == 1 && !pfb_beat_error_q[demand_beat]`)
-* **Behavior:** Prefetch is actively progressing on the memory bus, and the demanded doubleword beat $b_{\text{crit}}$ is already safely registered in `pfb_data_q[demand_beat]`.
+* **Behavior:** Prefetch is actively progressing on the memory bus, and the demanded doubleword beat `b_crit` is already safely registered in `pfb_data_q[demand_beat]`.
 * **Latency:** **1 cycle** early restart directly from PFB!
 * **Delivery:** Extracted from `pfb_data_q[demand_beat]` into `held_*`. Stage E executes immediately.
 * **Refill Continuation:** Prefetch controller continues handshaking trailing beats into PFB. Once Beat 7 arrives cleanly, the line is promoted to L1I.
@@ -209,19 +208,19 @@ wire pf_is_active = (pf_state == PF_REQ) || (pf_state == PF_RSP);
 * **Condition:** Permitted **STRICTLY AND ONLY** when `pf_is_active == 1'b1`.
 * **Behavior:** The matching prefetch is actively in-flight and guaranteed to produce the demanded beat.
 * **Action:** Stage F enters streaming wait (`streaming_wait_beat_q <= 1`), holding `req_pc_q`.
-* **Arrival:** The instant beat $b_{\text{crit}}$ arrives from DRAM, it is staged to `held_insn_q` on Cycle $T+1$ and releases Stage F.
+* **Arrival:** The instant beat `b_crit` arrives from DRAM, it is staged to `held_insn_q` on Cycle `T+1` and releases Stage F.
 
 #### Case 4: Demand Matches Dormant Partial PFB; Demanded Beat Missing (`!pf_is_active && pfb_line_match && pfb_beat_valid_q[demand_beat] == 0`) — (Resolving P0-1 Deadlock)
-* **Root Cause of Deadlock:** PFB holds partial line $B$, but the prefetch controller is dormant (`pf_state == PF_IDLE`). If Stage F were to wait, it would wait indefinitely for a producer that does not exist.
+* **Root Cause of Deadlock:** PFB holds partial line `B`, but the prefetch controller is dormant (`pf_state == PF_IDLE`). If Stage F were to wait, it would wait indefinitely for a producer that does not exist.
 * **Authoritative Invariant:** **Streaming wait is STRICTLY PROHIBITED when `pf_is_active == 0`.**
 * **Deterministic Resolution:**
   1. Dormant partial PFB state is **immediately invalidated and abandoned** (`pfb_valid_q <= 1'b0`).
-  2. Stage F transitions directly to `REFILL_REQ` to launch a standard, authoritative L1I-ER demand refill for line $B$.
-  3. Memory bus requests line $B$ with critical-beat early restart.
+  2. Stage F transitions directly to `REFILL_REQ` to launch a standard, authoritative L1I-ER demand refill for line `B`.
+  3. Memory bus requests line `B` with critical-beat early restart.
   4. **Outcome:** Deadlock is 100% eliminated. The missing beat is fetched authoritatively.
 
 #### Case 5: Demand Matches Dormant Partial PFB; Demanded Beat Valid (`!pf_is_active && pfb_line_match && pfb_beat_valid_q[demand_beat] == 1`)
-* **Behavior:** Demanded beat $b_{\text{crit}}$ is present in dormant PFB.
+* **Behavior:** Demanded beat `b_crit` is present in dormant PFB.
 * **Action:**
   1. Instruction is staged to `held_*` and delivered to Stage E in 1 cycle.
   2. Because the line is incomplete, it **cannot be promoted to L1I directory**.
@@ -229,8 +228,8 @@ wire pf_is_active = (pf_state == PF_REQ) || (pf_state == PF_RSP);
   4. The moment sequential execution advances to an invalid beat (or branches away), Case 4 triggers: PFB is abandoned and an authoritative demand refill is initiated for the remainder/full line.
 
 #### Case 6: Demand Miss Targets Unrelated Line while Prefetch Active
-* **Behavior:** Demand misses in L1I and targets line $A$, but prefetch is actively handshaking line $B \ne A$.
-* **Action:** Prefetch is preempted at the current beat boundary per §3.2. Bus transitions to demand refill for line $A$ in $\le (1 + t_{\text{rsp\_remain}})$ cycles.
+* **Behavior:** Demand misses in L1I and targets line `A`, but prefetch is actively handshaking line `B ≠ A`.
+* **Action:** Prefetch is preempted at the current beat boundary per §3.2. Bus transitions to demand refill for line `A` in `≤ (1 + t_rsp_remain)` cycles.
 
 #### Case 7: Demand Hits Main L1I while Prefetch Active
 * **Behavior:** Demand hits in the main 4-way L1I array while prefetch fills PFB from DRAM.
@@ -254,7 +253,7 @@ Speculative prefetch is non-faulting. A bus error or PMP boundary encountered du
    - Because `pfb_complete_q == 0`, PFB hit fails.
    - PFB is discarded (`pfb_valid_q <= 0`).
    - An authoritative demand refill is issued.
-   - If memory returns an error on the authoritative demand refill, L1I-ER raises the precise `instruction access fault` ($mcause = 1$) with exact faulting PC in `mtval`.
+   - If memory returns an error on the authoritative demand refill, L1I-ER raises the precise `instruction access fault` (`mcause = 1`) with exact faulting PC in `mtval`.
 
 ---
 
@@ -285,23 +284,23 @@ If an abort occurs while a beat request is pending on the external bus:
 ### 8.1 Dual-Trigger Architecture (Resolving Broken Prefetch Chain)
 To eliminate the alternating miss/hit oscillation exposed by the Reviewer and sustain sequential streaming across arbitrarily long code blocks, candidate generation employs a **Dual-Trigger Architecture**:
 
-$$\text{pf\_trigger\_pulse} = \text{trigger\_from\_refill} \lor \text{trigger\_from\_promotion}$$
+`pf_trigger_pulse = trigger_from_refill || trigger_from_promotion`
 
 1. **Trigger 1 — Demand Miss Refill Completion:**
    Fires when an authoritative demand refill completes Beat 7:
-   $$\text{trigger\_from\_refill} = \text{l1i\_refill\_event\_o}$$
-   Candidate generated: $\text{cand\_line\_pa} = \text{refill\_line\_base} + 64$.
+   `trigger_from_refill = l1i_refill_event_o`
+   Candidate generated: `cand_line_pa = refill_line_base + 64`.
 2. **Trigger 2 — Useful PFB Promotion / Consumption:**
    Fires when a completed PFB line is consumed and promoted into L1I upon instruction transfer:
-   $$\text{trigger\_from\_promotion} = \text{pfb\_promote\_event} \land \text{transfer\_fire\_f}$$
-   Candidate generated: $\text{cand\_line\_pa} = \text{pfb\_line\_pa\_q} + 64$.
+   `trigger_from_promotion = pfb_promote_event && transfer_fire_f`
+   Candidate generated: `cand_line_pa = pfb_line_pa_q + 64`.
 
 ### 8.2 Sustained Streaming Invariant
-- Line $L$ misses $\implies$ refills $\implies$ triggers prefetch candidate $L+1$.
-- Line $L+1$ arrives into PFB.
-- Execution sequentially advances to Line $L+1$ $\implies$ hits PFB $\implies$ promotes to L1I and **triggers prefetch candidate $L+2$**.
-- Line $L+2$ arrives into PFB.
-- Execution sequentially advances to Line $L+2$ $\implies$ hits PFB $\implies$ promotes to L1I and **triggers prefetch candidate $L+3$**.
+- Line `L` misses `==>` refills `==>` triggers prefetch candidate `L+1`.
+- Line `L+1` arrives into PFB.
+- Execution sequentially advances to Line `L+1` `==>` hits PFB `==>` promotes to L1I and **triggers prefetch candidate `L+2`**.
+- Line `L+2` arrives into PFB.
+- Execution sequentially advances to Line `L+2` `==>` hits PFB `==>` promotes to L1I and **triggers prefetch candidate `L+3`**.
 - **Outcome:** The prefetch chain remains continuous throughout linear execution streams!
 
 ### 8.3 Loop Flapping and Duplicate Suppression
@@ -322,10 +321,10 @@ Fursoy Slice-0 employs a single-port L1I SRAM/tag directory. Simultaneous tag re
 ### 9.2 Tag Port Arbitration & Scheduling
 Tag array access is governed by strict priority rules:
 
-$$\mathbf{Priority\ 1\ (Highest):}\ \text{Demand Fetch Lookups (FETCH\_CHECK)}$$
-$$\mathbf{Priority\ 2:}\ \text{Demand Refill Directory Writes (Beat 7 Install)}$$
-$$\mathbf{Priority\ 3:}\ \text{PFB Promotion Directory Writes}$$
-$$\mathbf{Priority\ 4\ (Lowest):}\ \text{Prefetch Candidate Already-Resident Filter}$$
+`Priority 1 (Highest): Demand Fetch Lookups (FETCH_CHECK)`
+`Priority 2: Demand Refill Directory Writes (Beat 7 Install)`
+`Priority 3: PFB Promotion Directory Writes`
+`Priority 4 (Lowest): Prefetch Candidate Already-Resident Filter`
 
 1. **Demand Dominance:** A demand fetch in `FETCH_CHECK` always owns the tag comparator port.
 2. **Candidate Residency Filter Scheduling:**
@@ -354,7 +353,7 @@ wire mem_bus_busy_w = dmem_req_valid_o || ptw_grant || l1d_dmem_req_valid || l1d
 
 ### 10.2 Conflict-Free Issue Condition
 Inside `fursoy_s0_l1i.sv`, prefetch requests assert `imem_req_valid_o` if and only if:
-$$\text{pf\_issue\_valid} = \text{pf\_cand\_valid} \land !\text{l1i\_miss\_active} \land !\text{redirect\_pending} \land !\text{mem\_bus\_busy\_i} \land \text{imem\_req\_ready\_i}$$
+`pf_issue_valid = pf_cand_valid && !l1i_miss_active && !redirect_pending && !mem_bus_busy_i && imem_req_ready_i`
 
 This guarantees that:
 - L1D load misses, dirty writebacks, and PTW walks immediately block speculative prefetch issuance.
@@ -373,13 +372,13 @@ With the unbroken dual-trigger mechanism (§8), sequential streams sustain conti
   - Linear sequential candidate transitions: 180,925.
   - Useful prefetches (stream hits): **~138,500 lines** (increased from 121,881 due to sustained chaining).
   - Average refill latency hidden per useful prefetch: 17.2 cycles.
-  - Gross cycle savings potential: $138,500 \times 17.2 \approx \mathbf{2,382,200\text{ cycles}}$.
+  - Gross cycle savings potential: `138,500 × 17.2 ≈ 2,382,200 cycles`.
 * **Overhead & De-rating Deductions:**
-  1. **1-Cycle Promotion Bubbles (P1-1):** $\approx 138,500\text{ cycles}$.
-  2. **Demand Preemption Latency ($1 + t_{\text{rsp\_remain}}$, P1-3):** ~5% of prefetch bursts preempted by demand miss: $180,925 \times 0.05 \times 1.5 \approx 13,569\text{ cycles}$.
-  3. **Speculative Redirect Discards:** Useful prefetches invalidated by intervening branch mispredicts (~7%): $138,500 \times 0.07 \times 17.2 \approx 166,754\text{ cycles}$.
-  4. **Intermittent Memory Bus Contention with L1D/PTW:** $\approx 18,000\text{ cycles}$.
-  5. **Option C Sub-Page PMP Suppressions:** $\approx 0\text{ cycles}$ (Linux DRAM aperture is uniform $256\text{ MiB}$).
+  1. **1-Cycle Promotion Bubbles (P1-1):** `≈ 138,500 cycles`.
+  2. **Demand Preemption Latency (`1 + t_rsp_remain`, P1-3):** ~5% of prefetch bursts preempted by demand miss: `180,925 × 0.05 × 1.5 ≈ 13,569 cycles`.
+  3. **Speculative Redirect Discards:** Useful prefetches invalidated by intervening branch mispredicts (~7%): `138,500 × 0.07 × 17.2 ≈ 166,754 cycles`.
+  4. **Intermittent Memory Bus Contention with L1D/PTW:** `≈ 18,000 cycles`.
+  5. **Option C Sub-Page PMP Suppressions:** `≈ 0 cycles` (Linux DRAM aperture is uniform 256 MiB).
 
 ### 11.2 Revised Net Performance Projection
 
@@ -406,19 +405,19 @@ The directed test suite (`verification/l1i_nlp_s0_tb.cpp`) is expanded to **30 a
 
 | Test ID | Scenario Description | Pass Criteria |
 | :--- | :--- | :--- |
-| `NLP-ADV-01` | Sequential useful prefetch | Demand miss on line $L$ refilled; line $L+1$ prefetched to PFB; subsequent sequential fetch hits PFB in 1 cycle; promoted to L1I. |
-| `NLP-ADV-02` | Useless prefetch | Demand miss on line $L$; line $L+1$ prefetched; execution branches away; verify PFB eventually replaced/discarded without corruption. |
-| `NLP-ADV-03` | Last line of 4 KiB page | Demand miss on line offset `0xFC0` (Line 63 of page); verify candidate line $L+1$ crosses page boundary and is **suppressed**. |
+| `NLP-ADV-01` | Sequential useful prefetch | Demand miss on line `L` refilled; line `L+1` prefetched to PFB; subsequent sequential fetch hits PFB in 1 cycle; promoted to L1I. |
+| `NLP-ADV-02` | Useless prefetch | Demand miss on line `L`; line `L+1` prefetched; execution branches away; verify PFB eventually replaced/discarded without corruption. |
+| `NLP-ADV-03` | Last line of 4 KiB page | Demand miss on line offset `0xFC0` (Line 63 of page); verify candidate line `L+1` crosses page boundary and is **suppressed**. |
 | `NLP-ADV-04` | Cross-page candidate suppression | Verify `imem_req_valid_o` remains 0; zero external request emitted for page-crossing candidate. |
-| `NLP-ADV-05` | PMP boundary inside 4 KiB page | TOR PMP rule ends at `0x8000_0840`; line $L$ is permitted; line $L+1$ crosses into PMP-denied region; verify prefetch suppressed. |
-| `NLP-ADV-06` | Candidate already resident in L1I | Line $L+1$ already cached in Way 2; verify prefetch suppressed; `pf_already_cached_event` pulses once. |
-| `NLP-ADV-07` | Duplicate candidate suppression | Two successive demand refills generate candidate $L+1$; verify second candidate dropped by `last_pf_line_q`. |
-| `NLP-ADV-08` | Tight-loop trigger flapping | 3-instruction loop in line $L$ executes 100 times; verify prefetch triggers strictly on initial miss, zero triggers on subsequent 99 hits. |
+| `NLP-ADV-05` | PMP boundary inside 4 KiB page | TOR PMP rule ends at `0x8000_0840`; line `L` is permitted; line `L+1` crosses into PMP-denied region; verify prefetch suppressed. |
+| `NLP-ADV-06` | Candidate already resident in L1I | Line `L+1` already cached in Way 2; verify prefetch suppressed; `pf_already_cached_event` pulses once. |
+| `NLP-ADV-07` | Duplicate candidate suppression | Two successive demand refills generate candidate `L+1`; verify second candidate dropped by `last_pf_line_q`. |
+| `NLP-ADV-08` | Tight-loop trigger flapping | 3-instruction loop in line `L` executes 100 times; verify prefetch triggers strictly on initial miss, zero triggers on subsequent 99 hits. |
 | `NLP-ADV-09` | Redirect before prefetch issue | Candidate queued; branch mispredict asserts `redirect_i`; verify candidate purged from queue; zero bus request issued. |
 | `NLP-ADV-10` | Redirect during active prefetch burst | Prefetch on Beat 3; `redirect_i` asserts; verify prefetch aborts at beat boundary; PFB cleared; redirect target checked next. |
-| `NLP-ADV-11` | Demand hits active prefetch (beat arrived) | Demand targets line $L+1$ while prefetch is at Beat 4; demanded beat is Beat 2; verify 1-cycle early restart directly from PFB. |
-| `NLP-ADV-12` | Demand hits active prefetch (beat pending) | Demand targets line $L+1$ while prefetch is at Beat 1; demanded beat is Beat 5; verify streaming wait; early restart on Beat 5 arrival. |
-| `NLP-ADV-13` | Demand miss on unrelated line during prefetch | Prefetching line $B$; demand misses on line $A$; verify prefetch preempted in $\le 2$ cycles; bus granted to line $A$ demand refill. |
+| `NLP-ADV-11` | Demand hits active prefetch (beat arrived) | Demand targets line `L+1` while prefetch is at Beat 4; demanded beat is Beat 2; verify 1-cycle early restart directly from PFB. |
+| `NLP-ADV-12` | Demand hits active prefetch (beat pending) | Demand targets line `L+1` while prefetch is at Beat 1; demanded beat is Beat 5; verify streaming wait; early restart on Beat 5 arrival. |
+| `NLP-ADV-13` | Demand miss on unrelated line during prefetch | Prefetching line `B`; demand misses on line `A`; verify prefetch preempted in `≤ 2` cycles; bus granted to line `A` demand refill. |
 | `NLP-ADV-14` | Demand arrives immediately after prefetch issue | Demand asserts same cycle `imem_req_valid_o` asserts; verify prefetch finishes beat 0 response and yields bus immediately. |
 | `NLP-ADV-15` | Memory bus error during speculative prefetch | Beat 3 asserts `imem_rsp_error_i`; verify prefetch terminates; no exception raised; PFB marked invalid; not promoted. |
 | `NLP-ADV-16` | Demand later targets errored prefetched line | Demand accesses line that errored during prefetch; verify PFB ignored; fresh demand refill issued; precise exception delivered on demand error. |
@@ -430,12 +429,12 @@ The directed test suite (`verification/l1i_nlp_s0_tb.cpp`) is expanded to **30 a
 | `NLP-ADV-22` | L1D clean load miss collision | L1D load miss asserts; verify prefetch yields bus; zero delay added to L1D load refill. |
 | `NLP-ADV-23` | SRB dirty writeback collision | SRB eviction asserts on data bus; verify prefetch suppresses issue until bus idle. |
 | `NLP-ADV-24` | Stage-E backpressure on PFB hit | Stage E stalled (`fetched_ready_i = 0`) when PFB hit occurs; verify instruction held stable in `held_*`; single promotion on release. |
-| `NLP-ADV-25` | Promotion duplicate-tag prevention | L1I Way 1 valid with line $L+1$ when PFB completes line $L+1$; verify promotion suppresses array write; no duplicate tag created. |
+| `NLP-ADV-25` | Promotion duplicate-tag prevention | L1I Way 1 valid with line `L+1` when PFB completes line `L+1`; verify promotion suppresses array write; no duplicate tag created. |
 | `NLP-ADV-26` | Exactly-once telemetry under stall | Pipeline stalled for 40 cycles during prefetch hit; verify `l1i_nlp_hit_event` pulses for exactly 1 cycle. |
 | `NLP-ADV-27` | Sustained sequential stream chaining (P0-2) | Sequential execution across 16 consecutive lines; verify Dual-Trigger maintains continuous PFB hit chain without miss/hit oscillation. |
 | `NLP-ADV-28` | Heavy branch / mispredict workload | Rapid taken/untaken branches; verify prefetcher correctly suppresses invalid paths and maintains zero memory bus lockups. |
-| `NLP-ADV-29` | **Dormant partial PFB + missing beat demand (P0-1)** | Line $B$ prefetch preempted at Beat 2; FSM becomes dormant; demand targets Beat 5; verify streaming wait inhibited, PFB abandoned, authoritative refill issued, zero deadlock. |
-| `NLP-ADV-30` | **Non-zero wait-state memory preemption (P1-3)** | Memory model configured with $t_{\text{rsp}} = 5$; prefetch beat accepted; demand miss arrives; verify prefetch waits exactly 5 cycles to drain beat response, then yields bus cleanly. |
+| `NLP-ADV-29` | **Dormant partial PFB + missing beat demand (P0-1)** | Line `B` prefetch preempted at Beat 2; FSM becomes dormant; demand targets Beat 5; verify streaming wait inhibited, PFB abandoned, authoritative refill issued, zero deadlock. |
+| `NLP-ADV-30` | **Non-zero wait-state memory preemption (P1-3)** | Memory model configured with `t_rsp = 5`; prefetch beat accepted; demand miss arrives; verify prefetch waits exactly 5 cycles to drain beat response, then yields bus cleanly. |
 
 ---
 
@@ -465,7 +464,7 @@ output logic [4:0]  l1i_nlp_hidden_cycles_o         // Cycles saved on PFB hit (
 ## 15. Candidate Architecture Trade-Off Analysis & Selection Rationale
 
 1. **Beat-Preemptible Demand-Dominant Policy B (Selected):**
-   Bounds worst-case demand preemption delay to $(1 + t_{\text{rsp\_remain}})$, guarantees zero orphaned responses, and strictly adheres to the 2-cycle beat transaction protocol.
+   Bounds worst-case demand preemption delay to `(1 + t_rsp_remain)`, guarantees zero orphaned responses, and strictly adheres to the 2-cycle beat transaction protocol.
 2. **Dual-Trigger Prefetch Chaining (Selected):**
    Unlocks continuous sequential streaming by triggering candidates on both demand refill completion and useful PFB consumption, eliminating the broken miss/hit oscillation pattern.
 3. **Decoupled PFB with Deterministic Abandonment (Selected):**
@@ -484,7 +483,7 @@ output logic [4:0]  l1i_nlp_hidden_cycles_o         // Cycles saved on PFB hit (
 3. **Verification Execution:**
    - Execute all 30 tests in `verification/l1i_nlp_s0_tb.cpp`.
    - Run full 25.6M-cycle Linux benchmark regression.
-   - Confirm zero residual cycles and validate the projected $\approx 2.05\text{M}$ net cycle reduction.
+   - Confirm zero residual cycles and validate the projected `≈ 2.05M` net cycle reduction.
 
 ---
 
@@ -497,6 +496,6 @@ output logic [4:0]  l1i_nlp_hidden_cycles_o         // Cycles saved on PFB hit (
 | **P0-3** | PMP range authorization not implementable | Evaluated Options A, B, and C (§2.3). Removed phantom `pmp_check_range()`. Adopted Option C baseline with single-bit `itrans_pmp_uniform_x_o` signal from MMU (§2.4). Guarantees 100% PMP execute authorization for all prefetched bytes. |
 | **P1-1** | Single-port tag array contention | Demand lookups strictly dominate tag port (§9.2). Candidate residency filter scheduled during idle/stall cycles. PFB promotion uses a deterministic 1-cycle bubble if colliding with demand, accounted for in performance model. |
 | **P1-2** | `dmem_req_valid` unavailable in L1I | Corrected bus admission location (§10.1). Core exports single-bit `mem_bus_busy_w` (`dmem_req_valid_o \|\| ptw_grant \|\| l1d_dmem_req_valid`) into L1I as `mem_bus_busy_i`. |
-| **P1-3** | Simulator-specific preemption bound | Restated preemption delay in protocol terms (§3.2): $0$ cycles in request phase, $(1 + t_{\text{rsp\_remain}})$ cycles if awaiting response for an accepted beat. |
+| **P1-3** | Simulator-specific preemption bound | Restated preemption delay in protocol terms (§3.2): 0 cycles in request phase, `(1 + t_rsp_remain)` cycles if awaiting response for an accepted beat. |
 | **P2-1** | Recompute performance model | Rebuilt model with unbroken trigger chaining (§11): conservative 1.70M cycles (IPC 0.623), expected 2.05M cycles (IPC 0.632), optimistic 2.25M cycles (IPC 0.638). |
 | **P2-2** | Missing adversarial tests | Added `NLP-ADV-29` (dormant partial PFB missing beat) and `NLP-ADV-30` (non-zero wait-state preemption) to verification matrix (§13). |

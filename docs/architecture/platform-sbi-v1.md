@@ -8,6 +8,8 @@ The independently accepted and frozen privilege baseline (`s-mode-bare-v1.md`), 
 (`sv39-mmu-v1.md`), PMP architecture (`pmp-v1.md`), PLIC architecture (`plic-v1.md`), and RV64A atomic
 extension (`rv64a-v1.md`) serve as the normative compatibility baseline.
 
+> **Slice-1 Phase 3 Peripheral Note:** In `fursoy_s1_soc` (`docs/architecture/slice1-core-v1.md`), `fursoy_s0_clint.sv` issues unified `rsp_valid_q`/`rsp_error_q` responses for both loads and stores, and `fursoy_s0_uart.sv` accepts aligned 1-byte (`size=0`), 2-byte (`size=1`), and 4-byte (`size=2`) MMIO accesses at the 4-byte-strided `0x00..0x1C` registers (while rejecting 64-bit `size=3` and unaligned accesses).
+
 ---
 
 ## 1. Scope and Architectural Authority
@@ -387,7 +389,7 @@ The register decoded at offsets `0x00` and `0x04` depends on the **Divisor Latch
    - Writes to `FCR` (offset `0x08`) are accepted and ignored; they do not alter `IIR[7:6]`.
    - `IIR` reads return `0x01` (bit 0 = 1: no interrupt pending; bits 7:6 = 0: no FIFO).
 3. **Transmitter (THR)**:
-   - Writing byte $B$ to offset `0x00` when `LCR[7] == 0` immediately emits $B$ to the console sink (Verilator stdout / simulator log / hardware TX FIFO).
+   - Writing byte `B` to offset `0x00` when `LCR[7] == 0` immediately emits `B` to the console sink (Verilator stdout / simulator log / hardware TX FIFO).
    - In simulation, TX is instantaneous with infinite bandwidth; `LSR.THRE` (bit 5) and `LSR.TEMT` (bit 6) remain hardwired to `1`.
 4. **Receiver (RBR)**:
    - In v1 minimal boot, RX is non-interactive. Reading `RBR` returns `0x00`; `LSR.DR` (bit 0) reads `0`.
@@ -637,7 +639,7 @@ When S-mode calls `sbi_system_reset(reset_type, reset_reason)`:
 | `PLAT-05` | PMP | S-Mode PLIC Access | S-mode reads/writes PLIC Context 1 threshold | Readback matches written priority threshold; no fault |
 | `PLAT-06` | PMP | S-Mode UART Access | S-mode reads/writes UART registers at `0x1000_0000` | MMIO read/write succeeds; character emitted |
 | `PLAT-07` | PMP | S-Mode CLINT Denial | S-mode attempts direct load/store to `0x0200_4000` | Traps with cause 5 / 7; CLINT memory unmodified |
-| `PLAT-08` | Handoff | M $\rightarrow$ S Transition | Firmware executes `mret` handoff | Core enters S-mode (`priv_mode=01`) at `0x8020_0000` |
+| `PLAT-08` | Handoff | M → S Transition | Firmware executes `mret` handoff | Core enters S-mode (`priv_mode=01`) at `0x8020_0000` |
 | `PLAT-09` | Handoff | Kernel Arguments (`a0`, `a1`) | Inspect `a0` and `a1` at `0x8020_0000` | `a0 == 0` (Hart 0), `a1 == 0x8200_0000` (DTB pointer) |
 | `PLAT-10` | Handoff | Paging State at Handoff | Inspect `satp` at S-mode entry | `satp == 0` (Bare mode); translation disabled |
 | `PLAT-11` | Trap | Supervisor ECALL Delegation | S-mode executes `ecall` | Traps to M-mode (`mcause=9`, not delegated to `scause`) |
@@ -654,7 +656,7 @@ When S-mode calls `sbi_system_reset(reset_type, reset_reason)`:
 | `PLAT-22` | UART | Invalid Misaligned Access | 16-bit write to odd address `0x1000_0001` | Core / interconnect raises access fault (cause 7) |
 | `PLAT-23` | Reset | SBI System Reset Shutdown | S-mode calls SRST FID 0 (`type=0`) | Platform disables interrupts and enters `halt_loop` |
 | `PLAT-24` | Smoke | Linux Boot Smoke Checkpoint | Full simulation boot through Checkpoint 2 | Kernel banner printed to console; Sv39 activated |
-| `PLAT-25` | Timer | Past Timer Deadline | `sbi_set_timer(past_time)` where `past <= mtime` | Immediate `MTIP` $\rightarrow$ `STIP` $\rightarrow$ S-mode trap (cause 5) |
+| `PLAT-25` | Timer | Past Timer Deadline | `sbi_set_timer(past_time)` where `past <= mtime` | Immediate `MTIP` → `STIP` → S-mode trap (cause 5) |
 | `PLAT-26` | Timer | Repeated Timer Lifecycle | 5 sequential timer interrupt / reprogram cycles | Each tick correctly delivered, cleared, and re-armed |
 | `PLAT-27` | Reset | SRST Unsupported Reboot Types | S-mode calls SRST FID 0 (`type=1` or `2`) | Returns `a0 = SBI_ERR_NOT_SUPPORTED` (`-2`) |
 | `PLAT-28` | Reset | SRST Invalid Reset Type | S-mode calls SRST FID 0 (`type=99`) | Returns `a0 = SBI_ERR_INVALID_PARAM` (`-3`) |
@@ -666,17 +668,17 @@ When S-mode calls `sbi_system_reset(reset_type, reset_reason)`:
 ### 15.2 Formal Architectural Invariants
 
 * **Invariant 1 (Firmware Memory Containment)**:
-  $$\forall t, (\text{priv\_mode} < \text{M-mode}) \land (8000\_0000_{16} \le \text{addr} < 8020\_0000_{16}) \implies \text{access\_fault} = 1$$
+  `∀ t, (priv_mode < M-mode) && (8000_0000_16 ≤ addr < 8020_0000_16) ==> access_fault = 1`
 * **Invariant 2 (CLINT S-Mode Denial)**:
-  $$\forall t, (\text{priv\_mode} < \text{M-mode}) \land (0200\_0000_{16} \le \text{addr} < 0201\_0000_{16}) \implies \text{access\_fault} = 1$$
+  `∀ t, (priv_mode < M-mode) && (0200_0000_16 ≤ addr < 0201_0000_16) ==> access_fault = 1`
 * **Invariant 3 (S-Mode ECALL M-Trap Invariant)**:
-  $$\text{ecall} \land (\text{priv\_mode} == \text{S-mode}) \implies (\text{next\_priv} == \text{M-mode}) \land (\text{mcause} == 9) \land (\text{mepc} == \text{PC})$$
+  `ecall && (priv_mode == S-mode) ==> (next_priv == M-mode) && (mcause == 9) && (mepc == PC)`
 * **Invariant 4 (SBI Atomic GPR Preservation)**:
-  $$\forall r \in \{x1..x9, x12..x31\}, \quad r_{\text{post\_sbi}} = r_{\text{pre\_sbi}}$$
+  `∀ r ∈ {x1..x9, x12..x31}, r_post_sbi = r_pre_sbi`
 * **Invariant 5 (Deterministic PTW MMIO Rejection)**:
-  $$\text{req\_ptw} \land (\text{addr} \in \{\text{CLINT}, \text{PLIC}, \text{UART}\}) \implies \text{reject\_ptw\_mmio} = 1$$
+  `req_ptw && (addr ∈ {CLINT, PLIC, UART}) ==> reject_ptw_mmio = 1`
 * **Invariant 6 (UART DLAB Transmission Isolation)**:
-  $$\text{req\_store} \land (\text{addr} == 1000\_0000_{16}) \land (\text{LCR}[7] == 1) \implies \text{tx\_emit} = 0$$
+  `req_store && (addr == 1000_0000_16) && (LCR[7] == 1) ==> tx_emit = 0`
 
 ---
 

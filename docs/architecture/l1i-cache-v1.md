@@ -78,10 +78,10 @@ module fursoy_s0_l1i #(
 ## 2. Cache Organization and Geometry
 
 ### 2.1 Capacity, Associativity, and Line Size
-- **Total Data Capacity**: **16 KiB** ($16,384$ bytes).
-- **Line Size**: **64 bytes** ($512$ bits, or $16$ standard 32-bit RISC-V instructions).
+- **Total Data Capacity**: **16 KiB** (16,384 bytes).
+- **Line Size**: **64 bytes** (512 bits, or 16 standard 32-bit RISC-V instructions).
 - **Associativity**: **4-way set-associative**.
-- **Number of Sets**: **64 sets** ($64 \text{ sets} \times 4 \text{ ways} \times 64 \text{ bytes/line} = 16,384 \text{ bytes}$).
+- **Number of Sets**: **64 sets** (`64 sets × 4 ways × 64 bytes/line = 16,384 bytes`).
 - **Replacement Policy**: **Tree-based Pseudo-LRU (Tree-PLRU)** (3 bits of replacement state per set).
 - **Valid State**: 1 valid bit per line (256 valid bits total).
 
@@ -93,7 +93,7 @@ The Fursoy architecture employs 56-bit physical addresses (`PA[55:0]`) derived f
 | **Byte Offset** | `PA[5:0]` | 6 bits | Selects byte within 64-byte line |
 | ↳ *Instruction Word Select* | `PA[5:2]` | 4 bits | Selects one of sixteen 32-bit instruction words |
 | ↳ *Subword Byte Offset* | `PA[1:0]` | 2 bits | Must be `2'b00` for 32-bit aligned instructions |
-| **Set Index** | `PA[11:6]` | 6 bits | Selects one of 64 sets ($0 \dots 63$) |
+| **Set Index** | `PA[11:6]` | 6 bits | Selects one of 64 sets (`0 ... 63`) |
 | **Physical Tag** | `PA[55:12]` | 44 bits | Compared against way tags for hit determination |
 
 ```
@@ -107,11 +107,11 @@ The Fursoy architecture employs 56-bit physical addresses (`PA[55:0]`) derived f
 ```
 
 ### 2.3 Physical and Virtual Index Equivalence (Zero-Aliasing VIPT)
-Under the standard RISC-V Sv39 specification, pages are aligned to 4 KiB boundaries ($2^{12}$ bytes). Therefore:
-$$\text{VA}[11:0] \equiv \text{PA}[11:0]$$
+Under the standard RISC-V Sv39 specification, pages are aligned to 4 KiB boundaries (`2^12` bytes). Therefore:
+`VA[11:0] ≡ PA[11:0]`
 
 Because the L1I set index (`bits [11:6]`) and byte offset (`bits [5:0]`) sum to exactly 12 bits, **the virtual index is mathematically identical to the physical index**:
-$$\text{VA}[11:6] \equiv \text{PA}[11:6]$$
+`VA[11:6] ≡ PA[11:6]`
 
 #### Architectural Invariants:
 1. **Zero Synonym / Homonym Hazards**: Different virtual addresses mapping to the same physical address index the exact same cache set. No virtual aliasing or page-coloring restrictions can exist.
@@ -121,12 +121,12 @@ $$\text{VA}[11:6] \equiv \text{PA}[11:6]$$
 Each way entry in each set comprises:
 1. **Valid Bit**: 1 bit (`valid_q`).
 2. **Physical Tag**: 44 bits (`tag_q[43:0]`).
-3. **Data Line**: 512 bits (`data_q[511:0]`, arranged as $8 \times 64$-bit doublewords).
+3. **Data Line**: 512 bits (`data_q[511:0]`, arranged as `8 × 64`-bit doublewords).
 
 Total state storage:
-- **Data Array**: $64 \text{ sets} \times 4 \text{ ways} \times 512 \text{ bits} = 131,072 \text{ bits} = 16 \text{ KiB}$.
-- **Tag Array**: $64 \text{ sets} \times 4 \text{ ways} \times (44 \text{ tag} + 1 \text{ valid}) = 11,520 \text{ bits} = 1.406 \text{ KiB}$.
-- **PLRU State**: $64 \text{ sets} \times 3 \text{ bits} = 192 \text{ bits}$.
+- **Data Array**: `64 sets × 4 ways × 512 bits = 131,072 bits = 16 KiB`.
+- **Tag Array**: `64 sets × 4 ways × (44 tag + 1 valid) = 11,520 bits = 1.406 KiB`.
+- **PLRU State**: `64 sets × 3 bits = 192 bits`.
 
 ### 2.5 Replacement Policy (Tree-PLRU)
 Each of the 64 sets maintains a 3-bit binary decision tree (`b0, b1, b2`):
@@ -137,17 +137,16 @@ Each of the 64 sets maintains a 3-bit binary decision tree (`b0, b1, b2`):
 #### Victim Selection:
 When a replacement is required on a line refill:
 
-$$
-\text{Victim Way} = \begin{cases}
-\text{Way 0}, & \text{if } b_0 == 0 \land b_1 == 0 \\
-\text{Way 1}, & \text{if } b_0 == 0 \land b_1 == 1 \\
-\text{Way 2}, & \text{if } b_0 == 1 \land b_2 == 0 \\
-\text{Way 3}, & \text{if } b_0 == 1 \land b_2 == 1
-\end{cases}
-$$
+```text
+Victim Way =
+  Way 0,  if b_0 == 0 && b_1 == 0
+  Way 1,  if b_0 == 0 && b_1 == 1
+  Way 2,  if b_0 == 1 && b_2 == 0
+  Way 3,  if b_0 == 1 && b_2 == 1
+```
 
 #### Tree Update on Access:
-Whenever Way $W$ is accessed (on a hit or upon refill completion), the tree bits are updated to point **away** from the accessed way:
+Whenever Way `W` is accessed (on a hit or upon refill completion), the tree bits are updated to point **away** from the accessed way:
 - Access Way 0: `b0 <= 1`, `b1 <= 1`
 - Access Way 1: `b0 <= 1`, `b1 <= 0`
 - Access Way 2: `b0 <= 0`, `b2 <= 1`
@@ -203,9 +202,9 @@ To strictly preserve all frozen Sv39 TLB, Page Table Walker, and Physical Memory
 ```
 
 ### 3.1 Strict Security and Fault Invariants
-1. **No Cache Access Prior to Canonical Verification**: If `VA[63:39] != {25{VA[38]}}`, the core combinationally triggers an `instruction page fault` ($mcause=12$). Neither ITLB translation, L1I tag comparison, nor refill may occur.
+1. **No Cache Access Prior to Canonical Verification**: If `VA[63:39] != {25{VA[38]}}`, the core combinationally triggers an `instruction page fault` (`mcause=12`). Neither ITLB translation, L1I tag comparison, nor refill may occur.
 2. **No Cache Access on Permission Faults**: If translation fails or page permissions disallow execution (`PTE.X == 0`, privilege mismatch, or un-accessed `PTE.A == 0`), an `instruction page fault` is generated. L1I lookup is aborted immediately.
-3. **Authoritative PMP Barrier on Every Access**: PMP execution permission is evaluated on the exact physical address `PA[55:0]` on **every single instruction fetch and cache hit**. If PMP execution permission is denied (`trans_pmp_allow_i == 0`), an `instruction access fault` ($mcause=1$) is triggered immediately. **A hit in L1I shall never bypass PMP.**
+3. **Authoritative PMP Barrier on Every Access**: PMP execution permission is evaluated on the exact physical address `PA[55:0]` on **every single instruction fetch and cache hit**. If PMP execution permission is denied (`trans_pmp_allow_i == 0`), an `instruction access fault` (`mcause=1`) is triggered immediately. **A hit in L1I shall never bypass PMP.**
 4. **Original Virtual Address in `xTVAL`**: All instruction fetch synchronous exceptions write the original virtual address `PC_q` to `mtval` or `stval`, preserving Section 5.3 of the RISC-V Privileged ISA.
 
 ### 3.2 ITLB Miss Coordination and Refill Inhibition
@@ -216,7 +215,7 @@ To strictly preserve all frozen Sv39 TLB, Page Table Walker, and Physical Memory
 3. **Strict Prohibition of Speculative Refills**:
    - Under no circumstances may an external DRAM refill request be launched while translation is pending or if translation/permission checks fail.
    - A physical memory refill request (`imem_req_valid_o`) is legally permitted **only after**:
-     $$\text{trans\_valid\_i} == 1 \land \text{trans\_page\_fault\_i} == 0 \land \text{trans\_pmp\_allow\_i} == 1 \land \text{l1i\_tag\_miss} == 1$$
+     `trans_valid_i == 1 && trans_page_fault_i == 0 && trans_pmp_allow_i == 1 && l1i_tag_miss == 1`
 
 ---
 
@@ -254,7 +253,7 @@ To preserve the existing simplicity of the Slice-0 memory hierarchy and avoid co
      - `input  logic        imem_rsp_error_i`: DRAM bus error indicator
 2. **Refill Sequencing**:
    - A 64-byte cache line refill consists of **8 sequential 64-bit doubleword read requests**:
-     $$\text{Line Base} = \text{PA}[55:6] \ll 6$$
+     `Line Base = PA[55:6] << 6`
      - Beat 0: `Line Base + 0x00`
      - Beat 1: `Line Base + 0x08`
      - Beat 2: `Line Base + 0x10`
@@ -302,7 +301,7 @@ To eliminate all ambiguity and ensure strict determinism across traps, interrupt
 ### 5.4 Bus Fault Handling during Refill
 If the platform memory interface asserts `imem_rsp_error_i` on any of the 8 beats:
 1. The line buffer is discarded; `valid_q` is **not** set.
-2. An `instruction access fault` ($mcause=1$) is signaled to the core.
+2. An `instruction access fault` (`mcause=1`) is signaled to the core.
 3. **Never Cache a Fault**: A memory bus error is never installed into the cache.
 
 ---
@@ -311,7 +310,7 @@ If the platform memory interface asserts `imem_rsp_error_i` on any of the 8 beat
 
 ### 6.1 Cacheable Address Range
 Only physical addresses falling within platform DRAM aperture are cacheable:
-$$\text{Cacheable Range} = [0x8000\_0000, 0x8FFF\_FFFF] \quad (\text{256 MiB DRAM})$$
+`Cacheable Range = [0x8000_0000, 0x8FFF_FFFF] (256 MiB DRAM)`
 
 ### 6.2 MMIO and Unmapped Range Enforcement
 - **Non-Cacheable Regions**:
@@ -333,7 +332,7 @@ Per the RISC-V Zifencei standard, `FENCE.I` guarantees that stores to instructio
 
 In Fursoy Slice-0:
 1. **Flash Invalidation**: `FENCE.I` synchronously clears all 256 valid bits across all sets and ways in a single cycle:
-   $$\text{valid\_q}[0 \dots 63][0 \dots 3] \Leftarrow 0$$
+   `valid_q[0 ... 63][0 ... 3] ← 0`
 2. **Fetch Buffer Flush**: Clears any pending or held instruction in `fursoy_s0_fetch`.
 3. **In-Flight Refill Invalidation**: If an L1I refill is active when `FENCE.I` executes, the arriving line is discarded upon completion and not validated.
 4. **Execution Synchronization**: Core instruction retirement resumes only after the invalidation is complete.
@@ -388,7 +387,7 @@ The L1I implementation shall be verified using a dedicated Verilator testbench s
 
 1. **Cold Miss & Refill**: Initial fetch to cold address verifies L1I miss, 8-beat DRAM refill, Tree-PLRU state update, and subsequent hit on repeated fetch.
 2. **Intra-Line Sequential Hit**: Sequential execution across all 16 words within a single 64-byte line verifies 1 miss followed by 15 consecutive 1-cycle hits.
-3. **Line Boundary Crossing**: Fetch spanning from word 15 of Line $N$ to word 0 of Line $N+1$ verifies clean transition and backpressure.
+3. **Line Boundary Crossing**: Fetch spanning from word 15 of Line `N` to word 0 of Line `N+1` verifies clean transition and backpressure.
 4. **4-Way Conflict & Tree-PLRU Replacement**: 5 consecutive addresses aliasing to the same set index (`addr[11:6]`) verify allocation into Ways 0, 1, 2, 3, followed by correct Tree-PLRU victim eviction and replacement.
 5. **Redirect during Active Refill**: Triggering `redirect_i` during an 8-beat refill verifies that memory bus handshakes complete cleanly, the arriving line is discarded (`valid == 0`), the core PC vectors to the redirect target, and no stale instruction is executed.
 6. **`FENCE.I` Invalidation**: Populating all 4 ways of multiple sets, executing `FENCE.I`, and verifying that every subsequent fetch causes a miss and fresh DRAM refill.
