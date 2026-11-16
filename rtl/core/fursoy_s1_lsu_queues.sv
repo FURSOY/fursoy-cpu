@@ -704,7 +704,7 @@ module fursoy_s1_lsu_queues
                                           !lq_q[l].page_fault && !lq_q[l].access_fault &&
                                           !lq_q[l].align_fault && !has_older_fence_l;
 
-                if (!lq_q[l].is_mmio && (all_older_pa_valid_l || cand_is_eligible_spec_l)) begin
+                if (!lq_q[l].is_mmio && (!lq_q[l].is_lr || (lq_q[l].rob_idx == rob_head_i)) && (all_older_pa_valid_l || cand_is_eligible_spec_l)) begin
                     lq_entry_is_speculative[l] = !all_older_pa_valid_l;
 
                     for (int s = 0; s < SQ_DEPTH; s++) begin

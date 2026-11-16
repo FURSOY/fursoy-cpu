@@ -23,6 +23,9 @@ module fursoy_s1_decode
     input  logic [1:0]        priv_mode_i,
     input  logic [1:0]        mstatus_fs_i,
     input  logic [1:0]        mstatus_vs_i,
+    input  logic [2:0]        fcsr_frm_i,
+    input  logic              mstatus_tw_i,
+    input  logic [63:0]       vtype_i,
 
     // Input Channels (from Stage F4 Decoupled Fetch Queue)
     input  logic              in0_valid_i,
@@ -47,7 +50,10 @@ module fursoy_s1_decode
         input fetch_queue_entry_t entry,
         input logic [1:0]         priv_mode,
         input logic [1:0]         mstatus_fs,
-        input logic [1:0]         mstatus_vs
+        input logic [1:0]         mstatus_vs,
+        input logic [2:0]         fcsr_frm,
+        input logic               mstatus_tw,
+        input logic [63:0]        vtype
     );
         uop_decoded_t uop;
         logic [31:0]  inst;
@@ -58,6 +64,8 @@ module fursoy_s1_decode
         logic [4:0]   rs1;
         logic [4:0]   rs2;
         logic [4:0]   amo_funct5;
+        logic [3:0]   vec_chk_vd_ng, vec_chk_vs1_ng, vec_chk_vs2_ng;
+        logic         vec_chk_illegal;
 
         inst   = entry.inst;
         opcode = inst[6:0];
@@ -70,6 +78,7 @@ module fursoy_s1_decode
         uop = '0;
         uop.valid = valid;
         uop.pc    = entry.pc;
+        uop.inst  = entry.inst;
 
         // ---------------------------------------------------------------------
         // 1. Decode Exception Bypass (Section 3.4 & 26)
@@ -494,6 +503,10 @@ module fursoy_s1_decode
                             uop.sub_op       = VEC_VLSE;
                             uop.rs2          = inst[24:20];
                             uop.vec_uses_rs2 = 1'b1;
+                        end else if (inst[27:26] == 2'b01 || inst[27:26] == 2'b11) begin
+                            uop.sub_op       = VEC_VLUXEI;
+                            uop.vec_vs2      = inst[24:20];
+                            uop.vec_uses_vs2 = 1'b1;
                         end else begin
                             uop.exception = 1'b1;
                             uop.exc_cause = 5'd2;
@@ -548,6 +561,10 @@ module fursoy_s1_decode
                             uop.sub_op       = VEC_VSSE;
                             uop.rs2          = inst[24:20];
                             uop.vec_uses_rs2 = 1'b1;
+                        end else if (inst[27:26] == 2'b01 || inst[27:26] == 2'b11) begin
+                            uop.sub_op       = VEC_VSOXEI;
+                            uop.vec_vs2      = inst[24:20];
+                            uop.vec_uses_vs2 = 1'b1;
                         end else begin
                             uop.exception = 1'b1;
                             uop.exc_cause = 5'd2;
@@ -561,7 +578,8 @@ module fursoy_s1_decode
 
             // Floating-Point Fused Multiply-Add (RV64F / RV64D)
             7'b1000011, 7'b1000111, 7'b1001011, 7'b1001111: begin
-                if (mstatus_fs == 2'b00 || inst[26] != 1'b0 || funct3 == 3'b101 || funct3 == 3'b110) begin
+                if (mstatus_fs == 2'b00 || inst[26] != 1'b0 || funct3 == 3'b101 || funct3 == 3'b110 ||
+                    ((funct3 == 3'b111) && (fcsr_frm >= 3'd5))) begin
                     uop.exception = 1'b1;
                     uop.exc_cause = 5'd2;
                 end else begin
@@ -593,7 +611,8 @@ module fursoy_s1_decode
                     uop.exc_cause = 5'd2;
                 end else begin
                     logic fp_rm_invalid;
-                    fp_rm_invalid     = (funct3 == 3'b101) || (funct3 == 3'b110);
+                    fp_rm_invalid     = (funct3 == 3'b101) || (funct3 == 3'b110) ||
+                                        ((funct3 == 3'b111) && (fcsr_frm >= 3'd5));
                     uop.uop_class     = UOP_FP;
                     uop.is_fp         = 1'b1;
                     uop.fp_dest_valid = 1'b1;
@@ -929,8 +948,8 @@ module fursoy_s1_decode
                             uop.rd        = 5'd0;
                         end
                     end else if (inst[31:20] == 12'h105) begin
-                        // WFI: requires S-mode or higher
-                        if (priv_mode == 2'b00) begin
+                        // WFI: illegal in U-mode or S-mode with mstatus.TW=1
+                        if ((priv_mode == 2'b00) || ((priv_mode == 2'b01) && mstatus_tw)) begin
                             uop.exception = 1'b1;
                             uop.exc_cause = 5'd2; // Illegal Instruction
                         end else begin
@@ -947,6 +966,7 @@ module fursoy_s1_decode
                             uop.uop_class = UOP_SYSTEM;
                             uop.sub_op    = SYS_SFENCE_VMA;
                             uop.rd        = 5'd0;
+                            uop.imm       = {62'd0, (inst[24:20] == 5'd0), (inst[19:15] == 5'd0)};
                         end
                     end else begin
                         uop.exception = 1'b1;
@@ -991,6 +1011,21 @@ module fursoy_s1_decode
             end
         endcase
 
+        if (!uop.exception && (uop.uop_class == UOP_VEC)) begin
+            vtype_bundle_t vt;
+            vt = vtype_bundle_t'({vtype[63], vtype[7:6], vsew_t'(vtype[5:3]), vlmul_t'(vtype[2:0])});
+            calc_vec_emul_info(
+                vt, uop.sub_op, uop.vec_eew,
+                uop.vec_vd, uop.vec_vs1, uop.vec_vs2, uop.vec_vm,
+                uop.vec_uses_vs1, uop.vec_uses_vs2,
+                vec_chk_vd_ng, vec_chk_vs1_ng, vec_chk_vs2_ng, vec_chk_illegal
+            );
+            if (vec_chk_illegal) begin
+                uop.exception = 1'b1;
+                uop.exc_cause = 5'd2; // Illegal Instruction (EMUL/alignment/wrap/v0 overlap/vill)
+            end
+        end
+
         if (uop.exception) begin
             uop.uop_class      = UOP_SYSTEM;
             uop.rd             = 5'd0;
@@ -1005,10 +1040,12 @@ module fursoy_s1_decode
 
     // Decode Channel 0 and Channel 1
     assign uop0_valid_o = in0_valid_i;
-    assign uop0_o       = decode_inst(in0_valid_i, in0_entry_i, priv_mode_i, mstatus_fs_i, mstatus_vs_i);
+    assign uop0_o       = decode_inst(in0_valid_i, in0_entry_i, priv_mode_i, mstatus_fs_i, mstatus_vs_i,
+                                      fcsr_frm_i, mstatus_tw_i, vtype_i);
 
     assign uop1_valid_o = in1_valid_i;
-    assign uop1_o       = decode_inst(in1_valid_i, in1_entry_i, priv_mode_i, mstatus_fs_i, mstatus_vs_i);
+    assign uop1_o       = decode_inst(in1_valid_i, in1_entry_i, priv_mode_i, mstatus_fs_i, mstatus_vs_i,
+                                      fcsr_frm_i, mstatus_tw_i, vtype_i);
 
 endmodule
 

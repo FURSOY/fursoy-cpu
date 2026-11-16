@@ -556,8 +556,34 @@ int main(int argc, char **argv) {
         // Pending bit becomes 1
         auto [p_across, p_across_ok] = drv.read32(PEND_BASE);
         check(p_across_ok && (p_across & (1 << 20)), "PLIC-28: Source asserted across reset becomes pending on first active clock edge");
-        // But notification is suppressed because priorities and enables reset to 0
+        // Notification is suppressed because priorities and enables reset to 0
         check(!drv.dut.irq_meip_o && !drv.dut.irq_seip_o, "PLIC-28: Notifications remain 0 post-reset");
+        ++scenarios;
+
+        // =====================================================================
+        // PLIC-29: Higher-Priority Interrupt Preemption While Lower-Priority In-Service
+        // =====================================================================
+        drv.reset();
+        drv.write32(PRIO_BASE + 2 * 4, 2); // Source 2: prio 2
+        drv.write32(PRIO_BASE + 5 * 4, 6); // Source 5: prio 6
+        drv.write32(EN_C0, (1 << 2) | (1 << 5));
+        drv.dut.irq_sources_i = (1 << 2);
+        drv.tick();
+        check(drv.dut.irq_meip_o, "PLIC-29: Low-prio source 2 notifies");
+        auto [cl_low, cl_low_ok] = drv.read32(CLAIM_C0);
+        check(cl_low_ok && cl_low == 2, "PLIC-29: Claim source 2 into IN_SERVICE");
+        check(!drv.dut.irq_meip_o, "PLIC-29: MEIP drops once source 2 claimed");
+        // Assert higher-priority source 5 while source 2 remains in-service
+        drv.dut.irq_sources_i = (1 << 2) | (1 << 5);
+        drv.tick();
+        check(drv.dut.irq_meip_o, "PLIC-29: Higher-priority source 5 preempts while source 2 is in-service");
+        auto [cl_hi, cl_hi_ok] = drv.read32(CLAIM_C0);
+        check(cl_hi_ok && cl_hi == 5, "PLIC-29: Preempting claim returns source 5");
+        drv.dut.irq_sources_i = 0;
+        check(drv.write32(CLAIM_C0, 5), "PLIC-29: Complete preempting source 5");
+        check(drv.write32(CLAIM_C0, 2), "PLIC-29: Complete original source 2");
+        auto [cl_done, cl_done_ok] = drv.read32(CLAIM_C0);
+        check(cl_done_ok && cl_done == 0, "PLIC-29: No further sources claimable");
         ++scenarios;
 
         drv.dut.final();

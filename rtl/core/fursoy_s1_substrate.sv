@@ -52,6 +52,7 @@ module fursoy_s1_substrate
     input  logic                   uop0_is_vec_i,
     input  logic                   uop0_vec_dest_valid_i,
     input  vreg_t                  uop0_prd_vec_i,
+    input  logic [31:0]            uop0_inst_i,
 
     input  logic                   uop1_valid_i,
     input  areg_t                  uop1_rs1_i,
@@ -68,6 +69,7 @@ module fursoy_s1_substrate
     input  logic                   uop1_is_vec_i,
     input  logic                   uop1_vec_dest_valid_i,
     input  vreg_t                  uop1_prd_vec_i,
+    input  logic [31:0]            uop1_inst_i,
 
     // Downstream backpressure (e.g. from Issue Queues)
     input  logic [1:0]             dispatch_ready_i,
@@ -198,6 +200,10 @@ module fursoy_s1_substrate
     output logic [1:0]             retire_is_vec_o,
     output logic [1:0]             retire_vec_dest_valid_o,
     output vreg_t                  retire_prd_vec_o      [1:0],
+
+    // Recovery ROB Slot Walk Outputs (for external VRAT reclaim)
+    output logic [1:0]             recover_rob_valid_o,
+    output rob_idx_t               recover_rob_idx_o     [1:0],
 
     // Precise Exception Signaled at ROB Head
     output logic                   retire_exception_o,
@@ -357,6 +363,7 @@ module fursoy_s1_substrate
     logic [1:0]      rob_alloc_is_br;
     chkpt_idx_t      rob_alloc_chkpt_id [1:0];
     logic [63:0]     rob_alloc_pc [1:0];
+    logic [31:0]     rob_alloc_inst [1:0];
     rob_idx_t        rob_alloc_idx [1:0];
     rob_epoch_t      rob_alloc_epoch [1:0];
     logic [1:0]      rob_alloc_ready;
@@ -476,6 +483,7 @@ module fursoy_s1_substrate
     assign rob_alloc_is_br[0]         = uop0_is_branch_i;
     assign rob_alloc_chkpt_id[0]      = chkpt0_id;
     assign rob_alloc_pc[0]            = uop0_pc_i;
+    assign rob_alloc_inst[0]          = uop0_inst_i;
     assign rob_alloc_is_fp[0]         = uop0_is_fp_i;
     assign rob_alloc_fp_dest_valid[0] = uop0_fp_dest_valid_i;
     assign rob_alloc_prd_fp[0]        = uop0_pnew_fp_cand;
@@ -488,6 +496,7 @@ module fursoy_s1_substrate
     assign rob_alloc_is_br[1]         = uop1_is_branch_i;
     assign rob_alloc_chkpt_id[1]      = chkpt1_id;
     assign rob_alloc_pc[1]            = uop1_pc_i;
+    assign rob_alloc_inst[1]          = uop1_inst_i;
     assign rob_alloc_is_fp[1]         = uop1_is_fp_i;
     assign rob_alloc_fp_dest_valid[1] = uop1_fp_dest_valid_i;
     assign rob_alloc_prd_fp[1]        = uop1_pnew_fp_cand;
@@ -784,6 +793,7 @@ module fursoy_s1_substrate
         .alloc_is_vec_i       (rob_alloc_is_vec),
         .alloc_vec_dest_valid_i(rob_alloc_vec_dest_valid),
         .alloc_prd_vec_i      (rob_alloc_prd_vec),
+        .alloc_inst_i         (rob_alloc_inst),
         .alloc_rob_idx_o      (rob_alloc_idx),
         .alloc_rob_epoch_o    (rob_alloc_epoch),
         .alloc_ready_o        (rob_alloc_ready),
@@ -841,6 +851,8 @@ module fursoy_s1_substrate
         .recover_pnew_o       (rob_rec_pnew),
         .recover_pnew_fp_valid_o(rob_rec_pnew_fp_valid),
         .recover_pnew_fp_o    (rob_rec_pnew_fp),
+        .recover_rob_valid_o  (recover_rob_valid_o),
+        .recover_rob_idx_o    (recover_rob_idx_o),
         .recovering_o         (rob_recovering),
         .flush_valid_i        (flush_valid_i),
         .head_o               (rob_head),

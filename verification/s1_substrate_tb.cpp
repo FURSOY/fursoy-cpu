@@ -151,7 +151,7 @@ public:
         }
         assert(dut->freelist_count_o <= 128 && "Invariant: Free List count <= 128");
         assert(dut->rob_count_o <= 128 && "Invariant: ROB count <= 128");
-        assert(dut->chkpt_free_count_o <= 8 && "Invariant: Checkpoint free count <= 8");
+        assert(dut->chkpt_free_count_o <= 16 && "Invariant: Checkpoint free count <= 16");
 
         // 3. p0 permanently ready
         assert(is_prf_ready(0) && "Invariant: p0 must be ready");
@@ -173,7 +173,7 @@ void test_01_reset_state(SubstrateTB &tb) {
 
     assert(tb.dut->freelist_count_o == 128);
     assert(tb.dut->rob_count_o == 0);
-    assert(tb.dut->chkpt_free_count_o == 8);
+    assert(tb.dut->chkpt_free_count_o == 16);
     assert(tb.dut->recovering_o == 0);
     assert(tb.dut->reconstructing_o == 0);
 
@@ -516,14 +516,14 @@ void test_13_branch_checkpoint_creation(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    assert(tb.dut->chkpt_free_count_o == 7);
+    assert(tb.dut->chkpt_free_count_o == 15);
     std::cout << "[PASS] Test 13: Branch checkpoint creation verified.\n";
 }
 
 void test_14_checkpoint_exhaustion_stall(SubstrateTB &tb) {
     tb.reset();
-    // Dispatch 8 branches
-    for (int i = 0; i < 4; i++) {
+    // Dispatch 16 branches (NUM_CHECKPOINTS = 16)
+    for (int i = 0; i < 8; i++) {
         tb.dut->uop0_valid_i = 1; tb.dut->uop0_is_branch_i = 1;
         tb.dut->uop1_valid_i = 1; tb.dut->uop1_is_branch_i = 1;
         tb.step();
@@ -533,7 +533,7 @@ void test_14_checkpoint_exhaustion_stall(SubstrateTB &tb) {
 
     assert(tb.dut->chkpt_free_count_o == 0);
 
-    // 9th branch stalls
+    // 17th branch stalls
     tb.dut->uop0_valid_i = 1; tb.dut->uop0_is_branch_i = 1;
     tb.dut->eval();
     assert(tb.dut->rename_ack_o == 0);
@@ -728,7 +728,7 @@ void test_19_nested_branches(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    assert(tb.dut->chkpt_free_count_o == 5);
+    assert(tb.dut->chkpt_free_count_o == 13);
     std::cout << "[PASS] Test 19: Nested unresolved branches verified.\n";
 }
 
@@ -746,7 +746,7 @@ void test_20_squash_younger_checkpoints(SubstrateTB &tb) {
     tb.clear_inputs();
     tb.dut->eval();
 
-    assert(tb.dut->chkpt_free_count_o == 5);
+    assert(tb.dut->chkpt_free_count_o == 13);
 
     // Branch 0 mispredicts: should invalidate checkpoints 1 and 2, and release chkpt 0
     tb.dut->recover_valid_i = 1;
@@ -760,7 +760,7 @@ void test_20_squash_younger_checkpoints(SubstrateTB &tb) {
     }
     tb.dut->eval();
 
-    assert(tb.dut->chkpt_free_count_o == 8); // All 3 checkpoints freed!
+    assert(tb.dut->chkpt_free_count_o == 16); // All 3 checkpoints freed!
     std::cout << "[PASS] Test 20: Squash of younger branch checkpoints verified.\n";
 }
 

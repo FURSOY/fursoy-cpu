@@ -200,16 +200,25 @@ int main(int argc, char **argv) {
         // =====================================================================
         {
             unsigned prev_tx_count = d.tx_log.size();
-            // Invalid size: byte store (size=0)
-            bool ok = d.write32(UART_BASE + 0x00, 'X', 0);
-            check(!ok, "Byte store should be rejected with bus error");
+            // Invalid size: 64-bit store (size=3)
+            bool ok = d.write32(UART_BASE + 0x00, 'X', 3);
+            check(!ok, "64-bit store should be rejected with bus error");
             check(d.tx_log.size() == prev_tx_count, "Rejected write must not emit TX");
 
-            // Misaligned store
+            // Misaligned store (size=2, unaligned address)
             ok = d.write32(UART_BASE + 0x01, 'Y', 2);
             check(!ok, "Misaligned store should be rejected with bus error");
             check(d.tx_log.size() == prev_tx_count, "Misaligned write must not emit TX");
-            std::cout << "Scenario 4 (Rejected write -> zero TX events): PASS\n";
+
+            // Byte store (size=0) & Halfword store (size=1) to THR should succeed
+            ok = d.write32(UART_BASE + 0x00, 'B', 0);
+            check(ok, "Byte store to UART THR should succeed");
+            check(d.tx_log.size() == prev_tx_count + 1 && d.tx_log.back() == 'B', "Byte store emits TX");
+
+            ok = d.write32(UART_BASE + 0x00, 'H', 1);
+            check(ok, "Halfword store to UART THR should succeed");
+            check(d.tx_log.size() == prev_tx_count + 2 && d.tx_log.back() == 'H', "Halfword store emits TX");
+            std::cout << "Scenario 4 (Rejected/Narrow UART write TX handling): PASS\n";
         }
 
         // =====================================================================
@@ -442,12 +451,22 @@ int main(int argc, char **argv) {
             d.read32(UART_BASE + 0x1C, scr);
             check((scr & 0xFF) == 0xA5, "Rejected 64-bit store must not mutate SCR");
 
-            // Attempt 16-bit access (size=1)
-            ok = d.write32(UART_BASE + 0x1C, 0x5A, 1);
-            check(!ok, "16-bit store to UART MMIO must raise bus error");
+            // 16-bit (size=1) and 8-bit (size=0) SCR writes & reads succeed, misaligned 16-bit rejected
+            ok = d.write32(UART_BASE + 0x1C, 0x3C, 1);
+            check(ok, "16-bit store to UART MMIO should succeed");
+            d.read32(UART_BASE + 0x1C, scr, 1);
+            check((scr & 0xFF) == 0x3C, "16-bit store should update SCR");
+
+            ok = d.write32(UART_BASE + 0x1C, 0x6E, 0);
+            check(ok, "8-bit store to UART MMIO should succeed");
+            d.read32(UART_BASE + 0x1C, scr, 0);
+            check((scr & 0xFF) == 0x6E, "8-bit store should update SCR");
+
+            ok = d.write32(UART_BASE + 0x1D, 0x77, 1);
+            check(!ok, "Misaligned 16-bit store to odd address must raise bus error");
             d.read32(UART_BASE + 0x1C, scr);
-            check((scr & 0xFF) == 0xA5, "Rejected 16-bit store must not mutate SCR");
-            std::cout << "Scenario 19 (Invalid size rejected with zero side effects): PASS\n";
+            check((scr & 0xFF) == 0x6E, "Rejected misaligned 16-bit store must not mutate SCR");
+            std::cout << "Scenario 19 (Invalid size rejected / byte+halfword supported): PASS\n";
         }
 
         // =====================================================================

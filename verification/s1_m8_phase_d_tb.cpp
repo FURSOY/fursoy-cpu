@@ -250,7 +250,22 @@ public:
         uint64_t return_cyc;
     };
     std::deque<BusReq> bus_q;
+    std::deque<BusReq> l1i_bus_q;
     uint64_t last_bus_rsp_cyc;
+
+    static constexpr uint64_t kDramBase  = 0x80000000ULL;
+    static constexpr uint64_t kDramLimit = 0x90000000ULL;
+
+    void write_mem_word(uint64_t paddr, uint32_t val) {
+        uint64_t line_addr = paddr >> 6;
+        if (!bus_mem.count(line_addr)) {
+            bus_mem[line_addr] = std::vector<uint8_t>(64, 0);
+        }
+        uint32_t off = (uint32_t)(paddr & 0x3FULL);
+        for (int b = 0; b < 4; b++) {
+            bus_mem[line_addr][off + b] = (uint8_t)((val >> (8 * b)) & 0xFFU);
+        }
+    }
 
     CorePhaseDTB() {
         dut = std::make_unique<Vfursoy_s1_core>();
@@ -355,6 +370,12 @@ public:
         dut->bus_wr_rsp_valid_i = 0;
         dut->bus_wr_req_ready_i = 1;
 
+        dut->l1i_bus_rd_req_ready_i = 1;
+        dut->l1i_bus_rd_rsp_valid_i = 0;
+        dut->l1i_bus_rd_rsp_error_i = 0;
+        dut->l1i_bus_rd_rsp_tag_i = 0;
+        memset((void*)&dut->l1i_bus_rd_rsp_data_i, 0, sizeof(dut->l1i_bus_rd_rsp_data_i));
+
         dut->ptw_req_ready_i = 1;
         dut->ptw_rsp_valid_i = 0;
         dut->ptw_rsp_tr_id_i = 0;
@@ -387,23 +408,43 @@ public:
 
         dut->test_fof_fault_valid_i = 0;
         dut->test_fof_fault_elem_i = 0;
-
-        dut->test_viq_alloc_valid_i = 0;
-        dut->test_viq_alloc_rob_idx_i = 0;
-        dut->test_viq_alloc_uop_class_i = 0;
-        dut->test_viq_alloc_sub_op_i = 0;
-        dut->test_viq_alloc_vd_i = 0;
-        dut->test_viq_alloc_vs1_i = 0;
-        dut->test_viq_alloc_vs2_i = 0;
-        dut->test_viq_alloc_vm_i = 1;
-        dut->test_viq_alloc_vtype_i = 0;
-        dut->test_viq_alloc_vl_i = 0;
-        dut->test_viq_issue_ready_i = 0;
     }
 
     void step() {
         dut->clk_i = 0;
         dut->eval();
+
+        // Serve L1I Cache Refill Read Requests (when frontend_en_i == 1)
+        if (dut->l1i_bus_rd_req_valid_o && dut->l1i_bus_rd_req_ready_i) {
+            BusReq r;
+            r.line_addr = dut->l1i_bus_rd_req_addr_o;
+            r.tag = dut->l1i_bus_rd_req_tag_o;
+            r.return_cyc = cycle_count + 1;
+            l1i_bus_q.push_back(r);
+        }
+
+        if (!l1i_bus_q.empty() && l1i_bus_q.front().return_cyc <= cycle_count) {
+            BusReq r = l1i_bus_q.front();
+            l1i_bus_q.pop_front();
+            dut->l1i_bus_rd_rsp_valid_i = 1;
+            dut->l1i_bus_rd_rsp_tag_i = r.tag;
+            uint64_t byte_pa = r.line_addr << 6;
+            if (byte_pa >= kDramBase && byte_pa < kDramLimit) {
+                dut->l1i_bus_rd_rsp_error_i = 0;
+                if (!bus_mem.count(r.line_addr)) {
+                    bus_mem[r.line_addr] = std::vector<uint8_t>(64, 0);
+                }
+                uint32_t* dst = (uint32_t*)&dut->l1i_bus_rd_rsp_data_i;
+                const uint32_t* src = (const uint32_t*)bus_mem[r.line_addr].data();
+                for (int w = 0; w < 16; w++) dst[w] = src[w];
+            } else {
+                dut->l1i_bus_rd_rsp_error_i = 1;
+                memset((void*)&dut->l1i_bus_rd_rsp_data_i, 0, sizeof(dut->l1i_bus_rd_rsp_data_i));
+            }
+        } else {
+            dut->l1i_bus_rd_rsp_valid_i = 0;
+            dut->l1i_bus_rd_rsp_error_i = 0;
+        }
 
         // Serve L1D Cache Refill Read Requests
         if (dut->bus_rd_req_valid_o && dut->bus_rd_req_ready_i) {
@@ -455,13 +496,17 @@ public:
         }
     }
 
-    void reset(uint64_t initial_mstatus = (1ULL << 13) | (1ULL << 9)) {
+    void reset(uint64_t initial_mstatus = (1ULL << 13) | (1ULL << 9), bool frontend_en = false) {
         clear_inputs();
+        l1i_bus_q.clear();
+        bus_q.clear();
         dut->mstatus_i = initial_mstatus;
+        dut->frontend_en_i = frontend_en ? 1 : 0;
         dut->rst_i = 1;
         drain_cycles(10);
         dut->rst_i = 0;
         clear_inputs();
+        dut->frontend_en_i = frontend_en ? 1 : 0;
         drain_cycles(5);
         while (dut->reconstructing_o || dut->fl_fp_reconstructing_o) {
             step();
@@ -666,9 +711,15 @@ void test_prop_m8_28(CorePhaseDTB& tb, TestResults& res) {
     tb.config_vector(3, (VSEW_16 << 3) | VLMUL_1, true, false); // VLMAX = 16
     assert(tb.dut->vl_o == 16);
 
-    // 6. rs1 == x0, rd == x0 -> keep existing vl
-    tb.config_vector(99, (VSEW_8 << 3) | VLMUL_1, true, true);
+    // 6. rs1 == x0, rd == x0 -> keep existing vl when VLMAX is unchanged (SEW=32, LMUL=2 => VLMAX = 16)
+    tb.config_vector(99, (VSEW_32 << 3) | VLMUL_2, true, true);
     assert(tb.dut->vl_o == 16); // kept 16
+    assert((tb.dut->vtype_o & (1ULL << 63)) == 0);
+
+    // 7. rs1 == x0, rd == x0 -> VLMAX change (SEW=8, LMUL=1 => VLMAX = 32 != 16) sets vill=1, vl=0 (RVV 1.0 §6.2)
+    tb.config_vector(99, (VSEW_8 << 3) | VLMUL_1, true, true);
+    assert(tb.dut->vl_o == 0);
+    assert((tb.dut->vtype_o & (1ULL << 63)) != 0);
 
     std::cout << "  [PASS] PROP_M8_28: vtype legalization and dynamic vl verified cleanly.\n";
     res.props_passed++;
@@ -679,83 +730,126 @@ void test_prop_m8_28(CorePhaseDTB& tb, TestResults& res) {
 // PROPERTY TEST 3: PROP_M8_29 - Multi-beat Micro-op Expansion in VIQ8
 // =============================================================================
 void test_prop_m8_29(CorePhaseDTB& tb, TestResults& res) {
-    std::cout << "[PROP_M8_29] Testing Multi-Beat Micro-op Expansion in VIQ8..." << std::endl;
+    std::cout << "[PROP_M8_29] Testing Fetched RVV 1.0 Multi-Beat Execution via VRAT/VIQ8/VRF..." << std::endl;
     res.total_props_tested++;
 
-    // Test uop expansion for LMUL = 1 (2 beats), LMUL = 2 (4 beats), LMUL = 4 (8 beats), LMUL = 8 (16 beats)
+    auto rv_addi = [](uint8_t rd, uint8_t rs1, int32_t imm) -> uint32_t {
+        return (((uint32_t)imm & 0xFFFU) << 20) | ((uint32_t)(rs1 & 31) << 15) |
+               ((uint32_t)(rd & 31) << 7) | 0x13U;
+    };
+    auto rv_jal = [](uint8_t rd, int32_t off) -> uint32_t {
+        uint32_t u = (uint32_t)off;
+        uint32_t imm20    = (u >> 20) & 1U;
+        uint32_t imm10_1  = (u >> 1) & 0x3FFU;
+        uint32_t imm11    = (u >> 11) & 1U;
+        uint32_t imm19_12 = (u >> 12) & 0xFFU;
+        return (imm20 << 31) | (imm10_1 << 21) | (imm11 << 20) | (imm19_12 << 12) |
+               ((uint32_t)(rd & 31) << 7) | 0x6FU;
+    };
+    auto rv_vsetvli = [](uint8_t rd, uint8_t rs1, uint32_t vtypei) -> uint32_t {
+        return ((vtypei & 0x7FFU) << 20) | ((uint32_t)(rs1 & 31) << 15) | (7U << 12) |
+               ((uint32_t)(rd & 31) << 7) | 0x57U;
+    };
+    auto rv_vmv_vi = [](uint8_t vd, int8_t simm5) -> uint32_t {
+        return (0x17U << 26) | (1U << 25) | (((uint32_t)simm5 & 0x1FU) << 15) |
+               (3U << 12) | ((uint32_t)(vd & 31) << 7) | 0x57U;
+    };
+    auto rv_vadd_vv = [](uint8_t vd, uint8_t vs2, uint8_t vs1) -> uint32_t {
+        return (1U << 25) | ((uint32_t)(vs2 & 31) << 20) | ((uint32_t)(vs1 & 31) << 15) |
+               ((uint32_t)(vd & 31) << 7) | 0x57U;
+    };
+
+    // Exercise fetched LMUL=1, 2, 4, 8 multi-beat vector execution through u_vrat / u_viq / u_vrf
     struct ExpansionTest {
-        uint8_t lmul;
-        uint8_t expected_beats;
+        uint8_t  lmul;
+        uint8_t  nregs;
+        uint32_t vl;
     };
     ExpansionTest exp_tests[] = {
-        {VLMUL_1, 2},
-        {VLMUL_2, 4},
-        {VLMUL_4, 8},
-        {VLMUL_8, 16}
+        {VLMUL_1, 1, 8},
+        {VLMUL_2, 2, 16},
+        {VLMUL_4, 4, 32},
+        {VLMUL_8, 8, 64}
     };
 
+    const uint64_t reset_pc = 0x80000000ULL;
     for (const auto& t : exp_tests) {
-        tb.reset();
-        // Allocate uop into VIQ
-        tb.dut->test_viq_alloc_valid_i     = 1;
-        tb.dut->test_viq_alloc_rob_idx_i   = 2;
-        tb.dut->test_viq_alloc_uop_class_i = UOP_CLASS_VEC;
-        tb.dut->test_viq_alloc_sub_op_i    = VEC_VADD;
-        tb.dut->test_viq_alloc_vd_i        = 4;
-        tb.dut->test_viq_alloc_vs1_i       = 6;
-        tb.dut->test_viq_alloc_vs2_i       = 8;
-        tb.dut->test_viq_alloc_vm_i        = 1;
-        tb.dut->test_viq_alloc_vtype_i     = pack_vtype_bundle(false, false, false, VSEW_32, t.lmul);
-        tb.dut->test_viq_alloc_vl_i        = 32;
-        tb.step();
+        tb.bus_mem.clear();
+        // ma=1, ta=1, SEW=32 (2), LMUL=t.lmul
+        uint32_t vtypei = (1U << 7) | (1U << 6) | (VSEW_32 << 3) | (t.lmul & 7U);
+        tb.write_mem_word(reset_pc + 0x00, rv_addi(10, 0, (int32_t)t.vl));    // addi a0, x0, vl
+        tb.write_mem_word(reset_pc + 0x04, rv_vsetvli(5, 10, vtypei));         // vsetvli t0, a0, e32, m<n>, ta, ma
+        tb.write_mem_word(reset_pc + 0x08, rv_vmv_vi(8, 3));                   // vmv.v.i v8, 3
+        tb.write_mem_word(reset_pc + 0x0C, rv_vmv_vi(16, 5));                  // vmv.v.i v16, 5
+        tb.write_mem_word(reset_pc + 0x10, rv_vadd_vv(24, 8, 16));             // vadd.vv v24, v8, v16 (depends on v8 & v16)
+        tb.write_mem_word(reset_pc + 0x14, rv_addi(31, 0, 1));                 // completion sentinel
+        tb.write_mem_word(reset_pc + 0x18, rv_jal(0, 0));                      // halt loop
 
-        tb.dut->test_viq_alloc_valid_i = 0;
+        tb.reset((1ULL << 13) | (1ULL << 9), true);
 
-        // Verify issue beats sequentially
-        for (int b = 0; b < t.expected_beats; b++) {
+        bool sentinel_retired = false;
+        for (int cyc = 0; cyc < 4000 && !sentinel_retired; cyc++) {
+            tb.dut->probe_paddr_i = tb.dut->arat_map_o[31];
             tb.dut->eval();
-            assert(tb.dut->viq_issue_valid_o == 1);
-            assert(tb.dut->viq_issue_beat_idx_o == b);
-            assert(tb.dut->viq_issue_total_beats_o == t.expected_beats);
-            if (b == t.expected_beats - 1) {
-                assert(tb.dut->viq_issue_is_last_beat_o == 1);
-            } else {
-                assert(tb.dut->viq_issue_is_last_beat_o == 0);
+            if (tb.dut->probe_pdata_o == 1ULL) {
+                sentinel_retired = true;
+                break;
             }
-            tb.dut->test_viq_issue_ready_i = 1;
+            for (int k = 0; k < 2; k++) {
+                if (((tb.dut->retire_valid_o >> k) & 1U) &&
+                    tb.dut->retire_pc_o[k] == (reset_pc + 0x14)) {
+                    sentinel_retired = true;
+                }
+            }
             tb.step();
         }
-        tb.dut->test_viq_issue_ready_i = 0;
-
-        // After last beat, queue should drain entry
-        tb.dut->eval();
+        assert(sentinel_retired && "Fetched RVV multi-beat LMUL sequence timed out!");
+        assert(tb.dut->vl_o == t.vl);
         assert(tb.dut->viq_count_o == 0);
+
+        for (int r = 0; r < t.nregs; r++) {
+            VReg256 got = tb.read_vrf((uint8_t)(24 + r));
+            for (int lane = 0; lane < 8; lane++) {
+                assert(got.get_u32(lane) == 8U);
+            }
+        }
     }
 
-    // Test flush cancellation
-    tb.reset();
-    tb.dut->test_viq_alloc_valid_i     = 1;
-    tb.dut->test_viq_alloc_rob_idx_i   = 5;
-    tb.dut->test_viq_alloc_uop_class_i = UOP_CLASS_VEC;
-    tb.dut->test_viq_alloc_sub_op_i    = VEC_VADD;
-    tb.dut->test_viq_alloc_vd_i        = 2;
-    tb.dut->test_viq_alloc_vs1_i       = 4;
-    tb.dut->test_viq_alloc_vs2_i       = 6;
-    tb.dut->test_viq_alloc_vm_i        = 1;
-    tb.dut->test_viq_alloc_vtype_i     = pack_vtype_bundle(false, false, false, VSEW_32, VLMUL_4);
-    tb.dut->test_viq_alloc_vl_i        = 16;
-    tb.step();
-    tb.dut->test_viq_alloc_valid_i = 0;
-    assert(tb.dut->viq_count_o == 1);
+    // Verify flush cancellation drains in-flight fetched entries from u_viq
+    tb.bus_mem.clear();
+    uint32_t vtypei_m8 = (1U << 7) | (1U << 6) | (VSEW_32 << 3) | VLMUL_8;
+    tb.write_mem_word(reset_pc + 0x00, rv_addi(10, 0, 64));
+    tb.write_mem_word(reset_pc + 0x04, rv_vsetvli(5, 10, vtypei_m8));
+    tb.write_mem_word(reset_pc + 0x08, rv_vmv_vi(8, 2));
+    tb.write_mem_word(reset_pc + 0x0C, rv_vmv_vi(16, 4));
+    tb.write_mem_word(reset_pc + 0x10, rv_vadd_vv(24, 8, 16));
+    tb.write_mem_word(reset_pc + 0x14, rv_vadd_vv(0, 24, 8));
+    tb.write_mem_word(reset_pc + 0x18, rv_vadd_vv(8, 0, 16));
+    tb.write_mem_word(reset_pc + 0x1C, rv_jal(0, 0));
 
-    // Assert flush
+    tb.reset((1ULL << 13) | (1ULL << 9), true);
+
+    bool saw_viq_nonempty = false;
+    for (int cyc = 0; cyc < 500; cyc++) {
+        if (tb.dut->viq_count_o > 0) {
+            saw_viq_nonempty = true;
+            break;
+        }
+        tb.step();
+    }
+    assert(saw_viq_nonempty && "Expected live fetched vector uops inside u_viq prior to flush!");
+
     tb.dut->flush_valid_i = 1;
     tb.step();
     tb.dut->flush_valid_i = 0;
     tb.step();
     assert(tb.dut->viq_count_o == 0);
 
-    std::cout << "  [PASS] PROP_M8_29: VIQ8 multi-beat expansion verified cleanly.\n";
+    // Restore non-frontend mode for subsequent unit tests
+    tb.bus_mem.clear();
+    tb.reset();
+
+    std::cout << "  [PASS] PROP_M8_29: Fetched RVV 1.0 LMUL=1..8 multi-beat execution and VIQ8 flush verified cleanly.\n";
     res.props_passed++;
     res.passed_properties.push_back("PROP_M8_29");
 }

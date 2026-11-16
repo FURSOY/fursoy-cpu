@@ -63,15 +63,16 @@ module fursoy_s0_clint #(
             mtime_q <= mtime_q + 64'd1;
             if (rsp_valid_q && rsp_ready_i) rsp_valid_q <= 1'b0;
             if (req_fire) begin
+                rsp_valid_q <= 1'b1;
+                rsp_error_q <= !valid_access;
                 if (req_store_i) begin
+                    rsp_data_q <= '0;
                     if (valid_access) begin
                         if (req_addr_i == MSIP_ADDR) msip_q <= req_store_data_i[0];
                         else if (req_addr_i == MTIMECMP_ADDR) mtimecmp_q <= req_store_data_i;
                         else if (req_addr_i == MTIME_ADDR) mtime_q <= req_store_data_i;
                     end
                 end else begin
-                    rsp_valid_q <= 1'b1;
-                    rsp_error_q <= !valid_access;
                     if (!valid_access) rsp_data_q <= '0;
                     else if (req_addr_i == MSIP_ADDR) rsp_data_q <= {63'd0, msip_q};
                     else if (req_addr_i == MTIMECMP_ADDR) rsp_data_q <= mtimecmp_q;

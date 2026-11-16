@@ -47,6 +47,7 @@ module fursoy_s1_rob
     input  logic [1:0]             alloc_is_vec_i,
     input  logic [1:0]             alloc_vec_dest_valid_i,
     input  vreg_t                  alloc_prd_vec_i    [1:0],
+    input  logic [31:0]            alloc_inst_i       [1:0],
 
     output rob_idx_t               alloc_rob_idx_o    [1:0],
     output rob_epoch_t             alloc_rob_epoch_o  [1:0],
@@ -132,6 +133,8 @@ module fursoy_s1_rob
     output preg_t                  recover_pnew_o     [1:0],
     output logic [1:0]             recover_pnew_fp_valid_o,
     output fpreg_t                 recover_pnew_fp_o  [1:0],
+    output logic [1:0]             recover_rob_valid_o,
+    output rob_idx_t               recover_rob_idx_o  [1:0],
     output logic                   recovering_o,
 
     // -------------------------------------------------------------------------
@@ -346,7 +349,9 @@ module fursoy_s1_rob
     assign retire_exception_o = head_has_exception;
     assign retire_exc_cause_o = entry0_exc_cause_eff;
     assign retire_exc_pc_o    = entry0.pc;
-    assign retire_exc_val_o   = entry0_exc_val_eff;
+    assign retire_exc_val_o   = (entry0_exc_cause_eff == 5'd2 && entry0_exc_val_eff == 64'd0)
+                              ? {32'd0, entry0.inst}
+                              : entry0_exc_val_eff;
 
     wire rec_allows_uop0 = (!recover_start_i || (head_q != recover_rob_idx_i)) &&
                            (!recovering_q || (head_q != target_tail_q));
@@ -441,6 +446,8 @@ module fursoy_s1_rob
     fpreg_t     rec_pnew_fp1;
     logic       rec_valid_fp0;
     logic       rec_valid_fp1;
+    logic       rec_rob_v0;
+    logic       rec_rob_v1;
 
     always_comb begin
         rec_squash_cnt = 2'd0;
@@ -453,10 +460,13 @@ module fursoy_s1_rob
         rec_pnew_fp1   = '0;
         rec_valid_fp0  = 1'b0;
         rec_valid_fp1  = 1'b0;
+        rec_rob_v0     = 1'b0;
+        rec_rob_v1     = 1'b0;
 
         if (recovering_q && (tail_q != target_tail_q) && (count_q > ROB_CNT_W'(num_retire))) begin
             // First candidate entry
             rec_squash_cnt = 2'd1;
+            rec_rob_v0     = entries_q[rec_cand0].valid;
             if (entries_q[rec_cand0].valid && (!entries_q[rec_cand0].fp_dest_valid) && (entries_q[rec_cand0].rd != 5'd0)) begin
                 rec_valid0 = 1'b1;
                 rec_pnew0  = entries_q[rec_cand0].pnew;
@@ -469,6 +479,7 @@ module fursoy_s1_rob
             // Second candidate entry (if rec_cand0 was not already the target and capacity allows)
             if ((rec_cand0 != target_tail_q) && (count_q > (ROB_CNT_W'(num_retire) + ROB_CNT_W'(1)))) begin
                 rec_squash_cnt = 2'd2;
+                rec_rob_v1     = entries_q[rec_cand1].valid;
                 if (entries_q[rec_cand1].valid && (!entries_q[rec_cand1].fp_dest_valid) && (entries_q[rec_cand1].rd != 5'd0)) begin
                     rec_valid1 = 1'b1;
                     rec_pnew1  = entries_q[rec_cand1].pnew;
@@ -490,6 +501,11 @@ module fursoy_s1_rob
     assign recover_pnew_fp_valid_o[1] = rec_valid_fp1;
     assign recover_pnew_fp_o[0]       = rec_pnew_fp0;
     assign recover_pnew_fp_o[1]       = rec_pnew_fp1;
+
+    assign recover_rob_valid_o[0]     = rec_rob_v0;
+    assign recover_rob_valid_o[1]     = rec_rob_v1;
+    assign recover_rob_idx_o[0]       = rec_cand0;
+    assign recover_rob_idx_o[1]       = rec_cand1;
 
     rob_idx_t target_tail_comb;
     rob_idx_t next_tail_comb;
@@ -656,6 +672,7 @@ module fursoy_s1_rob
                     entries_q[tail_q].is_vec         <= alloc_is_vec_i[0];
                     entries_q[tail_q].vec_dest_valid <= alloc_vec_dest_valid_i[0];
                     entries_q[tail_q].prd_vec        <= alloc_prd_vec_i[0];
+                    entries_q[tail_q].inst           <= alloc_inst_i[0];
                 end
 
                 if (alloc_valid_i[1]) begin
@@ -684,6 +701,7 @@ module fursoy_s1_rob
                     entries_q[tail1_comb].is_vec         <= alloc_is_vec_i[1];
                     entries_q[tail1_comb].vec_dest_valid <= alloc_vec_dest_valid_i[1];
                     entries_q[tail1_comb].prd_vec        <= alloc_prd_vec_i[1];
+                    entries_q[tail1_comb].inst           <= alloc_inst_i[1];
                 end
 
                 tail_q  <= inc_rob(tail_q, {1'b0, num_alloc});

@@ -41,6 +41,8 @@ module fursoy_s1_frontend
     input  logic [1:0]        priv_mode_i,          // 00=U, 01=S, 11=M
     input  logic [63:0]       mstatus_i,
     input  logic [63:0]       satp_i,
+    input  logic [2:0]        fcsr_frm_i,
+    input  logic [63:0]       vtype_i,
     input  logic              pmp_allow_i,          // PMP execution permission
 
     // -------------------------------------------------------------------------
@@ -74,6 +76,8 @@ module fursoy_s1_frontend
     input  logic              sfence_vma_valid_i,
     input  logic [63:0]       sfence_vma_va_i,
     input  logic [15:0]       sfence_vma_asid_i,
+    input  logic              sfence_vma_rs1_zero_i,
+    input  logic              sfence_vma_rs2_zero_i,
 
     // -------------------------------------------------------------------------
     // Branch Checkpoint Capture at Rename (from M1 Substrate)
@@ -441,6 +445,8 @@ module fursoy_s1_frontend
         .sfence_vma_valid_i       (sfence_vma_valid_i),
         .sfence_vma_va_i          (sfence_vma_va_i),
         .sfence_vma_asid_i        (sfence_vma_asid_i),
+        .sfence_vma_rs1_zero_i    (sfence_vma_rs1_zero_i),
+        .sfence_vma_rs2_zero_i    (sfence_vma_rs2_zero_i),
 
         .ptw_req_valid_o          (ptw_to_itlb_req_valid),
         .ptw_req_itrt_id_o        (ptw_to_itlb_req_itrt_id),
@@ -915,6 +921,9 @@ module fursoy_s1_frontend
         .priv_mode_i              (priv_mode_i),
         .mstatus_fs_i             (mstatus_i[14:13]),
         .mstatus_vs_i             (mstatus_i[10:9]),
+        .fcsr_frm_i               (fcsr_frm_i),
+        .mstatus_tw_i             (mstatus_i[21]),
+        .vtype_i                  (vtype_i),
         .in0_valid_i              (fq_pop0_valid),
         .in0_entry_i              (fq_pop0_entry),
 

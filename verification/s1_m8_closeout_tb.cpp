@@ -342,8 +342,6 @@ public:
         dut->probe_vrf_paddr_i      = 0;
         dut->test_vec_cfg_valid_i   = 0;
         dut->test_fof_fault_valid_i = 0;
-        dut->test_viq_alloc_valid_i = 0;
-        dut->test_viq_issue_ready_i = 0;
 
         dut->test_ev_fp_issue_i        = 0;
         dut->test_ev_fp_fma_busy_i     = 0;

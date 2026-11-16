@@ -552,18 +552,37 @@ bool test_prop_m9_16_uart_integration(FursoySoCTB& tb) {
     tb.dispatch_uop(UOP_STORE, MEM_SW, 0, 1, 2, 0, 0x80000088ULL);
     tb.wait_quiescent(25);
 
-    // 5. Test Non-32-bit access rejection (e.g. SB or SH to UART)
+    // 5. Verify Byte (SB/LB) & Halfword (SH/LH) UART accesses work cleanly, while 64-bit (SD) rejects with mcause 7
     tb.set_arch_reg(1, UART_BASE_ADDR);
     tb.set_arch_reg(2, 'X');
     tb.dispatch_uop(UOP_STORE, MEM_SB, 0, 1, 2, 0, 0x80000090ULL);
     tb.wait_quiescent(25);
-
-    if (tb.dut->csr_mcause_o != 7) {
-        std::cerr << "[FAIL] UART non-32-bit access did not raise mcause 7 (got " << tb.dut->csr_mcause_o << ")\n";
+    if (tb.uart_tx_log.empty() || tb.uart_tx_log.back() != 'X') {
+        std::cerr << "[FAIL] UART byte store (SB) did not emit 'X'\n";
         return false;
     }
 
-    std::cout << "  [PASS] PROP_M9_16: UART 16550 32-bit MMIO access verified cleanly.\n";
+    tb.set_arch_reg(1, UART_BASE_ADDR);
+    tb.set_arch_reg(2, 'Z');
+    tb.dispatch_uop(UOP_STORE, MEM_SH, 0, 1, 2, 0, 0x80000094ULL);
+    tb.wait_quiescent(25);
+    if (tb.uart_tx_log.empty() || tb.uart_tx_log.back() != 'Z') {
+        std::cerr << "[FAIL] UART halfword store (SH) did not emit 'Z'\n";
+        return false;
+    }
+
+    // 64-bit store (SD) to 32-bit-max UART MMIO must raise Store Access Fault (mcause 7)
+    tb.set_arch_reg(1, UART_BASE_ADDR);
+    tb.set_arch_reg(2, 'Q');
+    tb.dispatch_uop(UOP_STORE, MEM_SD, 0, 1, 2, 0, 0x80000098ULL);
+    tb.wait_quiescent(25);
+
+    if (tb.dut->csr_mcause_o != 7) {
+        std::cerr << "[FAIL] UART 64-bit store (SD) did not raise mcause 7 (got " << tb.dut->csr_mcause_o << ")\n";
+        return false;
+    }
+
+    std::cout << "  [PASS] PROP_M9_16: UART 16550 8/16/32-bit MMIO access verified cleanly.\n";
     return true;
 }
 

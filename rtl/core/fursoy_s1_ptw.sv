@@ -198,15 +198,18 @@ module fursoy_s1_ptw
 
             is_page_fault = 1'b0;
 
-            // V==0 or (R==0 and W==1) is invalid
-            if (!v || (!r && w)) begin
+            // V==0, (R==0 and W==1), or reserved Sv39 bits [63:54] != 0 -> Page Fault
+            if (!v || (!r && w) || (pte[63:54] != 10'd0)) begin
                 is_page_fault = 1'b1;
                 return 1'b0;
             end
 
-            // Must be leaf
+            // Non-leaf pointer: R==0 && X==0 (and W==0). D/A/U must be 0 per Sv39 §4.4.1
             if (!r && !x) begin
-                return 1'b0; // Pointer, not leaf
+                if (u || a || d) begin
+                    is_page_fault = 1'b1;
+                end
+                return 1'b0; // Pointer (or faulting non-leaf)
             end
 
             // Superpage alignment check
@@ -368,14 +371,17 @@ module fursoy_s1_ptw
                             logic is_fault;
                             logic is_leaf;
                             logic [63:0] pte;
-                            pte = mem_rsp_data_i;
+                            logic [1:0]  walk_priv;
+                            pte       = mem_rsp_data_i;
+                            walk_priv = active_is_itlb ? priv_mode_i
+                                                       : (((priv_mode_i == 2'b11) && mstatus_i[17]) ? mstatus_i[12:11] : priv_mode_i);
 
                             is_leaf = check_leaf_valid(
                                 pte,
                                 active_level,
                                 active_is_itlb,
                                 active_is_store,
-                                priv_mode_i,
+                                walk_priv,
                                 sstatus_sum,
                                 sstatus_mxr,
                                 is_fault

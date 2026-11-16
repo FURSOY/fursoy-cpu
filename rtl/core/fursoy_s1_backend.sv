@@ -214,6 +214,8 @@ module fursoy_s1_backend
     input  logic              sfence_vma_valid_i,
     input  logic [63:0]       sfence_vma_va_i,
     input  logic [15:0]       sfence_vma_asid_i,
+    input  logic              sfence_vma_rs1_zero_i,
+    input  logic              sfence_vma_rs2_zero_i,
 
     // Architectural Privileged State for LSU DTLB Translation
     input  logic [1:0]        priv_mode_i,
@@ -1431,6 +1433,8 @@ module fursoy_s1_backend
         .sfence_vma_valid_i      (sfence_vma_valid_i),
         .sfence_vma_va_i         (sfence_vma_va_i),
         .sfence_vma_asid_i       (sfence_vma_asid_i),
+        .sfence_vma_rs1_zero_i   (sfence_vma_rs1_zero_i),
+        .sfence_vma_rs2_zero_i   (sfence_vma_rs2_zero_i),
 
         .priv_mode_i             (priv_mode_i),
         .satp_i                  (satp_i),

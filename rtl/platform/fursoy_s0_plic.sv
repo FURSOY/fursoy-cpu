@@ -7,7 +7,7 @@
 // - 2 contexts: Context 0 (Hart 0 M-mode, MEIP), Context 1 (Hart 0 S-mode, SEIP)
 // - 3-bit priority and threshold (priorities 0..7; 0 disabled; strictly priority > threshold)
 // - Decoupled Claim eligibility (threshold-independent) and Notification eligibility
-// - Gateway lifecycle: IDLE -> PENDING -> IN_SERVICE (max 1 outstanding claim globally)
+// - Gateway lifecycle: IDLE -> PENDING -> IN_SERVICE (independent per-source state supporting higher-priority preemption)
 // - Validated completion: enable[c][k] && in_service[k]
 // - Standard 4 MiB MMIO map at BASE_ADDR (0x0C00_0000) with strict 32-bit aligned access
 
@@ -322,7 +322,7 @@ module fursoy_s0_plic #(
     // pragma translate_off
     always_ff @(posedge clk_i) begin
         if (!rst_i) begin
-            // 1. In-service ownership is at most 1 globally
+            // 1. Per-source gateway mutual exclusion: source cannot be simultaneously pending and in_service
             for (int i = 1; i <= 31; i++) begin
                 assert (!(pending_q[i] && in_service_q[i]))
                     else $fatal(1, "PLIC Gateway Invariant: source %0d is both pending and in_service", i);

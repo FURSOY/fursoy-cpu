@@ -29,24 +29,38 @@ int main(int argc, char** argv) {
         dut.clk_i = 0; dut.rst_i = 0; dut.req_valid_i = 0; dut.rsp_ready_i = 0; dut.eval();
         check(!dut.irq_software_o && !dut.irq_timer_o, "reset interrupt state");
 
-        auto set_msip = step(false, true, true, MSIP, 2, 1, false);
+        auto set_msip = step(false, true, true, MSIP, 2, 1, true);
         check(set_msip.first && !set_msip.second, "aligned MSIP store accepted");
-        dut.clk_i = 0; dut.eval(); check(dut.irq_software_o, "MSIP set must assert level interrupt");
-        step(false, true, true, MSIP, 2, 0, false);
-        dut.clk_i = 0; dut.eval(); check(!dut.irq_software_o, "MSIP clear must deassert level interrupt");
+        dut.clk_i = 0; dut.eval();
+        check(dut.rsp_valid_o && !dut.rsp_error_o, "CLINT store asserts rsp_valid_o cleanly");
+        check(dut.irq_software_o, "MSIP set must assert level interrupt");
+        step(false, false, false, 0, 0, 0, true);
+        step(false, true, true, MSIP, 2, 0, true);
+        dut.clk_i = 0; dut.eval();
+        check(dut.rsp_valid_o && !dut.rsp_error_o, "CLINT clear store asserts rsp_valid_o cleanly");
+        check(!dut.irq_software_o, "MSIP clear must deassert level interrupt");
+        step(false, false, false, 0, 0, 0, true);
 
-        auto bad_msip = step(false, true, true, MSIP, 3, 1, false);
+        auto bad_msip = step(false, true, true, MSIP, 3, 1, true);
         check(bad_msip.first && bad_msip.second && !dut.irq_software_o, "MSIP rejects non-word store");
-        auto bad_align = step(false, true, true, MSIP + 2, 2, 1, false);
+        dut.clk_i = 0; dut.eval();
+        check(dut.rsp_valid_o && dut.rsp_error_o, "rejected CLINT store reports rsp_error_o");
+        step(false, false, false, 0, 0, 0, true);
+        auto bad_align = step(false, true, true, MSIP + 2, 2, 1, true);
         check(bad_align.first && bad_align.second, "CLINT rejects unaligned address");
+        dut.clk_i = 0; dut.eval();
+        check(dut.rsp_valid_o && dut.rsp_error_o, "unaligned CLINT store reports rsp_error_o");
+        step(false, false, false, 0, 0, 0, true);
 
-        step(false, true, true, MTIME, 3, 10, false);
-        step(false, true, true, MTIMECMP, 3, 12, false);
+        step(false, true, true, MTIME, 3, 10, true);
+        step(false, false, false, 0, 0, 0, true);
+        step(false, true, true, MTIMECMP, 3, 13, true);
         dut.clk_i = 0; dut.eval(); check(!dut.irq_timer_o, "timer remains low before threshold");
-        step(false, false, false, 0, 0, 0, false);
+        step(false, false, false, 0, 0, 0, true);
         dut.clk_i = 0; dut.eval(); check(dut.irq_timer_o, "timer asserts at mtime >= mtimecmp");
-        step(false, true, true, MTIMECMP, 3, 100, false);
+        step(false, true, true, MTIMECMP, 3, 100, true);
         dut.clk_i = 0; dut.eval(); check(!dut.irq_timer_o, "timer clear follows raised compare");
+        step(false, false, false, 0, 0, 0, true);
 
         step(false, true, false, MTIME, 3, 0, false);
         dut.clk_i = 0; dut.eval(); check(dut.rsp_valid_o && !dut.rsp_error_o && dut.rsp_data_o >= 10 && dut.rsp_data_o < 100, "64-bit mtime load response");

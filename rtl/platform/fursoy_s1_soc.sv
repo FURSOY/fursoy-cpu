@@ -365,17 +365,10 @@ module fursoy_s1_soc
 
         case (mmio_target_q)
             MMIO_TGT_CLINT: begin
-                if (!mmio_is_store_q) begin
-                    mmio_rsp_valid  = clint_rsp_valid;
-                    mmio_rsp_rdata  = clint_rsp_data;
-                    mmio_rsp_error  = clint_rsp_error;
-                    clint_rsp_ready = mmio_rsp_ready;
-                end else begin
-                    // CLINT stores execute in 1 cycle, errors report via access_error
-                    mmio_rsp_valid  = 1'b1;
-                    mmio_rsp_rdata  = 64'h0;
-                    mmio_rsp_error  = mmio_clint_err_q;
-                end
+                mmio_rsp_valid  = clint_rsp_valid;
+                mmio_rsp_rdata  = mmio_is_store_q ? 64'h0 : clint_rsp_data;
+                mmio_rsp_error  = clint_rsp_error || mmio_clint_err_q;
+                clint_rsp_ready = mmio_rsp_ready;
             end
 
             MMIO_TGT_PLIC: begin
@@ -876,23 +869,6 @@ module fursoy_s1_soc
 
         .test_fof_fault_valid_i   (1'b0),
         .test_fof_fault_elem_i    (64'h0),
-
-        .test_viq_alloc_valid_i   (1'b0),
-        .test_viq_alloc_rob_idx_i ('0),
-        .test_viq_alloc_uop_class_i(UOP_ALU_INT),
-        .test_viq_alloc_sub_op_i  ('0),
-        .test_viq_alloc_vd_i      ('0),
-        .test_viq_alloc_vs1_i     ('0),
-        .test_viq_alloc_vs2_i     ('0),
-        .test_viq_alloc_vm_i      (1'b0),
-        .test_viq_alloc_vtype_i   ('0),
-        .test_viq_alloc_vl_i      (9'b0),
-        .test_viq_issue_ready_i   (1'b0),
-        .viq_issue_valid_o        (),
-        .viq_issue_vd_o           (),
-        .viq_issue_beat_idx_o     (),
-        .viq_issue_total_beats_o  (),
-        .viq_issue_is_last_beat_o (),
 
         // L1D Memory Channels
         .bus_rd_req_valid_o       (bus_rd_req_valid),

@@ -163,10 +163,10 @@
           "write_idempotent": true,
           "misaligned_exceptions": {
             "load_store": {
-              "None": null
+              "Some": "AlignmentException"
             },
             "vector": {
-              "None": null
+              "Some": "AlignmentException"
             },
             "amo": "AccessFault",
             "lrsc": "AccessFault"
@@ -201,10 +201,10 @@
           "write_idempotent": false,
           "misaligned_exceptions": {
             "load_store": {
-              "None": null
+              "Some": "AlignmentException"
             },
             "vector": {
-              "None": null
+              "Some": "AlignmentException"
             },
             "amo": "AccessFault",
             "lrsc": "AccessFault"
@@ -239,10 +239,10 @@
           "write_idempotent": true,
           "misaligned_exceptions": {
             "load_store": {
-              "None": null
+              "Some": "AlignmentException"
             },
             "vector": {
-              "None": null
+              "Some": "AlignmentException"
             },
             "amo": "AccessFault",
             "lrsc": "AccessFault"
@@ -355,8 +355,8 @@
       "max_index_eew_exp": 6,
       "vstart": {
         "zero_required": {
-          "arith": true,
-          "scalar_move": true
+          "arith": false,
+          "scalar_move": false
         }
       }
     },

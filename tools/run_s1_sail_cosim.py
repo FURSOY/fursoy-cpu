@@ -578,6 +578,391 @@ page_ro:
     .dword 0xdeadbeefcafebabe
     .zero 4088
 """,
+
+    "05_rv64a_atomics": COMMON_HTIF_MACROS + r"""
+.section .text.init
+.globl _start
+_start:
+    # --- 1. LR.W / SC.W success & failure ---
+    la   s0, amo_word
+    lr.w t0, (s0)
+    addi t1, t0, 5
+    sc.w t2, t1, (s0)         # Expect t2 == 0 (success, clears reservation)
+    bne  t2, zero, amo_fail
+
+    sc.w t2, t1, (s0)         # Second SC without LR MUST fail (t2 != 0)
+    beq  t2, zero, amo_fail
+
+    # --- 2. LR.D / SC.D success & failure ---
+    la   s1, amo_dword
+    lr.d t0, (s1)
+    addi t1, t0, 0x11
+    sc.d t2, t1, (s1)         # Expect t2 == 0 (success, clears reservation)
+    bne  t2, zero, amo_fail
+
+    lr.d t0, (s0)             # Reserve different address (s0)
+    sc.d t2, t1, (s1)         # SC to s1 fails due to address mismatch (t2 != 0)
+    beq  t2, zero, amo_fail
+
+    # --- 3. Word AMOs (including signed vs unsigned negative edge cases) ---
+    li   a0, 0x70000001
+    li   a1, -5               # 0xFFFF_FFFF_FFFF_FFFB (neg signed, large unsigned)
+    li   a2, 3
+    amoadd.w  t0, a2, (s0)
+    amoswap.w t1, a1, (s0)    # Mem is now -5
+    amomin.w  t2, a0, (s0)    # min(-5, +) = -5
+    amomax.w  t3, a0, (s0)    # max(-5, +) = a0
+    amominu.w t4, a1, (s0)    # min_u(a0, 0xfffffffb) = a0
+    amomaxu.w t5, a1, (s0)    # max_u(a0, 0xfffffffb) = 0xfffffffb
+    amoand.w  t6, a0, (s0)
+    amoor.w   s2, a2, (s0)
+    amoxor.w  s3, a1, (s0)
+
+    # --- 4. Doubleword AMOs ---
+    li   a3, -100
+    li   a4, 0x00FF00FF00FF00FF
+    amoadd.d  t0, a4, (s1)
+    amoswap.d t1, a3, (s1)    # Mem is now -100
+    amomin.d  t2, a4, (s1)    # min(-100, +) = -100
+    amomax.d  t3, a4, (s1)    # max(-100, +) = a4
+    amominu.d t4, a3, (s1)    # min_u(a4, -100) = a4
+    amomaxu.d t5, a3, (s1)    # max_u(a4, -100) = -100
+    amoand.d  t6, a4, (s1)
+    amoor.d   s4, a2, (s1)
+    amoxor.d  s5, a4, (s1)
+    fence rw, rw
+    HTIF_EXIT 0
+
+amo_fail:
+    HTIF_EXIT 1
+
+.section .data
+.align 4
+amo_word:
+    .word 0x10203040
+    .word 0
+.align 4
+amo_dword:
+    .dword 0x1122334455667788
+    .dword 0
+""",
+
+    "06_priv_traps_mprv_tbit": COMMON_HTIF_MACROS + r"""
+.section .text.init
+.globl _start
+_start:
+    la   t0, m_trap_handler
+    csrw mtvec, t0
+    csrw mstatus, zero        # Align reset MPP=0 across Sail & Fursoy before MPRV test
+
+    # --- 1. Build Sv39 page tables ---
+    # 0x8000_0000 .. 0x8000_FFFF -> identity, G=1 (V|R|W|X|G|A|D = 0xEF)
+    la   s0, pt_root
+    la   s1, pt_mid_80
+    la   s2, pt_leaf_80
+    srli t0, s1, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0x1
+    sd   t0, 16(s0)           # VPN[2]=2 (0x8000_0000)
+
+    srli t0, s2, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0x1
+    sd   t0, 0(s1)
+
+    li   t1, 0x80000000
+    li   t2, 0
+    li   t3, 16
+1:  srli t0, t1, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0xEF         # V|R|W|X|G|A|D
+    slli t4, t2, 3
+    add  t4, s2, t4
+    sd   t0, 0(t4)
+    li   t5, 4096
+    add  t1, t1, t5
+    addi t2, t2, 1
+    blt  t2, t3, 1b
+
+    # VPN[2]=1 (0x4000_0000) -> pt_mid_40 -> pt_leaf_40
+    la   s3, pt_mid_40
+    la   s4, pt_leaf_40
+    srli t0, s3, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0x1
+    sd   t0, 8(s0)            # pt_root[1] = pt_mid_40
+
+    srli t0, s4, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0x1
+    sd   t0, 0(s3)            # pt_mid_40[0] = pt_leaf_40
+
+    # Non-leaf with A=1 at pt_mid_40[1] (VA 0x4020_0000): must Page Fault!
+    ori  t0, t0, 0x40         # Non-leaf V|A
+    sd   t0, 8(s3)
+
+    # pt_leaf_40[1] (VA 0x4000_1000) -> u_page (V|R|W|U|A|D = 0xD7)
+    la   t1, u_page
+    srli t0, t1, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0xD7
+    sd   t0, 8(s4)
+
+    # pt_leaf_40[2] (VA 0x4000_2000) -> s_page (V|R|W|A|D = 0xC7, U=0)
+    la   t1, s_page
+    srli t0, t1, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0xC7
+    sd   t0, 16(s4)
+
+    # pt_leaf_40[3] (VA 0x4000_3000) -> Reserved bit 54 set (1 << 54) | V|R|A|D
+    la   t1, s_page
+    srli t0, t1, 12
+    slli t0, t0, 10
+    ori  t0, t0, 0xC3
+    li   t6, 1
+    slli t6, t6, 54
+    or   t0, t0, t6
+    sd   t0, 24(s4)
+
+    # Enable Sv39 satp with ASID=1 (MODE=8)
+    srli t0, s0, 12
+    li   t1, (8 << 60) | (1 << 44)
+    or   t0, t0, t1
+    csrw satp, t0
+    sfence.vma zero, zero
+
+    # --- 2. M-mode MPRV=1 checks (MPP=0 U-mode accesses) ---
+    li   t0, (1 << 17)        # MPRV=1, MPP=0 (bits [12:11]=00)
+    csrs mstatus, t0
+    # Wait: first clear MPP to 0 while setting MPRV=1:
+    csrr t1, mstatus
+    li   t2, ~(3 << 11)
+    and  t1, t1, t2
+    or   t1, t1, t0
+    csrw mstatus, t1
+
+    li   a0, 0x40001000
+    ld   a1, 0(a0)            # Succeeds via U=1 page!
+    li   t2, 0x5566778899AABBCC
+    bne  a1, t2, priv_fail
+
+    li   a2, 0x40002000
+    ld   a3, 0(a2)            # Page fault (Cause 13: U-mode access to S-only page under MPRV=1)!
+
+    # Clear MPRV, test Reserved PTE bit 54 & Non-leaf A=1
+    li   t0, (1 << 17)
+    csrc mstatus, t0
+    # Switch to S-mode to test S-mode fault & TW/TSR/TVM traps!
+    # First enable TVM(20), TW(21), TSR(22) in mstatus, set MPP=1 (S-mode)
+    li   t0, (1 << 20) | (1 << 21) | (1 << 22)
+    csrs mstatus, t0
+    li   t1, (3 << 11)
+    csrc mstatus, t1
+    li   t1, (1 << 11)
+    csrs mstatus, t1
+    la   t0, s_entry
+    csrw mepc, t0
+    mret
+
+s_entry:
+    # Still at ASID=1, test sfence.vma preservation of G=1 mapping by touching ASID=2 first? No, TVM=1!
+    # Under TVM=1: csrr satp and sfence.vma MUST trap Cause 2 in S-mode!
+    csrr t0, satp             # Trap Cause 2 (TVM)
+    sfence.vma zero, zero     # Trap Cause 2 (TVM)
+    wfi                       # Trap Cause 2 (TW)
+    sret                      # Trap Cause 2 (TSR)
+
+    # Reserved PTE[54]!=0 & Non-leaf A=1 Page Faults (not delegated -> handled in M-mode)
+    li   a4, 0x40003000
+    ld   a5, 0(a4)            # Load Page Fault (Cause 13: reserved PTE bit 54)
+    li   a6, 0x40200000
+    ld   a7, 0(a6)            # Load Page Fault (Cause 13: non-leaf A=1)
+
+    # Misaligned Store (Cause 6)
+    la   t0, u_page
+    sd   a1, 1(t0)            # Store Address Misaligned (Cause 6, mtval=t0+1)
+
+    ecall                     # Return to M-mode handler which sets satp=0 via M-mode exit
+
+m_done:
+    # Test SFENCE.VMA zero, t0 (rs2!=x0 -> ASID-only flush, preserves G=1 code page!)
+    li   t0, 2
+    sfence.vma zero, t0
+    csrw satp, zero
+    sfence.vma zero, zero
+    HTIF_EXIT 0
+
+priv_fail:
+    HTIF_EXIT 1
+
+.align 4
+m_trap_handler:
+    csrr t0, mcause
+    csrr t1, mepc
+    csrr t2, mtval
+    li   t3, 9                # S-mode ECALL -> return to m_done in M-mode!
+    beq  t0, t3, 2f
+    addi t1, t1, 4
+    csrw mepc, t1
+    mret
+2:
+    la   t1, m_done
+    csrw mepc, t1
+    li   t3, (3 << 11)
+    csrs mstatus, t3          # MPP = M
+    mret
+
+.section .data
+.align 12
+pt_root:    .zero 4096
+pt_mid_80:  .zero 4096
+pt_leaf_80: .zero 4096
+pt_mid_40:  .zero 4096
+pt_leaf_40: .zero 4096
+u_page:
+    .dword 0x5566778899AABBCC
+    .zero 4088
+s_page:
+    .dword 0xCAFEBABE12345678
+    .zero 4088
+""",
+
+    "07_fp_edge_cases": COMMON_HTIF_MACROS + r"""
+.section .text.init
+.globl _start
+_start:
+    la   t0, fp_edge_trap
+    csrw mtvec, t0
+    fmv.w.x f0, zero          # Trap Cause 2 (FS==0): trap handler enables FS=01 & aligns MPP=3
+
+    # --- 1. NaN-unboxed FP32 handling ---
+    li   t1, 0x000000003f800000  # Upper 32 bits != 0xFFFFFFFF -> unboxed!
+    fmv.d.x f1, t1
+    li   t2, 0xffffffff3f800000  # Properly NaN-boxed 1.0f
+    fmv.d.x f2, t2
+    fadd.s   f3, f1, f2       # Must produce canonical qNaN 0xffffffff7fc00000
+    fcvt.d.s f4, f1           # Must produce canonical DP qNaN 0x7ff8000000000000
+    fmv.x.d  a0, f3
+    fmv.x.d  a1, f4
+
+    # --- 2. frm >= 5 illegal dynamic RM vs valid static RM ---
+    csrw frm, 5
+    fadd.s f5, f2, f2, rne    # Static RM=0: valid even with frm=5!
+    fadd.s f6, f2, f2, dyn    # Dynamic RM=7 with frm=5 -> Trap Cause 2!
+
+    csrw frm, 6
+    fmul.d f7, f4, f4, dyn    # Dynamic RM=7 with frm=6 -> Trap Cause 2!
+
+    csrw frm, 7
+    fcvt.w.s a2, f2, dyn      # Dynamic RM=7 with frm=7 -> Trap Cause 2!
+
+    csrw frm, 0
+    HTIF_EXIT 0
+
+.align 4
+fp_edge_trap:
+    csrr t0, mcause
+    li   t1, 2
+    bne  t0, t1, 1f
+    csrr t2, mepc
+    addi t2, t2, 4
+    csrw mepc, t2
+    li   t3, 0x2000           # Enable mstatus.FS = 01 (idempotent if already set)
+    csrs mstatus, t3
+    mret
+1:  HTIF_EXIT 1
+""",
+
+    "08_rvv_lmul_vstart_traps": COMMON_HTIF_MACROS + r"""
+.section .text.init
+.globl _start
+_start:
+    la   t0, v_edge_trap
+    csrw mtvec, t0
+    li   t0, 0x200            # mstatus.VS = 01 (csrw aligns MPP=0 across Sail & Fursoy)
+    csrw mstatus, t0
+
+    la   s0, v_data_a
+    la   s1, v_data_b
+    la   s2, v_data_idx
+    la   s3, v_data_out
+
+    # --- 1. LMUL = 2 (e32, m2 -> VL = 16, writes v4..v5, v8..v9) ---
+    vsetivli t0, 16, e32, m2, ta, ma
+    vle32.v  v4, (s0)
+    vle32.v  v6, (s1)
+    vadd.vv  v8, v4, v6
+    vse32.v  v8, (s3)
+
+    # --- 2. LMUL = 4 (e64, m4 -> VL = 16) ---
+    vsetivli t0, 16, e64, m4, ta, ma
+    vmv.v.i  v12, 7
+    vadd.vi  v16, v12, 3      # Writes v16..v19
+
+    # --- 3. LMUL = 8 (e64, m8 -> VL = 32? VLEN=256 => VLMAX=32) ---
+    li       a0, 20
+    vsetvli  t0, a0, e64, m8, ta, ma
+    vmv.v.i  v8, 5
+    vadd.vi  v16, v8, 2       # Writes v16..v23
+
+    # --- 4. Fractional LMUL = mf2 (e32, mf2 -> VL = 4) ---
+    vsetivli t0, 4, e32, mf2, ta, ma
+    vadd.vi  v2, v4, 9
+
+    # --- 5. Indexed Load/Store (e32, m1) ---
+    vsetivli t0, 8, e32, m1, ta, ma
+    vle32.v  v1, (s2)
+    vluxei32.v v3, (s0), v1
+    vsoxei32.v v3, (s3), v1
+
+    # --- 6. Non-zero vstart execution + reset to 0 ---
+    li       t1, 3
+    csrw     vstart, t1
+    vadd.vi  v4, v2, 1        # Skips elem 0..2, updates 3..7, clears vstart=0
+    csrr     a1, vstart
+
+    # --- 7. Illegal RVV traps (Cause 2 + mtval) ---
+    # 7a. Masked vd == v0 overlap: vadd.vv v0, v4, v6, v0.t (0x00620057)
+    .word    0x00620057
+
+    # 7b. Unaligned vd under LMUL = 2: vadd.vv v5, v4, v6 (0x026202d7)
+    vsetivli t0, 16, e32, m2, ta, ma
+    .word    0x026202d7
+
+    # 7c. Unaligned vs2 under LMUL = 2: vadd.vv v8, v4, v5 (0x02520457)
+    .word    0x02520457
+
+    # 7d. Execution while vtype.vill == 1: reserved SEW=128 -> vill=1, vadd.vi -> Cause 2
+    li       t2, 0x20         # vtype[5:3] = 3'b100 (reserved SEW=128 => vill=1)
+    vsetvl   t0, a0, t2
+    vadd.vi  v8, v4, 1
+    vsetivli t0, 4, e32, m1, ta, ma
+
+    HTIF_EXIT 0
+
+.align 4
+v_edge_trap:
+    csrr t0, mcause
+    li   t1, 2
+    bne  t0, t1, 1f
+    csrr t2, mepc
+    addi t2, t2, 4
+    csrw mepc, t2
+    mret
+1:  HTIF_EXIT 1
+
+.section .data
+.align 6
+v_data_a:
+    .word 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160
+v_data_b:
+    .word 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+v_data_idx:
+    .word 28, 24, 20, 16, 12, 8, 4, 0
+v_data_out:
+    .zero 128
+""",
 }
 
 SAIL_STEP_RE = re.compile(r"^\[(\d+)\]\s+\[(?:H?)([MSU])\]:\s+0x([0-9A-Fa-f]+)\s+\(0x([0-9A-Fa-f]+)\)\s+(.*)$")
@@ -633,9 +1018,12 @@ def parse_sail_trace(log_text: str) -> list[dict]:
     steps: list[dict] = []
     cur: dict | None = None
     state = {
+        "mstatus": 0x0000000A00001800,
+        "frm": 0,
         "fflags": 0,
         "vl": 0,
         "vtype": 0x8000000000000000,
+        "vstart": 0,
         "satp": 0,
         "mcause": 0,
         "mepc": 0,
@@ -678,6 +1066,7 @@ def parse_sail_trace(log_text: str) -> list[dict]:
                     state[name] = val
                 elif name == "fcsr":
                     state["fflags"] = val & 0x1F
+                    state["frm"] = (val >> 5) & 0x7
             continue
 
         if (gm := SAIL_GPR_RE.match(line)):
@@ -697,6 +1086,7 @@ def parse_sail_trace(log_text: str) -> list[dict]:
                 state[name] = val
             elif name == "fcsr":
                 state["fflags"] = val & 0x1F
+                state["frm"] = (val >> 5) & 0x7
             cur["csr_state"] = dict(state)
 
     if cur is not None:
@@ -788,7 +1178,7 @@ def compare_traces(name: str, sail_steps: list[dict], fursoy_events: list[dict])
                         f"fursoy(scause=0x{fur_scause:x}, sepc=0x{fur_sepc:x})"
                     )
                     break
-                if fur_scause in (4, 6, 13, 15):
+                if fur_scause in (2, 4, 6, 13, 15):
                     sail_stval = s["csr_state"]["stval"]
                     fur_stval = int(f["stval"], 16)
                     if fur_stval != sail_stval:
@@ -809,8 +1199,8 @@ def compare_traces(name: str, sail_steps: list[dict], fursoy_events: list[dict])
                         f"fursoy(mcause=0x{fur_mcause:x}, mepc=0x{fur_mepc:x})"
                     )
                     break
-                # Check mtval for memory faults (causes 4, 6, 13, 15)
-                if fur_mcause in (4, 6, 13, 15):
+                # Check mtval for memory and illegal-insn faults (causes 2, 4, 6, 13, 15)
+                if fur_mcause in (2, 4, 6, 13, 15):
                     sail_mtval = s["csr_state"]["mtval"]
                     fur_mtval = int(f["mtval"], 16)
                     if fur_mtval != sail_mtval:
@@ -819,6 +1209,12 @@ def compare_traces(name: str, sail_steps: list[dict], fursoy_events: list[dict])
                             f"sail=0x{sail_mtval:x} vs fursoy=0x{fur_mtval:x}"
                         )
                         break
+            if "mstatus" in f and int(f["mstatus"], 16) != s["csr_state"]["mstatus"]:
+                mismatches.append(
+                    f"step {idx} trap mstatus mismatch at 0x{s['pc']:x}: "
+                    f"sail=0x{s['csr_state']['mstatus']:016x} vs fursoy={f['mstatus']}"
+                )
+                break
             continue
 
         if f["type"] != "retire":
@@ -861,23 +1257,42 @@ def compare_traces(name: str, sail_steps: list[dict], fursoy_events: list[dict])
             fprs_checked += 1
 
         if s["vrf_writes"]:
-            exp_vd, exp_hex = s["vrf_writes"][-1]
+            final_vwrites = {vr: vhex for vr, vhex in s["vrf_writes"]}
+            exp_vd = s["vrf_writes"][0][0]
             got_vd = f.get("vd", f["rd"])
             if got_vd != exp_vd or f["vec_dest"] != 1:
                 mismatches.append(
                     f"step {idx} ({s['disasm']}): VRF dest mismatch sail v{exp_vd} vs fursoy(vd={got_vd}, vec={f['vec_dest']})"
                 )
                 break
-            got_hex = f["vrf"].lower().removeprefix("0x").zfill(64)
-            if got_hex != exp_hex:
-                mismatches.append(
-                    f"step {idx} ({s['disasm']}) v{exp_vd} mismatch:\n  sail  =0x{exp_hex}\n  fursoy=0x{got_hex}"
-                )
+            vrf_grp = f.get("vrf_grp", {})
+            vrf_mismatch = False
+            for exp_vr, exp_hex in sorted(final_vwrites.items()):
+                raw_got = vrf_grp.get(str(exp_vr), f["vrf"] if exp_vr == got_vd else "")
+                if not raw_got:
+                    mismatches.append(
+                        f"step {idx} ({s['disasm']}): missing VRF probe for v{exp_vr}"
+                    )
+                    vrf_mismatch = True
+                    break
+                got_hex = raw_got.lower().removeprefix("0x").zfill(64)
+                if got_hex != exp_hex:
+                    mismatches.append(
+                        f"step {idx} ({s['disasm']}) v{exp_vr} mismatch:\n  sail  =0x{exp_hex}\n  fursoy=0x{got_hex}"
+                    )
+                    vrf_mismatch = True
+                    break
+                vrfs_checked += 1
+            if vrf_mismatch:
                 break
-            vrfs_checked += 1
 
         # End-of-commit-cycle architectural CSR consistency checks (slot_last handles 2-wide concurrent commits)
         if f.get("slot_last", 1) == 1:
+            if "frm" in f and f["frm"] != s["csr_state"]["frm"]:
+                mismatches.append(
+                    f"step {idx} ({s['disasm']}) frm mismatch: sail={s['csr_state']['frm']} vs fursoy={f['frm']}"
+                )
+                break
             if f["fflags"] != s["csr_state"]["fflags"]:
                 mismatches.append(
                     f"step {idx} ({s['disasm']}) fflags mismatch: sail=0x{s['csr_state']['fflags']:x} vs fursoy=0x{f['fflags']:x}"
@@ -891,6 +1306,16 @@ def compare_traces(name: str, sail_steps: list[dict], fursoy_events: list[dict])
             if int(f["vtype"], 16) != s["csr_state"]["vtype"]:
                 mismatches.append(
                     f"step {idx} ({s['disasm']}) vtype mismatch: sail=0x{s['csr_state']['vtype']:x} vs fursoy={f['vtype']}"
+                )
+                break
+            if "vstart" in f and f["vstart"] != s["csr_state"]["vstart"]:
+                mismatches.append(
+                    f"step {idx} ({s['disasm']}) vstart mismatch: sail={s['csr_state']['vstart']} vs fursoy={f['vstart']}"
+                )
+                break
+            if "mstatus" in f and int(f["mstatus"], 16) != s["csr_state"]["mstatus"]:
+                mismatches.append(
+                    f"step {idx} ({s['disasm']}) mstatus mismatch: sail=0x{s['csr_state']['mstatus']:016x} vs fursoy={f['mstatus']}"
                 )
                 break
             if int(f["satp"], 16) != s["csr_state"]["satp"]:

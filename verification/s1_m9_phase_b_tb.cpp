@@ -195,8 +195,6 @@ public:
         dut->test_vec_cfg_rd_is_zero_i = 0;
         dut->test_fof_fault_valid_i = 0;
         dut->test_fof_fault_elem_i = 0;
-        dut->test_viq_alloc_valid_i = 0;
-        dut->test_viq_issue_ready_i = 1;
 
         dut->bus_rd_rsp_valid_i = 0;
         dut->bus_rd_rsp_tag_i = 0;

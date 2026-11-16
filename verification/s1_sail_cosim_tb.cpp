@@ -208,8 +208,6 @@ public:
         dut->test_vrf_w_valid_i     = 0;
         dut->test_vec_cfg_valid_i   = 0;
         dut->test_fof_fault_valid_i = 0;
-        dut->test_viq_alloc_valid_i = 0;
-        dut->test_viq_issue_ready_i = 0;
 
         dut->test_ev_fp_issue_i        = 0;
         dut->test_ev_fp_fma_busy_i     = 0;
@@ -411,6 +409,26 @@ public:
                 vrf_hex << std::setw(8) << vrf_words[w];
             }
 
+            std::ostringstream vrf_grp_json;
+            vrf_grp_json << "{";
+            if (s.vec_dest_valid) {
+                bool first = true;
+                for (int g = 0; g < 8 && (s.prd_vec + g) < 32; g++) {
+                    uint8_t vr = (uint8_t)(s.prd_vec + g);
+                    dut->probe_vrf_paddr_i = vr;
+                    dut->eval();
+                    if (!first) vrf_grp_json << ",";
+                    first = false;
+                    vrf_grp_json << "\"" << std::dec << (int)vr << "\":\"0x"
+                                 << std::hex << std::setfill('0');
+                    for (int w = 7; w >= 0; w--) {
+                        vrf_grp_json << std::setw(8) << dut->probe_vrf_pdata_o[w];
+                    }
+                    vrf_grp_json << "\"";
+                }
+            }
+            vrf_grp_json << "}";
+
             trace_out << "{\"type\":\"retire\""
                       << ",\"cycle\":" << std::dec << cycle_count
                       << ",\"slot_last\":" << ((idx + 1 == retiring.size()) ? 1 : 0)
@@ -422,10 +440,13 @@ public:
                       << ",\"gpr\":\"0x" << std::hex << std::setfill('0') << std::setw(16) << gpr_val << "\""
                       << ",\"fpr\":\"0x" << std::hex << std::setfill('0') << std::setw(16) << fpr_val << "\""
                       << ",\"vrf\":\"" << vrf_hex.str() << "\""
+                      << ",\"vrf_grp\":" << vrf_grp_json.str()
                       << ",\"priv\":" << std::dec << (int)dut->csr_priv_mode_o
+                      << ",\"frm\":" << std::dec << (int)dut->fcsr_frm_o
                       << ",\"fflags\":" << std::dec << (int)dut->fcsr_fflags_o
                       << ",\"vl\":" << std::dec << dut->vl_o
                       << ",\"vtype\":\"0x" << std::hex << std::setfill('0') << std::setw(16) << dut->vtype_o << "\""
+                      << ",\"vstart\":" << std::dec << dut->vstart_o
                       << ",\"mstatus\":\"0x" << std::hex << std::setfill('0') << std::setw(16) << dut->csr_mstatus_o << "\""
                       << ",\"satp\":\"0x" << std::hex << std::setfill('0') << std::setw(16) << dut->csr_satp_o << "\""
                       << "}\n";
@@ -519,7 +540,15 @@ int main(int argc, char** argv) {
     trace_ofs.close();
     if (has_htif_pc && !hit_htif) {
         std::cerr << "ERROR: Timed out after " << tb.cycle_count
-                  << " cycles without retiring htif_pc=0x" << std::hex << htif_pc << std::dec << "\n";
+                  << " cycles without retiring htif_pc=0x" << std::hex << htif_pc << std::dec
+                  << " | rob_count=" << (int)tb.dut->rob_count_o
+                  << " head=" << (int)tb.dut->rob_head_o
+                  << " tail=" << (int)tb.dut->rob_tail_o
+                  << " head_v=" << (int)tb.dut->diag_head_valid_o
+                  << " head_c=" << (int)tb.dut->diag_head_completed_o
+                  << " head_e=" << (int)tb.dut->diag_head_exception_o
+                  << " viq_cnt=" << (int)tb.dut->viq_count_o
+                  << "\n";
         return 3;
     }
     return 0;

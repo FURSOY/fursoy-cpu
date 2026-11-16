@@ -4,11 +4,11 @@
 // =============================================================================
 // Fursoy Slice-1 256-bit Vector Register File (VRF) — Milestone 8 Phase D
 // =============================================================================
-// Sizing: 48 physical vector registers x 256 bits (VLEN = 256, ELEN = 64, total 1.5 KiB).
+// Sizing: 64 physical vector registers x 256 bits (VLEN = 256, ELEN = 64, total 2.0 KiB).
 // Reference: docs/architecture/slice1-m8-fp-vector-v1.md Section 8.1, Section 10
 //
 // Invariants:
-// - Physical register array: 48 entries x 256 bits (VRF_NUM_PREGS = 48).
+// - Physical register array: 64 entries x 256 bits (VRF_NUM_PREGS = 64).
 // - 4 Independent 64-bit Banks per physical register:
 //     * Bank 0: Elements [63:0]
 //     * Bank 1: Elements [127:64]
@@ -52,6 +52,11 @@ module fursoy_s1_vrf
     input  vreg_t             raddr2_v_i,
     input  logic [3:0]        ren2_bank_i,
     output logic [255:0]      rdata2_v_o,
+
+    // Read Port 3: old_vd (Mask/Tail/vstart Undisturbed Merge Source)
+    input  vreg_t             raddr3_v_i,
+    input  logic [3:0]        ren3_bank_i,
+    output logic [255:0]      rdata3_v_o,
 
     // -------------------------------------------------------------------------
     // 1 Execution Writeback Port (Validated Writeback Stage: WB)
@@ -106,14 +111,14 @@ module fursoy_s1_vrf
             /* verilator lint_on BLKSEQ */
         end else begin
             // Testbench direct write (highest precedence during setup)
-            if (test_w_valid_i && (test_w_paddr_i < vreg_t'(VRF_NUM_PREGS))) begin
+            if (test_w_valid_i) begin
                 for (int b = 0; b < 8; b++) begin
                     if (test_w_byte_mask_i[b])      bank0_q[test_w_paddr_i][b*8 +: 8] <= test_w_data_i[b*8 +: 8];
                     if (test_w_byte_mask_i[b + 8])  bank1_q[test_w_paddr_i][b*8 +: 8] <= test_w_data_i[(b+8)*8 +: 8];
                     if (test_w_byte_mask_i[b + 16]) bank2_q[test_w_paddr_i][b*8 +: 8] <= test_w_data_i[(b+16)*8 +: 8];
                     if (test_w_byte_mask_i[b + 24]) bank3_q[test_w_paddr_i][b*8 +: 8] <= test_w_data_i[(b+24)*8 +: 8];
                 end
-            end else if (w0_valid_i && (w0_paddr_i < vreg_t'(VRF_NUM_PREGS))) begin
+            end else if (w0_valid_i) begin
                 // Bank 0 write
                 if (w0_bank_mask_i[0]) begin
                     for (int b = 0; b < 8; b++) begin
@@ -191,6 +196,12 @@ module fursoy_s1_vrf
     assign rdata2_v_o[191:128] = read_bank_data(2, raddr2_v_i, bank2_q[raddr2_v_i]);
     assign rdata2_v_o[255:192] = read_bank_data(3, raddr2_v_i, bank3_q[raddr2_v_i]);
 
+    // Read Port 3 (old_vd)
+    assign rdata3_v_o[63:0]    = read_bank_data(0, raddr3_v_i, bank0_q[raddr3_v_i]);
+    assign rdata3_v_o[127:64]  = read_bank_data(1, raddr3_v_i, bank1_q[raddr3_v_i]);
+    assign rdata3_v_o[191:128] = read_bank_data(2, raddr3_v_i, bank2_q[raddr3_v_i]);
+    assign rdata3_v_o[255:192] = read_bank_data(3, raddr3_v_i, bank3_q[raddr3_v_i]);
+
     // Non-destructive probe read
     assign probe_pdata_o[63:0]    = bank0_q[probe_paddr_i];
     assign probe_pdata_o[127:64]  = bank1_q[probe_paddr_i];
@@ -203,7 +214,8 @@ module fursoy_s1_vrf
             bank_collision_o[b] = w0_valid_i && w0_bank_mask_i[b] && (
                 (ren0_bank_i[b] && (raddr0_v_i == w0_paddr_i)) ||
                 (ren1_bank_i[b] && (raddr1_v_i == w0_paddr_i)) ||
-                (ren2_bank_i[b] && (raddr2_v_i == w0_paddr_i))
+                (ren2_bank_i[b] && (raddr2_v_i == w0_paddr_i)) ||
+                (ren3_bank_i[b] && (raddr3_v_i == w0_paddr_i))
             );
         end
     end

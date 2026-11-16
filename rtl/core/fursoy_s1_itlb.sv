@@ -43,6 +43,8 @@ module fursoy_s1_itlb
     input  logic              sfence_vma_valid_i,
     input  logic [63:0]       sfence_vma_va_i,
     input  logic [15:0]       sfence_vma_asid_i,
+    input  logic              sfence_vma_rs1_zero_i,
+    input  logic              sfence_vma_rs2_zero_i,
 
     // -------------------------------------------------------------------------
     // PTW Request & Response Interface (to Shared PTW)
@@ -307,13 +309,18 @@ module fursoy_s1_itlb
             // A. SFENCE.VMA Invalidation Processing
             // -----------------------------------------------------------------
             if (sfence_vma_valid_i) begin
+                logic rs1_zero;
+                logic rs2_zero;
+                rs1_zero = sfence_vma_rs1_zero_i;
+                rs2_zero = sfence_vma_rs2_zero_i;
+
                 for (int s = 0; s < BASE_SETS; s++) begin
                     for (int w = 0; w < BASE_WAYS; w++) begin
                         if (base_tlb[s][w].valid) begin
                             logic match_va, match_asid;
-                            match_va   = (sfence_vma_va_i == 64'd0) || ({base_tlb[s][w].tag, s[3:0]} == sfence_vma_va_i[38:12]);
-                            match_asid = (sfence_vma_asid_i == 16'd0) || (base_tlb[s][w].asid == sfence_vma_asid_i);
-                            if (match_va && (match_asid || base_tlb[s][w].global_map)) begin
+                            match_va   = rs1_zero || ({base_tlb[s][w].tag, s[3:0]} == sfence_vma_va_i[38:12]);
+                            match_asid = rs2_zero ? 1'b1 : (!base_tlb[s][w].global_map && (base_tlb[s][w].asid == sfence_vma_asid_i));
+                            if (match_va && match_asid) begin
                                 base_tlb[s][w].valid <= 1'b0;
                             end
                         end
@@ -322,9 +329,14 @@ module fursoy_s1_itlb
 
                 for (int i = 0; i < SUPER_ENTRIES; i++) begin
                     if (super_tlb[i].valid) begin
-                        logic match_asid;
-                        match_asid = (sfence_vma_asid_i == 16'd0) || (super_tlb[i].asid == sfence_vma_asid_i);
-                        if (match_asid || super_tlb[i].global_map) begin
+                        logic match_va, match_asid;
+                        if (super_tlb[i].is_1g) begin
+                            match_va = rs1_zero || (super_tlb[i].vpn[26:18] == sfence_vma_va_i[38:30]);
+                        end else begin
+                            match_va = rs1_zero || (super_tlb[i].vpn[26:9] == sfence_vma_va_i[38:21]);
+                        end
+                        match_asid = rs2_zero ? 1'b1 : (!super_tlb[i].global_map && (super_tlb[i].asid == sfence_vma_asid_i));
+                        if (match_va && match_asid) begin
                             super_tlb[i].valid <= 1'b0;
                         end
                     end

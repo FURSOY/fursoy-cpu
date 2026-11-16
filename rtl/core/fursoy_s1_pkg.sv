@@ -67,13 +67,13 @@ package fursoy_s1_pkg;
     localparam int unsigned VLEN           = 256;      // Vector Register Length in bits
     localparam int unsigned ELEN           = 64;       // Maximum Element Width in bits
     localparam int unsigned VLENB          = VLEN / 8; // Vector Register Length in bytes (32)
-    localparam int unsigned VRF_NUM_PREGS  = 48;       // 48 Physical Vector Registers
+    localparam int unsigned VRF_NUM_PREGS  = 64;       // 64 Physical Vector Registers (p0..p31 arch, p32..p63 spec)
     localparam int unsigned VRF_NUM_BANKS  = 4;        // 4 Banks x 64 bits per physical register
     localparam int unsigned VRF_BANK_WIDTH = 64;       // 64-bit Bank Width
     localparam int unsigned VIQ_DEPTH      = 8;        // 8-entry Decoupled Vector Issue Queue
     localparam int unsigned VIQ_IDX_W      = 3;        // $clog2(8)
 
-    typedef logic [5:0] vreg_t;     // 6-bit physical vector register index (0..47)
+    typedef logic [5:0] vreg_t;     // 6-bit physical vector register index (0..63)
     typedef logic [4:0] areg_v_t;   // 5-bit architectural vector register index (v0..v31)
     typedef logic [2:0] viq_idx_t;  // 3-bit VIQ index
 
@@ -250,6 +250,7 @@ package fursoy_s1_pkg;
         logic       is_vec;
         logic       vec_dest_valid;
         vreg_t      prd_vec;
+        logic [31:0] inst;
     } rob_entry_t;
 
     // -------------------------------------------------------------------------
@@ -572,8 +573,147 @@ package fursoy_s1_pkg;
         VEC_VSRL      = 8'd211,
         VEC_VSRA      = 8'd212,
         VEC_VMIN      = 8'd213,
-        VEC_VMAX      = 8'd214
+            VEC_VMAX      = 8'd214
     } uop_subop_t;
+
+    // -------------------------------------------------------------------------
+    // Shared Vector EMUL / Grouping / Legality Helpers (RVV 1.0)
+    // -------------------------------------------------------------------------
+    function automatic logic is_vec_mem_subop(input uop_subop_t sop);
+        return (sop == VEC_VLE)  || (sop == VEC_VLEFF) || (sop == VEC_VLSE) ||
+               (sop == VEC_VLUXEI) || (sop == VEC_VSE) || (sop == VEC_VSSE) ||
+               (sop == VEC_VSOXEI);
+    endfunction
+
+    function automatic logic is_vec_mask_dest_subop(input uop_subop_t sop);
+        case (sop)
+            VEC_VMSEQ, VEC_VMSNE, VEC_VMSLTU, VEC_VMSLT,
+            VEC_VMSLEU, VEC_VMSLE, VEC_VMSGTU, VEC_VMSGT,
+            VEC_VMAND, VEC_VMOR: return 1'b1;
+            default: return 1'b0;
+        endcase
+    endfunction
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic void calc_vec_emul_info(
+        input  vtype_bundle_t vt,
+        input  uop_subop_t    sub_op,
+        input  logic [2:0]    eew_enc,
+        input  logic [4:0]    vd,
+        input  logic [4:0]    vs1,
+        input  logic [4:0]    vs2,
+        input  logic          vm,
+        input  logic          uses_vs1,
+        input  logic          uses_vs2,
+        output logic [3:0]    vd_ngroups,
+        output logic [3:0]    vs1_ngroups,
+        output logic [3:0]    vs2_ngroups,
+        output logic          is_illegal
+    );
+        logic signed [4:0] lmul_exp;
+        logic signed [4:0] emul_exp;
+        logic [3:0]        base_ng;
+        logic [4:0]        vd_mask, vs1_mask, vs2_mask;
+
+        vd_ngroups  = 4'd1;
+        vs1_ngroups = 4'd1;
+        vs2_ngroups = 4'd1;
+        is_illegal  = 1'b0;
+
+        if (vt.vill || (vt.vlmul == VLMUL_RESERVED)) begin
+            is_illegal = 1'b1;
+            return;
+        end
+
+        case (vt.vlmul)
+            VLMUL_1:  lmul_exp =  5'sd0;
+            VLMUL_2:  lmul_exp =  5'sd1;
+            VLMUL_4:  lmul_exp =  5'sd2;
+            VLMUL_8:  lmul_exp =  5'sd3;
+            VLMUL_F2: lmul_exp = -5'sd1;
+            VLMUL_F4: lmul_exp = -5'sd2;
+            VLMUL_F8: lmul_exp = -5'sd3;
+            default:  lmul_exp =  5'sd0;
+        endcase
+
+        base_ng = (lmul_exp > 5'sd0) ? (4'd1 << lmul_exp[1:0]) : 4'd1;
+
+        if (sub_op == VEC_VLE || sub_op == VEC_VLEFF || sub_op == VEC_VLSE ||
+            sub_op == VEC_VSE || sub_op == VEC_VSSE) begin
+            emul_exp = lmul_exp + $signed({2'b00, eew_enc}) - $signed({2'b00, vt.vsew});
+            if ((emul_exp < -5'sd3) || (emul_exp > 5'sd3)) begin
+                is_illegal = 1'b1;
+            end else begin
+                vd_ngroups = (emul_exp > 5'sd0) ? (4'd1 << emul_exp[1:0]) : 4'd1;
+                vd_mask    = {1'b0, vd_ngroups} - 5'd1;
+                if (((vd & vd_mask) != 5'd0) || (({1'b0, vd} + {2'b00, vd_ngroups}) > 6'd32)) begin
+                    is_illegal = 1'b1;
+                end
+                if ((sub_op != VEC_VSE && sub_op != VEC_VSSE) && !vm && (vd == 5'd0)) begin
+                    is_illegal = 1'b1;
+                end
+            end
+        end else if (sub_op == VEC_VLUXEI || sub_op == VEC_VSOXEI) begin
+            emul_exp = lmul_exp + $signed({2'b00, eew_enc}) - $signed({2'b00, vt.vsew});
+            if ((emul_exp < -5'sd3) || (emul_exp > 5'sd3)) begin
+                is_illegal = 1'b1;
+            end else begin
+                vd_ngroups  = base_ng;
+                vs2_ngroups = (emul_exp > 5'sd0) ? (4'd1 << emul_exp[1:0]) : 4'd1;
+                vd_mask     = {1'b0, vd_ngroups}  - 5'd1;
+                vs2_mask    = {1'b0, vs2_ngroups} - 5'd1;
+                if (((vd & vd_mask) != 5'd0) || ((vs2 & vs2_mask) != 5'd0) ||
+                    (({1'b0, vd}  + {2'b00, vd_ngroups})  > 6'd32) ||
+                    (({1'b0, vs2} + {2'b00, vs2_ngroups}) > 6'd32)) begin
+                    is_illegal = 1'b1;
+                end
+                if ((sub_op == VEC_VLUXEI) && !vm && (vd == 5'd0)) begin
+                    is_illegal = 1'b1;
+                end
+            end
+        end else if (sub_op == VEC_VMAND || sub_op == VEC_VMOR) begin
+            vd_ngroups  = 4'd1;
+            vs1_ngroups = 4'd1;
+            vs2_ngroups = 4'd1;
+        end else if (sub_op == VEC_VREDSUM) begin
+            vd_ngroups  = 4'd1;
+            vs1_ngroups = 4'd1;
+            vs2_ngroups = base_ng;
+            vs2_mask    = {1'b0, vs2_ngroups} - 5'd1;
+            if (((vs2 & vs2_mask) != 5'd0) || (({1'b0, vs2} + {2'b00, vs2_ngroups}) > 6'd32)) begin
+                is_illegal = 1'b1;
+            end
+            if (!vm && (vd == 5'd0)) begin
+                is_illegal = 1'b1;
+            end
+        end else if (is_vec_mask_dest_subop(sub_op)) begin
+            vd_ngroups  = 4'd1;
+            vs1_ngroups = uses_vs1 ? base_ng : 4'd1;
+            vs2_ngroups = uses_vs2 ? base_ng : 4'd1;
+            vs1_mask    = {1'b0, vs1_ngroups} - 5'd1;
+            vs2_mask    = {1'b0, vs2_ngroups} - 5'd1;
+            if ((uses_vs1 && (((vs1 & vs1_mask) != 5'd0) || (({1'b0, vs1} + {2'b00, vs1_ngroups}) > 6'd32))) ||
+                (uses_vs2 && (((vs2 & vs2_mask) != 5'd0) || (({1'b0, vs2} + {2'b00, vs2_ngroups}) > 6'd32)))) begin
+                is_illegal = 1'b1;
+            end
+        end else begin
+            vd_ngroups  = base_ng;
+            vs1_ngroups = uses_vs1 ? base_ng : 4'd1;
+            vs2_ngroups = uses_vs2 ? base_ng : 4'd1;
+            vd_mask     = {1'b0, vd_ngroups}  - 5'd1;
+            vs1_mask    = {1'b0, vs1_ngroups} - 5'd1;
+            vs2_mask    = {1'b0, vs2_ngroups} - 5'd1;
+            if (((vd & vd_mask) != 5'd0) || (({1'b0, vd} + {2'b00, vd_ngroups}) > 6'd32) ||
+                (uses_vs1 && (((vs1 & vs1_mask) != 5'd0) || (({1'b0, vs1} + {2'b00, vs1_ngroups}) > 6'd32))) ||
+                (uses_vs2 && (((vs2 & vs2_mask) != 5'd0) || (({1'b0, vs2} + {2'b00, vs2_ngroups}) > 6'd32)))) begin
+                is_illegal = 1'b1;
+            end
+            if (!vm && (vd == 5'd0)) begin
+                is_illegal = 1'b1;
+            end
+        end
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // -------------------------------------------------------------------------
     // Milestone 8 Phase B Floating-Point Issue Queue Dimensions & Types
@@ -725,6 +865,7 @@ package fursoy_s1_pkg;
         logic [4:0]  vec_vd;
         logic [4:0]  vec_vs1;
         logic [4:0]  vec_vs2;
+        logic [31:0] inst;
     } uop_decoded_t;
 
     // -------------------------------------------------------------------------

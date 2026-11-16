@@ -68,8 +68,10 @@ module fursoy_s0_uart #(
 
     assign in_aperture     = (req_addr_i >= BASE_ADDR) && (req_addr_i < END_ADDR);
     assign reg_offset      = req_addr_i[11:0];
-    assign valid_alignment = (req_addr_i[1:0] == 2'b00);
-    assign valid_size      = (req_size_i == 3'd2); // Strict 32-bit naturally aligned access
+    assign valid_alignment = (req_size_i == 3'd0) ||
+                             ((req_size_i == 3'd1) && (req_addr_i[0] == 1'b0)) ||
+                             ((req_size_i == 3'd2) && (req_addr_i[1:0] == 2'b00));
+    assign valid_size      = (req_size_i == 3'd0) || (req_size_i == 3'd1) || (req_size_i == 3'd2); // 1B, 2B, and 4B MMIO accesses
     assign valid_access    = in_aperture && valid_alignment && valid_size;
 
     assign req_ready_o     = !rsp_valid_q;

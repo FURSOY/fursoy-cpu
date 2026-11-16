@@ -1,7 +1,7 @@
 {
   "status": "pass",
-  "timestamp_utc": "2026-11-16T09:19:30.146867+00:00",
-  "elapsed_seconds": 78.34,
+  "timestamp_utc": "2026-11-16T14:29:17.764674+00:00",
+  "elapsed_seconds": 85.07,
   "sail_version": "0.16",
   "workloads": [
     {
@@ -45,6 +45,50 @@
       "gprs_checked": 234,
       "fprs_checked": 0,
       "vrfs_checked": 0,
+      "traps_checked": 4,
+      "mismatches": []
+    },
+    {
+      "name": "05_rv64a_atomics",
+      "matched": true,
+      "sail_steps": 52,
+      "fursoy_events": 52,
+      "gprs_checked": 45,
+      "fprs_checked": 0,
+      "vrfs_checked": 0,
+      "traps_checked": 0,
+      "mismatches": []
+    },
+    {
+      "name": "06_priv_traps_mprv_tbit",
+      "matched": true,
+      "sail_steps": 356,
+      "fursoy_events": 357,
+      "gprs_checked": 261,
+      "fprs_checked": 0,
+      "vrfs_checked": 0,
+      "traps_checked": 9,
+      "mismatches": []
+    },
+    {
+      "name": "07_fp_edge_cases",
+      "matched": true,
+      "sail_steps": 62,
+      "fursoy_events": 63,
+      "gprs_checked": 30,
+      "fprs_checked": 5,
+      "vrfs_checked": 0,
+      "traps_checked": 4,
+      "mismatches": []
+    },
+    {
+      "name": "08_rvv_lmul_vstart_traps",
+      "matched": true,
+      "sail_steps": 76,
+      "fursoy_events": 77,
+      "gprs_checked": 42,
+      "fprs_checked": 0,
+      "vrfs_checked": 34,
       "traps_checked": 4,
       "mismatches": []
     }

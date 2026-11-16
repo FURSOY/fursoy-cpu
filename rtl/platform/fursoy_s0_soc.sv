@@ -91,7 +91,7 @@ module fursoy_s0_soc #(
                             (rsp_owner_q == RSP_PLIC)  ? plic_rsp_error  :
                             (rsp_owner_q == RSP_UART)  ? uart_rsp_error  :
                             (rsp_owner_q == RSP_ERROR) ? 1'b1 : ram_rsp_error_i;
-    assign clint_rsp_ready = core_rsp_ready && (rsp_owner_q == RSP_CLINT);
+    assign clint_rsp_ready = (rsp_owner_q == RSP_NONE) || (core_rsp_ready && (rsp_owner_q == RSP_CLINT));
     assign plic_rsp_ready  = core_rsp_ready && (rsp_owner_q == RSP_PLIC);
     assign uart_rsp_ready  = (rsp_owner_q == RSP_NONE) || (core_rsp_ready && (rsp_owner_q == RSP_UART));
     // With no owner, drain unsolicited/stale responses except while accepting

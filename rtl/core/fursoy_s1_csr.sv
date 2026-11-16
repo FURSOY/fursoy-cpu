@@ -76,6 +76,7 @@ module fursoy_s1_csr
     input  logic [4:0]        retire_fflags_i      [1:0],
 
     // Milestone 8 Phase D Vector Retirement Interface
+    input  logic [1:0]        retire_is_vec_i,
     input  logic [1:0]        retire_vec_dest_valid_i,
 
     // Milestone 8 Phase D Vector Configuration & Fault-Only-First Interface
@@ -122,6 +123,8 @@ module fursoy_s1_csr
     output logic              sfence_vma_valid_o,
     output logic [63:0]       sfence_vma_va_o,
     output logic [15:0]       sfence_vma_asid_o,
+    output logic              sfence_vma_rs1_zero_o,
+    output logic              sfence_vma_rs2_zero_o,
 
     // L1D Clean Maintenance Handshake for SFENCE.VMA (P0-3)
     input  logic              dcache_clean_all_done_i,
@@ -548,6 +551,8 @@ module fursoy_s1_csr
         rob_idx_t          rob_idx;
         logic [63:0]       rs1_val;
         logic [63:0]       rs2_val;
+        logic              sfence_rs1_zero;
+        logic              sfence_rs2_zero;
     } sys_exec_entry_t;
 
     sys_exec_entry_t pending_sys_q;
@@ -771,6 +776,8 @@ module fursoy_s1_csr
             sfence_vma_valid_o    <= 1'b0;
             sfence_vma_va_o       <= '0;
             sfence_vma_asid_o     <= '0;
+            sfence_vma_rs1_zero_o <= 1'b0;
+            sfence_vma_rs2_zero_o <= 1'b0;
             sfence_state_q        <= SFENCE_IDLE;
             dcache_clean_all_req_o<= 1'b0;
             wfi_sleep_q           <= 1'b0;
@@ -820,9 +827,11 @@ module fursoy_s1_csr
                 pending_sys_q.write_val    <= p0_is_vset ? p0_vcfg_new_vtype : csr_write_val;
                 pending_sys_q.write_intent <= csr_write_intent;
                 pending_sys_q.pc_p4        <= p0_sys_pc_p4;
-                pending_sys_q.rob_idx      <= p0_sys_rob_idx_i;
-                pending_sys_q.rs1_val      <= p0_sys_rs1_val_i;
-                pending_sys_q.rs2_val      <= p0_is_vset ? p0_vcfg_new_vl : p0_sys_rs2_val_i;
+                pending_sys_q.rob_idx         <= p0_sys_rob_idx_i;
+                pending_sys_q.rs1_val         <= p0_sys_rs1_val_i;
+                pending_sys_q.rs2_val         <= p0_is_vset ? p0_vcfg_new_vl : p0_sys_rs2_val_i;
+                pending_sys_q.sfence_rs1_zero <= p0_sys_csr_addr_i[0];
+                pending_sys_q.sfence_rs2_zero <= p0_sys_csr_addr_i[1];
             end
 
             // -----------------------------------------------------------------
@@ -852,10 +861,14 @@ module fursoy_s1_csr
             end
 
             // Milestone 8 Phase D: In-order Vector instruction retirement
-            // Transitions mstatus.VS to Dirty (2'b11) and asserts mstatus.SD
+            // Transitions mstatus.VS to Dirty (2'b11) when writing VRF and clears vstart on completion
             if ((retire_valid_i[0] && retire_vec_dest_valid_i[0] && !retire_exception_i) ||
                 (retire_valid_i[1] && retire_vec_dest_valid_i[1] && !retire_exception_i)) begin
                 mstatus_q[10:9] <= 2'b11; // VS Dirty
+            end
+            if ((retire_valid_i[0] && retire_is_vec_i[0] && !retire_exception_i) ||
+                (retire_valid_i[1] && retire_is_vec_i[1] && !retire_exception_i)) begin
+                vstart_q <= 64'd0;
             end
 
             // Milestone 8 Phase D: Vector Configuration Update (vsetvli, vsetvl, vsetivli)
@@ -883,7 +896,7 @@ module fursoy_s1_csr
                 if (trap_to_s) begin
                     sepc_q   <= retire_exc_pc_i;
                     scause_q <= {1'b0, 58'd0, retire_exc_cause_i};
-                    if (retire_exc_cause_i == 5'd0 ||
+                    if (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd2 ||
                         retire_exc_cause_i == 5'd4 || retire_exc_cause_i == 5'd6 ||
                         retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7 ||
                         retire_exc_cause_i == 5'd13 || retire_exc_cause_i == 5'd15) begin
@@ -905,7 +918,7 @@ module fursoy_s1_csr
                 end else begin
                     mepc_q   <= retire_exc_pc_i;
                     mcause_q <= {1'b0, 58'd0, retire_exc_cause_i};
-                    if (retire_exc_cause_i == 5'd0 ||
+                    if (retire_exc_cause_i == 5'd0 || retire_exc_cause_i == 5'd2 ||
                         retire_exc_cause_i == 5'd4 || retire_exc_cause_i == 5'd6 ||
                         retire_exc_cause_i == 5'd5 || retire_exc_cause_i == 5'd7 ||
                         retire_exc_cause_i == 5'd13 || retire_exc_cause_i == 5'd15) begin
@@ -1032,6 +1045,8 @@ module fursoy_s1_csr
                         sfence_vma_valid_o     <= 1'b1;
                         sfence_vma_va_o        <= pending_sys_q.rs1_val;
                         sfence_vma_asid_o      <= pending_sys_q.rs2_val[15:0];
+                        sfence_vma_rs1_zero_o  <= pending_sys_q.sfence_rs1_zero;
+                        sfence_vma_rs2_zero_o  <= pending_sys_q.sfence_rs2_zero;
                         if (sq_empty_i) begin
                             dcache_clean_all_req_o <= 1'b1;
                             sfence_state_q         <= SFENCE_CLEAN;
@@ -1079,8 +1094,11 @@ module fursoy_s1_csr
 
                                 // Milestone 8 Phase D Vector CSRs
                                 12'h008: begin // vstart
-                                    vstart_q <= pending_sys_q.write_val;
+                                    vstart_q        <= {56'd0, pending_sys_q.write_val[7:0]};
                                     mstatus_q[10:9] <= 2'b11; // VS Dirty
+                                    sys_redirect_valid_o  <= 1'b1;
+                                    sys_redirect_target_o <= pending_sys_q.pc_p4;
+                                    sys_flush_valid_o     <= 1'b1;
                                 end
                                 12'h009: begin // vxsat
                                     vxsat_q <= pending_sys_q.write_val[0];
@@ -1142,10 +1160,11 @@ module fursoy_s1_csr
                                 12'h144: begin
                                     if (mideleg_q[1]) mip_q[1] <= pending_sys_q.write_val[1];
                                 end
-                                12'h180: begin // satp
-                                    if (pending_sys_q.write_val[63:60] == 4'h0) satp_q <= 64'd0;
+                                12'h180: begin // satp (Sv39 MODE=8 or Bare MODE=0 with 16-bit ASID)
+                                    if (pending_sys_q.write_val[63:60] == 4'h0)
+                                        satp_q <= {4'h0, pending_sys_q.write_val[59:0]};
                                     else if (pending_sys_q.write_val[63:60] == 4'h8)
-                                        satp_q <= {4'h8, 16'd0, pending_sys_q.write_val[43:0]};
+                                        satp_q <= {4'h8, pending_sys_q.write_val[59:0]};
 
                                     sys_redirect_valid_o  <= 1'b1;
                                     sys_redirect_target_o <= pending_sys_q.pc_p4;
@@ -1173,6 +1192,7 @@ module fursoy_s1_csr
                     VEC_VSETVLI, VEC_VSETVL, VEC_VSETIVLI: begin
                         vtype_q         <= pending_sys_q.write_val;
                         vl_q            <= pending_sys_q.rs2_val;
+                        vstart_q        <= 64'd0;
                         mstatus_q[10:9] <= 2'b11; // VS Dirty
                         sys_redirect_valid_o  <= 1'b1;
                         sys_redirect_target_o <= pending_sys_q.pc_p4;

@@ -437,17 +437,6 @@ public:
         dut->test_vec_cfg_rd_is_zero_i = 0;
         dut->test_fof_fault_valid_i = 0;
         dut->test_fof_fault_elem_i = 0;
-        dut->test_viq_alloc_valid_i = 0;
-        dut->test_viq_alloc_rob_idx_i = 0;
-        dut->test_viq_alloc_uop_class_i = 0;
-        dut->test_viq_alloc_sub_op_i = 0;
-        dut->test_viq_alloc_vd_i = 0;
-        dut->test_viq_alloc_vs1_i = 0;
-        dut->test_viq_alloc_vs2_i = 0;
-        dut->test_viq_alloc_vm_i = 0;
-        dut->test_viq_alloc_vtype_i = 0;
-        dut->test_viq_alloc_vl_i = 0;
-        dut->test_viq_issue_ready_i = 0;
 
         // Bus interface
         dut->bus_rd_req_ready_i = bus_rd_ready ? 1 : 0;
