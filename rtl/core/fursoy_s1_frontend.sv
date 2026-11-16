@@ -90,13 +90,23 @@ module fursoy_s1_frontend
     input  ras_chkpt_id_t     chkpt_alloc_ras1_i,
     input  tage_csr_bundle_t  chkpt_alloc_csr1_i,
 
-    // Predictor Training from Resolved Control-Flow (Port 0 WB)
+    // Predictor Training from Committed Control-Flow
     input  logic              train_valid_i,
     input  logic [63:0]       train_pc_i,
     input  logic              train_actual_taken_i,
     input  logic [63:0]       train_actual_target_i,
     input  branch_type_t      train_br_type_i,
     input  ghr_t              train_ghr_i,
+
+    // Architectural Commit History Interface (survives non-branch traps)
+    input  logic              commit_valid0_i,
+    input  logic [63:0]       commit_pc0_i,
+    input  branch_type_t      commit_br_type0_i,
+    input  logic              commit_taken0_i,
+    input  logic              commit_valid1_i,
+    input  logic [63:0]       commit_pc1_i,
+    input  branch_type_t      commit_br_type1_i,
+    input  logic              commit_taken1_i,
 
     // -------------------------------------------------------------------------
     // Decoded Micro-ops Handoff to M1 Rename / Dispatch
@@ -579,6 +589,15 @@ module fursoy_s1_frontend
         .train_actual_target_i    (train_actual_target_i),
         .train_br_type_i          (train_br_type_i),
         .train_ghr_i              (train_ghr_i),
+
+        .commit_valid0_i          (commit_valid0_i),
+        .commit_pc0_i             (commit_pc0_i),
+        .commit_br_type0_i        (commit_br_type0_i),
+        .commit_taken0_i          (commit_taken0_i),
+        .commit_valid1_i          (commit_valid1_i),
+        .commit_pc1_i             (commit_pc1_i),
+        .commit_br_type1_i        (commit_br_type1_i),
+        .commit_taken1_i          (commit_taken1_i),
 
         .event_btb_hit_o          (btb_event_hit),
         .event_btb_miss_o         (btb_event_miss),

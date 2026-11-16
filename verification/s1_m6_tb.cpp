@@ -857,31 +857,31 @@ void test_core_m6_cpi_conservation_law(M6TB& tb) {
 }
 
 // PROP_M6_34: Multi-Checkpoint Drain
-// 8 consecutive checkpoints allocated and retired in program order without leak.
+// 16 consecutive checkpoints allocated and retired in program order without leak.
 void test_core_m6_multi_checkpoint_drain(M6TB& tb) {
     tb.reset();
     tb.mem.clear();
     uint64_t base = 0x80000000ULL;
 
-    // Verify initial clean state: all 8 checkpoints free
-    assert(tb.dut->chkpt_free_count_o == 8 && "Initial checkpoint free count must be 8!");
+    // Verify initial clean state: all 16 checkpoints free
+    assert(tb.dut->chkpt_free_count_o == 16 && "Initial checkpoint free count must be 16!");
 
     tb.write_mem_word(base + 0, rv_addi(1, 0, 1));
-    // 8 consecutive conditional branches (all untaken):
-    for (int i = 0; i < 8; i++) {
+    // 16 consecutive conditional branches (all untaken):
+    for (int i = 0; i < 16; i++) {
         tb.write_mem_word(base + 4 + i * 4, rv_beq(1, 0, 16));
     }
-    tb.write_mem_word(base + 4 + 8 * 4, rv_addi(2, 0, 99));
+    tb.write_mem_word(base + 4 + 16 * 4, rv_addi(2, 0, 99));
 
-    // Wait until all 1 setup + 8 branches + 1 final = 10 ops retire
-    tb.wait_until_retired(10, 1000);
+    // Wait until all 1 setup + 16 branches + 1 final = 18 ops retire
+    tb.wait_until_retired(18, 1000);
 
     // Allow pipeline to fully settle
     for (int i = 0; i < 5; i++) tb.step();
 
-    // Verify that all 8 checkpoints were cleanly released back to 8
-    assert(tb.dut->chkpt_free_count_o == 8 && "All 8 checkpoints must be freed after retirement!");
-    std::cout << "  [PASS] PROP_M6_34: Multi-checkpoint drain verified (8 consecutive branches allocated and retired with chkpt_free_count_o == 8)\n";
+    // Verify that all 16 checkpoints were cleanly released back to 16
+    assert(tb.dut->chkpt_free_count_o == 16 && "All 16 checkpoints must be freed after retirement!");
+    std::cout << "  [PASS] PROP_M6_34: Multi-checkpoint drain verified (16 consecutive branches allocated and retired with chkpt_free_count_o == 16)\n";
 }
 
 // PROP_M6_35: Nested Mispredict Cascade

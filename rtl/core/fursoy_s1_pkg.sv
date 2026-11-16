@@ -18,13 +18,13 @@ package fursoy_s1_pkg;
     localparam int unsigned PRF_SIZE         = 160; // Unified physical integer registers p0..p159 (Stage 2 PPA/IPC: 128 -> 160)
     localparam int unsigned ROB_DEPTH        = 128; // Reorder buffer entries (Stage 3 PPA/IPC: 48 -> 128)
     localparam int unsigned FL_DEPTH         = 128; // Free List depth = PRF_SIZE - AREG_COUNT = 128
-    localparam int unsigned NUM_CHECKPOINTS  = 8;   // Parameterized branch checkpoints (baseline 8)
+    localparam int unsigned NUM_CHECKPOINTS  = 16;  // Parameterized branch checkpoints (expanded 8 -> 16)
 
     // Bit widths
     localparam int unsigned AREG_IDX_W       = 5;  // $clog2(32)
     localparam int unsigned PRF_IDX_W        = 8;  // $clog2(160) = 8 (0..159)
     localparam int unsigned ROB_IDX_W        = 7;  // $clog2(128) = 7 (0..127)
-    localparam int unsigned CHKPT_IDX_W      = 3;  // $clog2(8) = 3 (0..7)
+    localparam int unsigned CHKPT_IDX_W      = 4;  // $clog2(16) = 4 (0..15)
     localparam int unsigned ROB_EPOCH_W      = 4;  // 4-bit generation tag (16 lifetimes/slot)
     localparam int unsigned ROB_CNT_W        = 8;  // 0..128
     localparam int unsigned FL_CNT_W         = 8;  // 0..128

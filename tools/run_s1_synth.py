@@ -320,7 +320,7 @@ def main():
             "name": "fursoy_s1_dtlb",
             "type": "Sequential",
             "gate": True,
-            "sv_path": ROOT / "rtl/core/fursoy_s1_lsu.sv",
+            "sv_path": ROOT / "rtl/core/fursoy_s1_dtlb.sv",
             "description": "Architectural Sv39 Data TLB (64-entry base TLB + 8-entry superpage CAM)",
             "synth_log": BUILD_SYNTH / "dtlb_synth.log",
             "sta_log": BUILD_SYNTH / "dtlb_sta.log",
@@ -497,20 +497,9 @@ def main():
 
             mod_timeout = args.gate_timeout if m["gate"] else args.synth_timeout
             print(f"[SYNTH] Running {m['name']} (scope={'gate' if m['gate'] else 'visibility'}, timeout={mod_timeout}s)...")
-            if m["key"] == "dtlb":
-                lsu_text = sv_path.read_text()
-                s_idx = lsu_text.index("module fursoy_s1_dtlb")
-                e_idx = lsu_text.index("endmodule", s_idx) + len("endmodule\n")
-                tmp_sv = BUILD_SYNTH / "dtlb_extract.sv"
-                tmp_sv.write_text(lsu_text[s_idx:e_idx])
-                run_module_synth_and_sta(
-                    m["key"], m["name"], tmp_sv, sv_path, m["type"] == "Sequential", timeout_s=mod_timeout
-                )
-                tmp_sv.unlink(missing_ok=True)
-            else:
-                run_module_synth_and_sta(
-                    m["key"], m["name"], sv_path, sv_path, m["type"] == "Sequential", timeout_s=mod_timeout
-                )
+            run_module_synth_and_sta(
+                m["key"], m["name"], sv_path, sv_path, m["type"] == "Sequential", timeout_s=mod_timeout
+            )
 
     print(f"Mode:     {execution_mode}")
     print("-" * 112)

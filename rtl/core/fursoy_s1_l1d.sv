@@ -172,7 +172,7 @@ module fursoy_s1_l1d
     logic [43:0]  tag_array   [L1D_SETS][L1D_WAYS];
     logic         valid_array [L1D_SETS][L1D_WAYS];
     logic         dirty_array [L1D_SETS][L1D_WAYS];
-    logic [1:0]   lru_array   [L1D_SETS]; // Pseudo-LRU replacement pointer
+    logic [2:0]   lru_array   [L1D_SETS]; // 3-bit Tree-PLRU replacement state per set
 
     // 8 Independent Physical 64-bit SRAM Banks (Stage 2 IPC: 8 banks x 64 sets x 4 ways x 64 bits = 16 KiB)
     logic [63:0] bank_data [8][L1D_SETS][L1D_WAYS];
@@ -192,6 +192,62 @@ module fursoy_s1_l1d
         line[447:384] = bank_data[6][set_idx][way_idx];
         line[511:448] = bank_data[7][set_idx][way_idx];
         return line;
+    endfunction
+
+    // 4-way 3-bit Tree-PLRU helpers: b[2]=root (0->{0,1}, 1->{2,3}),
+    // b[1]=left {0,1} (0->0, 1->1), b[0]=right {2,3} (0->2, 1->3).
+    function automatic logic [1:0] tree_plru_victim(input logic [2:0] plru_bits);
+        return plru_bits[2] ? (plru_bits[0] ? 2'd3 : 2'd2)
+                            : (plru_bits[1] ? 2'd1 : 2'd0);
+    endfunction
+
+    function automatic logic [2:0] update_tree_plru(
+        input logic [2:0] cur_plru,
+        input logic [1:0] way
+    );
+        logic [2:0] nxt;
+        nxt = cur_plru;
+        case (way)
+            2'd0: begin nxt[2] = 1'b1; nxt[1] = 1'b1; end
+            2'd1: begin nxt[2] = 1'b1; nxt[1] = 1'b0; end
+            2'd2: begin nxt[2] = 1'b0; nxt[0] = 1'b1; end
+            2'd3: begin nxt[2] = 1'b0; nxt[0] = 1'b0; end
+        endcase
+        return nxt;
+    endfunction
+
+    // Returns {found_invalid, victim_way} preferring unreserved invalid ways first,
+    // then the Tree-PLRU victim way (falling back to any unreserved way).
+    function automatic logic [2:0] select_victim_way(
+        input logic [5:0] set_idx,
+        input logic [3:0] reserved_ways
+    );
+        logic [1:0] base_victim;
+        logic [1:0] victim_way;
+        logic       found_invalid;
+        logic [1:0] cand_way;
+
+        base_victim   = tree_plru_victim(lru_array[set_idx]);
+        victim_way    = base_victim;
+        found_invalid = 1'b0;
+        for (int unsigned k = 0; k < 4; k++) begin
+            cand_way = 2'(base_victim + 2'(k));
+            if (!reserved_ways[cand_way] && !valid_array[set_idx][cand_way]) begin
+                victim_way    = cand_way;
+                found_invalid = 1'b1;
+                break;
+            end
+        end
+        if (!found_invalid) begin
+            for (int unsigned k = 0; k < 4; k++) begin
+                cand_way = 2'(base_victim + 2'(k));
+                if (!reserved_ways[cand_way]) begin
+                    victim_way = cand_way;
+                    break;
+                end
+            end
+        end
+        return {found_invalid, victim_way};
     endfunction
 
     // =========================================================================
@@ -570,31 +626,7 @@ module fursoy_s1_l1d
     // Candidate victim way for store miss allocation
     logic [1:0] store_victim_way;
     logic       store_found_invalid;
-    always_comb begin
-        logic       found_invalid;
-        logic [1:0] cand_way;
-        store_victim_way = lru_array[store_set];
-        found_invalid    = 1'b0;
-        cand_way         = 2'd0;
-        for (int unsigned k = 0; k < 4; k++) begin
-            cand_way = 2'(lru_array[store_set] + 2'(k));
-            if (!store_set_mshr_reserved_ways[cand_way] && !valid_array[store_set][cand_way]) begin
-                store_victim_way = cand_way;
-                found_invalid    = 1'b1;
-                break;
-            end
-        end
-        if (!found_invalid) begin
-            for (int unsigned k = 0; k < 4; k++) begin
-                cand_way = 2'(lru_array[store_set] + 2'(k));
-                if (!store_set_mshr_reserved_ways[cand_way]) begin
-                    store_victim_way = cand_way;
-                    break;
-                end
-            end
-        end
-        store_found_invalid = found_invalid;
-    end
+    assign {store_found_invalid, store_victim_way} = select_victim_way(store_set, store_set_mshr_reserved_ways);
 
     wire clean_active = (clean_state_q != CLEAN_IDLE) || dcache_clean_all_req_i;
 
@@ -666,31 +698,7 @@ module fursoy_s1_l1d
     // Candidate victim way for load0
     logic [1:0] load0_victim_way;
     logic       load0_found_invalid;
-    always_comb begin
-        logic       found_invalid;
-        logic [1:0] cand_way;
-        load0_victim_way = lru_array[load0_set];
-        found_invalid    = 1'b0;
-        cand_way         = 2'd0;
-        for (int unsigned k = 0; k < 4; k++) begin
-            cand_way = 2'(lru_array[load0_set] + 2'(k));
-            if (!load0_set_mshr_reserved_ways[cand_way] && !valid_array[load0_set][cand_way]) begin
-                load0_victim_way = cand_way;
-                found_invalid    = 1'b1;
-                break;
-            end
-        end
-        if (!found_invalid) begin
-            for (int unsigned k = 0; k < 4; k++) begin
-                cand_way = 2'(lru_array[load0_set] + 2'(k));
-                if (!load0_set_mshr_reserved_ways[cand_way]) begin
-                    load0_victim_way = cand_way;
-                    break;
-                end
-            end
-        end
-        load0_found_invalid = found_invalid;
-    end
+    assign {load0_found_invalid, load0_victim_way} = select_victim_way(load0_set, load0_set_mshr_reserved_ways);
 
     wire load0_victim_is_dirty = valid_array[load0_set][load0_victim_way] && dirty_array[load0_set][load0_victim_way];
     wire load0_can_alloc_mshr  = (mshr_free_count > 0) && (load0_set_mshr_reserved_ways != 4'b1111) &&
@@ -710,31 +718,7 @@ module fursoy_s1_l1d
     // Candidate victim way for load1
     logic [1:0] load1_victim_way;
     logic       load1_found_invalid;
-    always_comb begin
-        logic       found_invalid;
-        logic [1:0] cand_way;
-        load1_victim_way = lru_array[load1_set];
-        found_invalid    = 1'b0;
-        cand_way         = 2'd0;
-        for (int unsigned k = 0; k < 4; k++) begin
-            cand_way = 2'(lru_array[load1_set] + 2'(k));
-            if (!load1_set_mshr_reserved_ways[cand_way] && !valid_array[load1_set][cand_way]) begin
-                load1_victim_way = cand_way;
-                found_invalid    = 1'b1;
-                break;
-            end
-        end
-        if (!found_invalid) begin
-            for (int unsigned k = 0; k < 4; k++) begin
-                cand_way = 2'(lru_array[load1_set] + 2'(k));
-                if (!load1_set_mshr_reserved_ways[cand_way]) begin
-                    load1_victim_way = cand_way;
-                    break;
-                end
-            end
-        end
-        load1_found_invalid = found_invalid;
-    end
+    assign {load1_found_invalid, load1_victim_way} = select_victim_way(load1_set, load1_set_mshr_reserved_ways);
 
     wire load1_victim_is_dirty = valid_array[load1_set][load1_victim_way] && dirty_array[load1_set][load1_victim_way];
     wire load1_can_alloc_mshr  = (mshr_free_count > 0) && (load1_set_mshr_reserved_ways != 4'b1111) &&
@@ -971,7 +955,7 @@ module fursoy_s1_l1d
         if (rst_i) begin
             /* verilator lint_off BLKSEQ */
             for (int s = 0; s < L1D_SETS; s++) begin
-                lru_array[s] = 2'd0;
+                lru_array[s] = 3'd0;
                 for (int w = 0; w < L1D_WAYS; w++) begin
                     valid_array[s][w] = 1'b0;
                     dirty_array[s][w] = 1'b0;
@@ -1243,7 +1227,7 @@ module fursoy_s1_l1d
                     end
                     bank_data[store_bank][store_set][store_cache_hit_way] <= old_dw;
                     dirty_array[store_set][store_cache_hit_way] <= 1'b1;
-                    lru_array[store_set] <= store_cache_hit_way + 2'd1;
+                    lru_array[store_set] <= update_tree_plru(lru_array[store_set], store_cache_hit_way);
                 end else if (store_wbb_hit) begin
                     wbb_q[store_wbb_idx].data <= merge_store_to_line(
                         wbb_q[store_wbb_idx].data,
@@ -1282,7 +1266,7 @@ module fursoy_s1_l1d
                     valid_array[store_set][store_victim_way] <= 1'b0;
                     dirty_array[store_set][store_victim_way] <= 1'b0;
 
-                    lru_array[store_set] <= store_victim_way + 2'd1;
+                    lru_array[store_set] <= update_tree_plru(lru_array[store_set], store_victim_way);
                 end
             end
 
@@ -1291,7 +1275,7 @@ module fursoy_s1_l1d
             // -----------------------------------------------------------------
             if (load0_accept) begin
                 if (load0_cache_hit) begin
-                    lru_array[load0_set] <= load0_cache_hit_way + 2'd1;
+                    lru_array[load0_set] <= update_tree_plru(lru_array[load0_set], load0_cache_hit_way);
                 end else if (load0_wbb_hit) begin
                     // Hit in WBB
                 end else if (load0_mshr_match) begin
@@ -1330,7 +1314,7 @@ module fursoy_s1_l1d
                     valid_array[load0_set][load0_victim_way] <= 1'b0;
                     dirty_array[load0_set][load0_victim_way] <= 1'b0;
 
-                    lru_array[load0_set] <= load0_victim_way + 2'd1;
+                    lru_array[load0_set] <= update_tree_plru(lru_array[load0_set], load0_victim_way);
 
                     mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].waiter_valid <= 1'b1;
                     mshr_waiters_q[mshr_free_slot][load0_req_lq_idx_i].lq_idx       <= load0_req_lq_idx_i;
@@ -1348,7 +1332,7 @@ module fursoy_s1_l1d
             // -----------------------------------------------------------------
             if (load1_accept) begin
                 if (load1_cache_hit) begin
-                    lru_array[load1_set] <= load1_cache_hit_way + 2'd1;
+                    lru_array[load1_set] <= update_tree_plru(lru_array[load1_set], load1_cache_hit_way);
                 end else if (load1_wbb_hit) begin
                     // Hit in WBB
                 end else if (load1_mshr_match) begin
@@ -1391,7 +1375,7 @@ module fursoy_s1_l1d
                     valid_array[load1_set][load1_victim_way] <= 1'b0;
                     dirty_array[load1_set][load1_victim_way] <= 1'b0;
 
-                    lru_array[load1_set] <= load1_victim_way + 2'd1;
+                    lru_array[load1_set] <= update_tree_plru(lru_array[load1_set], load1_victim_way);
 
                     mshr_waiters_q[l1_slot][load1_req_lq_idx_i].waiter_valid <= 1'b1;
                     mshr_waiters_q[l1_slot][load1_req_lq_idx_i].lq_idx       <= load1_req_lq_idx_i;

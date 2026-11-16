@@ -140,6 +140,9 @@ module fursoy_s1_backend
     /* verilator lint_off UNUSEDSIGNAL */
     input  logic [4:0]        comp_ack_i,
     /* verilator lint_on UNUSEDSIGNAL */
+    output rob_idx_t          p0_br_chk_rob_idx_o,
+    output rob_epoch_t        p0_br_chk_epoch_o,
+    input  logic              p0_br_chk_ack_i,
 
     // Substrate FPRF Status writeback notification
     output logic [2:0]        comp_fp_wb_valid_o,
@@ -546,6 +549,9 @@ module fursoy_s1_backend
     // -------------------------------------------------------------------------
     // 1. Integer Issue Queue (IntIQ)
     // -------------------------------------------------------------------------
+    logic fconv_fprf_busy;
+    logic fconv_prf_busy;
+
     fursoy_s1_int_iq u_int_iq (
         .clk_i              (clk_i),
         .rst_i              (rst_i),
@@ -632,6 +638,7 @@ module fursoy_s1_backend
         .can_issue_mul_i    (can_issue_mul),
         .can_issue_alu1_i   (can_issue_alu1),
         .can_issue_div_i    (can_issue_div),
+        .fconv_fprf_busy_i  (fconv_fprf_busy),
 
         .issue0_valid_o     (is0_valid),
         .issue0_uop_o       (is0_uop),
@@ -653,8 +660,6 @@ module fursoy_s1_backend
     logic        fp_issue_valid;
     fpiq_entry_t fp_issue_uop;
     logic        fdiv_busy;
-    logic        fconv_fprf_busy;
-    logic        fconv_prf_busy;
 
     fursoy_s1_fp_iq u_fp_iq (
         .clk_i              (clk_i),
@@ -1868,7 +1873,10 @@ module fursoy_s1_backend
     wire can_recover_older = active_rec_valid_q &&
         (rob_dist(p0_wb_rob_idx, rob_head_i) < rob_dist(active_rec_rob_idx_q, rob_head_i));
 
-    wire recover_fire = p0_wb_valid && p0_wb_mispredict && comp_ack_i[0] &&
+    assign p0_br_chk_rob_idx_o = p0_wb_rob_idx;
+    assign p0_br_chk_epoch_o   = p0_wb_rob_epoch;
+
+    wire recover_fire = p0_wb_valid && p0_wb_mispredict && p0_br_chk_ack_i &&
                         !flush_active && (!recovering_i || can_recover_older);
 
     always_ff @(posedge clk_i) begin

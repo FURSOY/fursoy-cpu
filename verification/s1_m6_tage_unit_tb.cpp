@@ -403,6 +403,14 @@ public:
         dut->recover_valid_i = 0;
         dut->flush_valid_i = 0;
         dut->train_valid_i = 0;
+        dut->commit_valid0_i = 0;
+        dut->commit_pc0_i = 0;
+        dut->commit_br_type0_i = 0;
+        dut->commit_taken0_i = 0;
+        dut->commit_valid1_i = 0;
+        dut->commit_pc1_i = 0;
+        dut->commit_br_type1_i = 0;
+        dut->commit_taken1_i = 0;
     }
 
     void tick() {

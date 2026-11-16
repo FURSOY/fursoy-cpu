@@ -73,7 +73,7 @@ module fursoy_s1_rat
     output chkpt_idx_t             chkpt1_id_o,
     output logic                   chkpt0_avail_o,
     output logic                   chkpt1_avail_o,
-    output logic [3:0]             chkpt_free_count_o,
+    output logic [4:0]             chkpt_free_count_o,
 
     // -------------------------------------------------------------------------
     // Retirement Commit Interface (ARAT Updates & Checkpoint Release)
@@ -166,21 +166,21 @@ module fursoy_s1_rat
     // Priority encoder to find first two free checkpoint IDs
     chkpt_idx_t free_chkpt0;
     chkpt_idx_t free_chkpt1;
-    logic [3:0] num_free_chkpts;
+    logic [4:0] num_free_chkpts;
 
     always_comb begin
         free_chkpt0      = '0;
         free_chkpt1      = '0;
-        num_free_chkpts  = 4'd0;
+        num_free_chkpts  = 5'd0;
 
         for (int unsigned k = 0; k < CHKPT_COUNT; k++) begin
             if (!chkpt_valid_q[k]) begin
-                if (num_free_chkpts == 4'd0) begin
+                if (num_free_chkpts == 5'd0) begin
                     free_chkpt0 = chkpt_idx_t'(k);
-                end else if (num_free_chkpts == 4'd1) begin
+                end else if (num_free_chkpts == 5'd1) begin
                     free_chkpt1 = chkpt_idx_t'(k);
                 end
-                num_free_chkpts = num_free_chkpts + 4'd1;
+                num_free_chkpts = num_free_chkpts + 5'd1;
             end
         end
     end
@@ -189,9 +189,9 @@ module fursoy_s1_rat
     assign chkpt0_id_o        = free_chkpt0;
     assign chkpt1_id_o        = (uop0_i.is_branch) ? free_chkpt1 : free_chkpt0;
 
-    assign chkpt0_avail_o     = (num_free_chkpts >= 4'd1);
-    assign chkpt1_avail_o     = (uop0_i.is_branch) ? (num_free_chkpts >= 4'd2) :
-                                                     (num_free_chkpts >= 4'd1);
+    assign chkpt0_avail_o     = (num_free_chkpts >= 5'd1);
+    assign chkpt1_avail_o     = (uop0_i.is_branch) ? (num_free_chkpts >= 5'd2) :
+                                                     (num_free_chkpts >= 5'd1);
 
     // Snapshots of SRAT for checkpoints
     preg_t post_uop0_srat [AREG_COUNT];

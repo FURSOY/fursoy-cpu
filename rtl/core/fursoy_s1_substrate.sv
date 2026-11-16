@@ -132,6 +132,9 @@ module fursoy_s1_substrate
     input  logic [63:0]            comp_val_i            [4:0],
     input  logic [4:0]             comp_fflags_i         [4:0],
     output logic [4:0]             comp_ack_o,
+    input  rob_idx_t               p0_br_chk_rob_idx_i,
+    input  rob_epoch_t             p0_br_chk_epoch_i,
+    output logic                   p0_br_chk_ack_o,
 
     // Vector Execution Completion Interface
     input  logic                   vec_comp_valid_i,
@@ -212,7 +215,7 @@ module fursoy_s1_substrate
     output rob_idx_t               rob_tail_o,
     output logic [FL_CNT_W-1:0]    freelist_count_o,
     output logic [ROB_CNT_W-1:0]   rob_count_o,
-    output logic [3:0]             chkpt_free_count_o,
+    output logic [4:0]             chkpt_free_count_o,
     output preg_t                  arat_map_o            [AREG_NUM],
     output preg_t                  srat_map_o            [AREG_NUM],
     output logic [PRF_COUNT-1:0]   prf_ready_o,
@@ -267,7 +270,7 @@ module fursoy_s1_substrate
     chkpt_idx_t      chkpt1_id;
     logic            chkpt0_avail;
     logic            chkpt1_avail;
-    logic [3:0]      chkpt_free_cnt;
+    logic [4:0]      chkpt_free_cnt;
     preg_t           arat_internal [AREG_NUM];
     preg_t           srat_internal [AREG_NUM];
     logic [PRF_COUNT-1:0] committed_mask;
@@ -793,6 +796,9 @@ module fursoy_s1_substrate
         .comp_val_i           (comp_val_i),
         .comp_fflags_i        (comp_fflags_i),
         .comp_ack_o           (rob_comp_ack),
+        .p0_br_chk_rob_idx_i  (p0_br_chk_rob_idx_i),
+        .p0_br_chk_epoch_i    (p0_br_chk_epoch_i),
+        .p0_br_chk_ack_o      (p0_br_chk_ack_o),
         .vec_comp_valid_i     (vec_comp_valid_i),
         .vec_comp_rob_idx_i   (vec_comp_rob_idx_i),
         .vec_comp_epoch_i     (vec_comp_epoch_i),

@@ -64,6 +64,10 @@ module fursoy_s1_rob
     input  logic [63:0]            comp_val_i         [4:0],
     input  logic [4:0]             comp_fflags_i      [4:0],
     output logic [4:0]             comp_ack_o,
+    // Dedicated Port 0 Branch Recovery ROB Qualification (avoids F2I mux loop)
+    input  rob_idx_t               p0_br_chk_rob_idx_i,
+    input  rob_epoch_t             p0_br_chk_epoch_i,
+    output logic                   p0_br_chk_ack_o,
 
     // Vector Execution Completion Interface (non-speculative ROB-head completion)
     input  logic                   vec_comp_valid_i,
@@ -216,6 +220,10 @@ module fursoy_s1_rob
                                 (entries_q[comp_rob_idx_i[gw]].epoch == comp_epoch_i[gw]);
     end
     assign comp_ack_o = comp_match;
+
+    assign p0_br_chk_ack_o = entries_q[p0_br_chk_rob_idx_i].valid &&
+                             !entries_q[p0_br_chk_rob_idx_i].completed &&
+                             (entries_q[p0_br_chk_rob_idx_i].epoch == p0_br_chk_epoch_i);
 
     wire vec_comp_match = vec_comp_valid_i &&
                           entries_q[vec_comp_rob_idx_i].valid &&

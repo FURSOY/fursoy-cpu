@@ -108,6 +108,16 @@ module fursoy_s1_bpu
     input  branch_type_t      train_br_type_i,
     input  ghr_t              train_ghr_i,
 
+    // Architectural Commit History Interface (survives non-branch traps)
+    input  logic              commit_valid0_i,
+    input  logic [63:0]       commit_pc0_i,
+    input  branch_type_t      commit_br_type0_i,
+    input  logic              commit_taken0_i,
+    input  logic              commit_valid1_i,
+    input  logic [63:0]       commit_pc1_i,
+    input  branch_type_t      commit_br_type1_i,
+    input  logic              commit_taken1_i,
+
     // -------------------------------------------------------------------------
     // Diagnostic / Verification Probes
     // -------------------------------------------------------------------------
@@ -221,6 +231,19 @@ module fursoy_s1_bpu
     ras_chkpt_t rec_ras_full;
     ras_chkpt_t ejal_ras_full;
 
+    // Architectural BPU History (updated at ROB commit, restored on trap/flush)
+    ghr_t              arch_ghr_q;
+    tage_csr_bundle_t  arch_csr_q;
+    logic [15:0][63:0] arch_ras_array_q;
+    logic [3:0]        arch_ras_tos_q;
+    logic [4:0]        arch_ras_depth_q;
+
+    ghr_t              next_arch_ghr;
+    tage_csr_bundle_t  next_arch_csr;
+    logic [15:0][63:0] next_arch_ras_array;
+    logic [3:0]        next_arch_ras_tos;
+    logic [4:0]        next_arch_ras_depth;
+
     generate
         if (INDEXED_RAS_CHKPT) begin : gen_indexed_ras
             ras_chkpt_t    ras_chkpt_table [RAS_CHKPT_ENTRIES];
@@ -252,9 +275,11 @@ module fursoy_s1_bpu
                     if (chkpt_alloc_valid1_i) chkpt_ras_table[chkpt_alloc_id1_i] <= ras_chkpt_table[chkpt_alloc_ras_id1_i];
 
                     if (flush_valid_i) begin
-                        ras_chkpt_table[0] <= '0;
-                        ras_cur_id_q       <= '0;
-                        ras_alloc_ptr_q    <= RAS_CHKPT_IDX_W'(1);
+                        ras_chkpt_table[0].ras_array <= next_arch_ras_array;
+                        ras_chkpt_table[0].tos_ptr   <= next_arch_ras_tos;
+                        ras_chkpt_table[0].depth     <= next_arch_ras_depth;
+                        ras_cur_id_q                 <= '0;
+                        ras_alloc_ptr_q              <= RAS_CHKPT_IDX_W'(1);
                     end else if (recover_valid_i) begin
                         ras_chkpt_table[0] <= rec_ras_full;
                         ras_cur_id_q       <= '0;
@@ -306,42 +331,57 @@ module fursoy_s1_bpu
     localparam int TAGGED_SETS  = 512;  // Tagged tables: 512 sets each
 
     typedef struct packed {
+        logic       valid;
         logic [7:0] tag;
         logic [2:0] ctr;
         logic       u;
-    } t1_entry_t; // 12 bits
+    } t1_entry_t; // 13 bits
 
     typedef struct packed {
+        logic       valid;
         logic [7:0] tag;
         logic [2:0] ctr;
         logic       u;
-    } t2_entry_t; // 12 bits
+    } t2_entry_t; // 13 bits
 
     typedef struct packed {
+        logic       valid;
         logic [8:0] tag;
         logic [2:0] ctr;
         logic       u;
-    } t3_entry_t; // 13 bits
+    } t3_entry_t; // 14 bits
 
     typedef struct packed {
+        logic       valid;
         logic [9:0] tag;
         logic [2:0] ctr;
         logic       u;
-    } t4_entry_t; // 14 bits
+    } t4_entry_t; // 15 bits
 
-    // Table Storage: exactly 30,208 bits
+    // Table Storage
     logic [1:0] t0_table [T0_ENTRIES];
     t1_entry_t  t1_table [TAGGED_SETS];
     t2_entry_t  t2_table [TAGGED_SETS];
     t3_entry_t  t3_table [TAGGED_SETS];
     t4_entry_t  t4_table [TAGGED_SETS];
 
+    // 64-Entry Tagged Indirect Branch Predictor (IBP) for JALR/IND targets
+    localparam int IBP_ENTRIES = 64;
+    typedef struct packed {
+        logic        valid;
+        logic [15:0] tag;
+        logic [63:0] target;
+    } ibp_entry_t;
+
+    ibp_entry_t ibp_table [IBP_ENTRIES];
+
     // Live Speculative History Vectors
     ghr_t             ghr_q;
     tage_csr_bundle_t csr_q;
 
-    // 19-bit branch retirement counter for periodic useful-bit reset (§5.6)
+    // Periodic useful-bit aging counter + rotating row pointer
     logic [18:0] branch_retire_cnt_q;
+    logic [8:0]  aging_idx_q;
 
     wire [107:0] cur_ghr = ghr_q;
     wire tage_csr_bundle_t cur_csr = csr_q;
@@ -501,6 +541,62 @@ module fursoy_s1_bpu
         return pc[21:12] ^ csr_taga ^ {csr_tagb[8:0], 1'b0};
     endfunction
 
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic logic [5:0] calc_ibp_idx(
+        input logic [63:0]      pc,
+        input tage_csr_bundle_t csr
+    );
+        return pc[7:2] ^ csr.csr_idx2[5:0] ^ csr.csr_idx1[8:3];
+    endfunction
+
+    function automatic logic [15:0] calc_ibp_tag(
+        input logic [63:0]      pc,
+        input tage_csr_bundle_t csr
+    );
+        return pc[23:8] ^ {csr.csr_taga2, csr.csr_tagb1};
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    always_comb begin
+        next_arch_ghr       = arch_ghr_q;
+        next_arch_csr       = arch_csr_q;
+        next_arch_ras_array = arch_ras_array_q;
+        next_arch_ras_tos   = arch_ras_tos_q;
+        next_arch_ras_depth = arch_ras_depth_q;
+
+        if (commit_valid0_i) begin
+            if (commit_br_type0_i == BR_TYPE_COND) begin
+                next_arch_csr = update_csr_bundle(next_arch_csr, commit_taken0_i, next_arch_ghr);
+                next_arch_ghr = {next_arch_ghr[106:0], commit_taken0_i};
+            end else if (commit_br_type0_i == BR_TYPE_CALL) begin
+                next_arch_ras_tos                      = 4'(next_arch_ras_tos + 4'd1);
+                next_arch_ras_array[next_arch_ras_tos] = commit_pc0_i + 64'd4;
+                if (next_arch_ras_depth < 5'd16) next_arch_ras_depth = next_arch_ras_depth + 5'd1;
+            end else if ((commit_br_type0_i == BR_TYPE_RET) && (next_arch_ras_depth > 5'd0)) begin
+                next_arch_ras_tos   = 4'(next_arch_ras_tos - 4'd1);
+                next_arch_ras_depth = next_arch_ras_depth - 5'd1;
+            end else if (commit_br_type0_i == BR_TYPE_CORO) begin
+                next_arch_ras_array[next_arch_ras_tos] = commit_pc0_i + 64'd4;
+            end
+        end
+
+        if (commit_valid1_i) begin
+            if (commit_br_type1_i == BR_TYPE_COND) begin
+                next_arch_csr = update_csr_bundle(next_arch_csr, commit_taken1_i, next_arch_ghr);
+                next_arch_ghr = {next_arch_ghr[106:0], commit_taken1_i};
+            end else if (commit_br_type1_i == BR_TYPE_CALL) begin
+                next_arch_ras_tos                      = 4'(next_arch_ras_tos + 4'd1);
+                next_arch_ras_array[next_arch_ras_tos] = commit_pc1_i + 64'd4;
+                if (next_arch_ras_depth < 5'd16) next_arch_ras_depth = next_arch_ras_depth + 5'd1;
+            end else if ((commit_br_type1_i == BR_TYPE_RET) && (next_arch_ras_depth > 5'd0)) begin
+                next_arch_ras_tos   = 4'(next_arch_ras_tos - 4'd1);
+                next_arch_ras_depth = next_arch_ras_depth - 5'd1;
+            end else if (commit_br_type1_i == BR_TYPE_CORO) begin
+                next_arch_ras_array[next_arch_ras_tos] = commit_pc1_i + 64'd4;
+            end
+        end
+    end
+
     // -------------------------------------------------------------------------
     // 4. Stage F2 Dual-Slot Parallel Prediction Lookup (§5.4)
     // -------------------------------------------------------------------------
@@ -525,10 +621,14 @@ module fursoy_s1_bpu
     wire t3_entry_t s0_t3_val = t3_table[s0_idx3];
     wire t4_entry_t s0_t4_val = t4_table[s0_idx4];
 
-    wire s0_match1 = (s0_t1_val.tag == s0_tag1);
-    wire s0_match2 = (s0_t2_val.tag == s0_tag2);
-    wire s0_match3 = (s0_t3_val.tag == s0_tag3);
-    wire s0_match4 = (s0_t4_val.tag == s0_tag4);
+    wire s0_match1 = s0_t1_val.valid && (s0_t1_val.tag == s0_tag1);
+    wire s0_match2 = s0_t2_val.valid && (s0_t2_val.tag == s0_tag2);
+    wire s0_match3 = s0_t3_val.valid && (s0_t3_val.tag == s0_tag3);
+    wire s0_match4 = s0_t4_val.valid && (s0_t4_val.tag == s0_tag4);
+
+    wire [5:0]  s0_ibp_idx = calc_ibp_idx(pc_slot0, cur_csr);
+    wire [15:0] s0_ibp_tag = calc_ibp_tag(pc_slot0, cur_csr);
+    wire        s0_ibp_hit = ibp_table[s0_ibp_idx].valid && (ibp_table[s0_ibp_idx].tag == s0_ibp_tag);
 
     // Slot 0 Provider and Altpred Selection (§5.5)
     logic [2:0] s0_prov_id;
@@ -622,10 +722,14 @@ module fursoy_s1_bpu
     wire t3_entry_t s1_t3_val = t3_table[s1_idx3];
     wire t4_entry_t s1_t4_val = t4_table[s1_idx4];
 
-    wire s1_match1 = (s1_t1_val.tag == s1_tag1);
-    wire s1_match2 = (s1_t2_val.tag == s1_tag2);
-    wire s1_match3 = (s1_t3_val.tag == s1_tag3);
-    wire s1_match4 = (s1_t4_val.tag == s1_tag4);
+    wire s1_match1 = s1_t1_val.valid && (s1_t1_val.tag == s1_tag1);
+    wire s1_match2 = s1_t2_val.valid && (s1_t2_val.tag == s1_tag2);
+    wire s1_match3 = s1_t3_val.valid && (s1_t3_val.tag == s1_tag3);
+    wire s1_match4 = s1_t4_val.valid && (s1_t4_val.tag == s1_tag4);
+
+    wire [5:0]  s1_ibp_idx = calc_ibp_idx(pc_slot1, s1_csr);
+    wire [15:0] s1_ibp_tag = calc_ibp_tag(pc_slot1, s1_csr);
+    wire        s1_ibp_hit = ibp_table[s1_ibp_idx].valid && (ibp_table[s1_ibp_idx].tag == s1_ibp_tag);
 
     // Slot 1 Provider and Altpred Selection
     logic [2:0] s1_prov_id;
@@ -717,7 +821,7 @@ module fursoy_s1_bpu
                 end
                 BR_TYPE_JALR, BR_TYPE_IND: begin
                     slot0_taken  = 1'b1;
-                    slot0_target = slot0_entry.target;
+                    slot0_target = s0_ibp_hit ? ibp_table[s0_ibp_idx].target : slot0_entry.target;
                 end
                 default: begin
                     slot0_taken  = 1'b0;
@@ -744,7 +848,7 @@ module fursoy_s1_bpu
                 end
                 BR_TYPE_JALR, BR_TYPE_IND: begin
                     slot1_taken  = 1'b1;
-                    slot1_target = slot1_entry.target;
+                    slot1_target = s1_ibp_hit ? ibp_table[s1_ibp_idx].target : slot1_entry.target;
                 end
                 default: begin
                     slot1_taken  = 1'b0;
@@ -816,10 +920,13 @@ module fursoy_s1_bpu
     wire [8:0]  tr_tag3 = calc_tag3(train_pc_i, train_csr.csr_taga3, train_csr.csr_tagb3);
     wire [9:0]  tr_tag4 = calc_tag4(train_pc_i, train_csr.csr_taga4, train_csr.csr_tagb4);
 
-    wire tr_match1 = (t1_table[tr_idx1].tag == tr_tag1);
-    wire tr_match2 = (t2_table[tr_idx2].tag == tr_tag2);
-    wire tr_match3 = (t3_table[tr_idx3].tag == tr_tag3);
-    wire tr_match4 = (t4_table[tr_idx4].tag == tr_tag4);
+    wire tr_match1 = t1_table[tr_idx1].valid && (t1_table[tr_idx1].tag == tr_tag1);
+    wire tr_match2 = t2_table[tr_idx2].valid && (t2_table[tr_idx2].tag == tr_tag2);
+    wire tr_match3 = t3_table[tr_idx3].valid && (t3_table[tr_idx3].tag == tr_tag3);
+    wire tr_match4 = t4_table[tr_idx4].valid && (t4_table[tr_idx4].tag == tr_tag4);
+
+    wire [5:0]  tr_ibp_idx = calc_ibp_idx(train_pc_i, train_csr);
+    wire [15:0] tr_ibp_tag = calc_ibp_tag(train_pc_i, train_csr);
 
     logic [2:0] tr_prov_id;
     logic [2:0] tr_alt_id;
@@ -878,16 +985,16 @@ module fursoy_s1_bpu
         alloc_table_id = 3'd0;
         alloc_success  = 1'b0;
 
-        if (tr_prov_id < 3'd1 && t1_table[tr_idx1].u == 1'b0) begin
+        if (tr_prov_id < 3'd1 && (!t1_table[tr_idx1].valid || (t1_table[tr_idx1].u == 1'b0))) begin
             alloc_table_id = 3'd1;
             alloc_success  = 1'b1;
-        end else if (tr_prov_id < 3'd2 && t2_table[tr_idx2].u == 1'b0) begin
+        end else if (tr_prov_id < 3'd2 && (!t2_table[tr_idx2].valid || (t2_table[tr_idx2].u == 1'b0))) begin
             alloc_table_id = 3'd2;
             alloc_success  = 1'b1;
-        end else if (tr_prov_id < 3'd3 && t3_table[tr_idx3].u == 1'b0) begin
+        end else if (tr_prov_id < 3'd3 && (!t3_table[tr_idx3].valid || (t3_table[tr_idx3].u == 1'b0))) begin
             alloc_table_id = 3'd3;
             alloc_success  = 1'b1;
-        end else if (tr_prov_id < 3'd4 && t4_table[tr_idx4].u == 1'b0) begin
+        end else if (tr_prov_id < 3'd4 && (!t4_table[tr_idx4].valid || (t4_table[tr_idx4].u == 1'b0))) begin
             alloc_table_id = 3'd4;
             alloc_success  = 1'b1;
         end
@@ -939,8 +1046,14 @@ module fursoy_s1_bpu
             csr_q               <= '0;
             ras_tos_q           <= 4'd0;
             ras_depth_q         <= 5'd0;
+            arch_ghr_q          <= '0;
+            arch_csr_q          <= '0;
+            arch_ras_array_q    <= '0;
+            arch_ras_tos_q      <= 4'd0;
+            arch_ras_depth_q    <= 5'd0;
             btb_plru            <= '0;
             branch_retire_cnt_q <= 19'd0;
+            aging_idx_q         <= 9'd0;
 
             ras_array <= '0;
 
@@ -951,26 +1064,34 @@ module fursoy_s1_bpu
                 end
             end
 
+            for (int i = 0; i < IBP_ENTRIES; i++) begin
+                ibp_table[i] = '0;
+            end
+
             for (int i = 0; i < T0_ENTRIES; i++) begin
                 t0_table[i] = 2'b01; // Weakly not taken
             end
 
             for (int i = 0; i < TAGGED_SETS; i++) begin
-                t1_table[i].tag = 8'd0;
-                t1_table[i].ctr = 3'b011; // Weakly not taken (3)
-                t1_table[i].u   = 1'b0;
+                t1_table[i].valid = 1'b0;
+                t1_table[i].tag   = 8'd0;
+                t1_table[i].ctr   = 3'b011; // Weakly not taken (3)
+                t1_table[i].u     = 1'b0;
 
-                t2_table[i].tag = 8'd0;
-                t2_table[i].ctr = 3'b011;
-                t2_table[i].u   = 1'b0;
+                t2_table[i].valid = 1'b0;
+                t2_table[i].tag   = 8'd0;
+                t2_table[i].ctr   = 3'b011;
+                t2_table[i].u     = 1'b0;
 
-                t3_table[i].tag = 9'd0;
-                t3_table[i].ctr = 3'b011;
-                t3_table[i].u   = 1'b0;
+                t3_table[i].valid = 1'b0;
+                t3_table[i].tag   = 9'd0;
+                t3_table[i].ctr   = 3'b011;
+                t3_table[i].u     = 1'b0;
 
-                t4_table[i].tag = 10'd0;
-                t4_table[i].ctr = 3'b011;
-                t4_table[i].u   = 1'b0;
+                t4_table[i].valid = 1'b0;
+                t4_table[i].tag   = 10'd0;
+                t4_table[i].ctr   = 3'b011;
+                t4_table[i].u     = 1'b0;
             end
 
             for (int k = 0; k < NUM_CHECKPOINTS; k++) begin
@@ -979,6 +1100,13 @@ module fursoy_s1_bpu
             end
             /* verilator lint_on BLKSEQ */
         end else begin
+            // Track architectural history strictly in-order at ROB commit
+            arch_ghr_q       <= next_arch_ghr;
+            arch_csr_q       <= next_arch_csr;
+            arch_ras_array_q <= next_arch_ras_array;
+            arch_ras_tos_q   <= next_arch_ras_tos;
+            arch_ras_depth_q <= next_arch_ras_depth;
+
             // -----------------------------------------------------------------
             // A. Checkpoint Capture at Rename (§6.1)
             // -----------------------------------------------------------------
@@ -996,11 +1124,11 @@ module fursoy_s1_bpu
             // Priority: Flush > Port 0 Recovery > Early JAL > Speculative Advance
             // -----------------------------------------------------------------
             if (flush_valid_i) begin
-                ghr_q       <= '0;
-                csr_q       <= '0;
-                ras_tos_q   <= 4'd0;
-                ras_depth_q <= 5'd0;
-                ras_array   <= '0;
+                ghr_q       <= next_arch_ghr;
+                csr_q       <= next_arch_csr;
+                ras_array   <= next_arch_ras_array;
+                ras_tos_q   <= next_arch_ras_tos;
+                ras_depth_q <= next_arch_ras_depth;
             end else if (recover_valid_i) begin
                 // Port 0 Mispredict Recovery: Single-cycle direct restore from checkpoint
                 ghr_q <= {chkpt_ghr_table[recover_chkpt_id_i][106:0], recover_actual_taken_i};
@@ -1082,21 +1210,26 @@ module fursoy_s1_bpu
                         btb_array[train_set][victim_way].br_type <= train_br_type_i;
                         btb_plru[train_set] <= ~victim_way;
                     end
+
+                    if ((train_br_type_i == BR_TYPE_IND) || (train_br_type_i == BR_TYPE_JALR)) begin
+                        ibp_table[tr_ibp_idx].valid  <= 1'b1;
+                        ibp_table[tr_ibp_idx].tag    <= tr_ibp_tag;
+                        ibp_table[tr_ibp_idx].target <= train_actual_target_i;
+                    end
                 end
 
                 // Direction Predictor Training (Conditional Branches Only)
                 if (train_br_type_i == BR_TYPE_COND) begin
-                    // 1. Retirement Counter & Periodic 256K Useful-Bit Flash Reset (§5.6, PROP_M6_16)
+                    // 1. Periodic Useful-Bit Aging (clears 1 row across T1..T4 every 512 trained branches)
+                    if (branch_retire_cnt_q[8:0] == 9'h1FF) begin
+                        t1_table[aging_idx_q].u <= 1'b0;
+                        t2_table[aging_idx_q].u <= 1'b0;
+                        t3_table[aging_idx_q].u <= 1'b0;
+                        t4_table[aging_idx_q].u <= 1'b0;
+                        aging_idx_q             <= aging_idx_q + 9'd1;
+                    end
                     if (branch_retire_cnt_q == 19'd262143) begin
                         branch_retire_cnt_q <= 19'd0;
-                        /* verilator lint_off BLKSEQ */
-                        for (int i = 0; i < TAGGED_SETS; i++) begin
-                            t1_table[i].u = 1'b0;
-                            t2_table[i].u = 1'b0;
-                            t3_table[i].u = 1'b0;
-                            t4_table[i].u = 1'b0;
-                        end
-                        /* verilator lint_on BLKSEQ */
                     end else begin
                         branch_retire_cnt_q <= branch_retire_cnt_q + 19'd1;
                     end
@@ -1160,24 +1293,28 @@ module fursoy_s1_bpu
                             // Allocate entry into at most ONE eligible table with minimal L
                             case (alloc_table_id)
                                 3'd1: begin
-                                    t1_table[tr_idx1].tag <= tr_tag1;
-                                    t1_table[tr_idx1].ctr <= train_actual_taken_i ? 3'd4 : 3'd3;
-                                    t1_table[tr_idx1].u   <= 1'b0;
+                                    t1_table[tr_idx1].valid <= 1'b1;
+                                    t1_table[tr_idx1].tag   <= tr_tag1;
+                                    t1_table[tr_idx1].ctr   <= train_actual_taken_i ? 3'd4 : 3'd3;
+                                    t1_table[tr_idx1].u     <= 1'b0;
                                 end
                                 3'd2: begin
-                                    t2_table[tr_idx2].tag <= tr_tag2;
-                                    t2_table[tr_idx2].ctr <= train_actual_taken_i ? 3'd4 : 3'd3;
-                                    t2_table[tr_idx2].u   <= 1'b0;
+                                    t2_table[tr_idx2].valid <= 1'b1;
+                                    t2_table[tr_idx2].tag   <= tr_tag2;
+                                    t2_table[tr_idx2].ctr   <= train_actual_taken_i ? 3'd4 : 3'd3;
+                                    t2_table[tr_idx2].u     <= 1'b0;
                                 end
                                 3'd3: begin
-                                    t3_table[tr_idx3].tag <= tr_tag3;
-                                    t3_table[tr_idx3].ctr <= train_actual_taken_i ? 3'd4 : 3'd3;
-                                    t3_table[tr_idx3].u   <= 1'b0;
+                                    t3_table[tr_idx3].valid <= 1'b1;
+                                    t3_table[tr_idx3].tag   <= tr_tag3;
+                                    t3_table[tr_idx3].ctr   <= train_actual_taken_i ? 3'd4 : 3'd3;
+                                    t3_table[tr_idx3].u     <= 1'b0;
                                 end
                                 3'd4: begin
-                                    t4_table[tr_idx4].tag <= tr_tag4;
-                                    t4_table[tr_idx4].ctr <= train_actual_taken_i ? 3'd4 : 3'd3;
-                                    t4_table[tr_idx4].u   <= 1'b0;
+                                    t4_table[tr_idx4].valid <= 1'b1;
+                                    t4_table[tr_idx4].tag   <= tr_tag4;
+                                    t4_table[tr_idx4].ctr   <= train_actual_taken_i ? 3'd4 : 3'd3;
+                                    t4_table[tr_idx4].u     <= 1'b0;
                                 end
                                 default: ;
                             endcase

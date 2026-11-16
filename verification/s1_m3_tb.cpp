@@ -133,23 +133,22 @@ enum UopSubop {
     MEM_SC_D      = 75,
 
     AMO_SWAP_W    = 76,
-    AMO_ADD_W     = 77,
-    AMO_XOR_W     = 78,
-    AMO_AND_W     = 79,
-    AMO_OR_W      = 80,
-    AMO_MIN_W     = 81,
-    AMO_MAX_W     = 82,
-    AMO_MINU_W    = 83,
-    AMO_MAXU_W    = 84,
-
-    AMO_SWAP_D    = 85,
-    AMO_ADD_D     = 86,
-    AMO_XOR_D     = 87,
-    AMO_AND_D     = 88,
-    AMO_OR_D      = 89,
-    AMO_MIN_D     = 90,
-    AMO_MAX_D     = 91,
-    AMO_MINU_D    = 92,
+    AMO_SWAP_D    = 77,
+    AMO_ADD_W     = 78,
+    AMO_ADD_D     = 79,
+    AMO_XOR_W     = 80,
+    AMO_XOR_D     = 81,
+    AMO_AND_W     = 82,
+    AMO_AND_D     = 83,
+    AMO_OR_W      = 84,
+    AMO_OR_D      = 85,
+    AMO_MIN_W     = 86,
+    AMO_MIN_D     = 87,
+    AMO_MAX_W     = 88,
+    AMO_MAX_D     = 89,
+    AMO_MINU_W    = 90,
+    AMO_MINU_D    = 91,
+    AMO_MAXU_W    = 92,
     AMO_MAXU_D    = 93,
 
     MEM_FENCE     = 94,
@@ -258,6 +257,17 @@ public:
     };
     std::deque<PtwInFlight> ptw_queue;
 
+    // In-Flight Dedicated Uncached MMIO Requests
+    struct MmioInFlight {
+        uint64_t addr;
+        bool     is_store;
+        uint8_t  size;
+        uint64_t wdata;
+        uint8_t  wstrb;
+        uint64_t return_cycle;
+    };
+    std::deque<MmioInFlight> mmio_queue;
+
     // Configurable Delays and Handshake Readiness
     int bus_rd_delay;
     int ptw_delay;
@@ -286,9 +296,11 @@ public:
     bool active_ref_check = false;
     static inline uint64_t current_cycle = 0;
 
-    // PTW Fault Injection controls
-    bool ptw_inject_page_fault = false;
-    bool ptw_inject_access_fault = false;
+    // PTW Fault Injection & MMU Mode controls
+    bool     ptw_inject_page_fault = false;
+    bool     ptw_inject_access_fault = false;
+    uint8_t  cfg_priv_mode = 3;
+    uint64_t cfg_satp = 0;
 
     // -------------------------------------------------------------------------
     // Verification Metrics & Comparison Counters
@@ -307,6 +319,10 @@ public:
     uint64_t wbb_reservation_stalls = 0;
     uint64_t wbb_occupancy_max = 0;
     uint64_t trt_delayed_responses = 0;
+
+    // Exception tracking across auto-flush in step()
+    bool last_exception_seen = false;
+    uint8_t last_exc_cause = 0;
 
     // -------------------------------------------------------------------------
     // Liveness Watchdog State
@@ -334,6 +350,18 @@ public:
     void clear_inputs() {
         dut->clk_i = 0;
         dut->rst_i = 0;
+        dut->frontend_en_i = 0;
+        dut->priv_mode_i = cfg_priv_mode;
+        dut->mstatus_i = 0;
+        dut->satp_i = cfg_satp;
+        dut->pmp_allow_i = 1;
+        dut->trap_valid_i = 0;
+        dut->trap_target_i = 0;
+        dut->mret_valid_i = 0;
+        dut->mret_target_i = 0;
+        dut->sfence_vma_valid_i = 0;
+        dut->sfence_vma_va_i = 0;
+        dut->sfence_vma_asid_i = 0;
         dut->flush_valid_i = 0;
         dut->retire_ready_i = 1;
 
@@ -351,6 +379,13 @@ public:
         dut->uop0_is_branch_i = 0;
         dut->uop0_is_jal_i = 0;
         dut->uop0_is_jalr_i = 0;
+        dut->uop0_is_fp_i = 0;
+        dut->uop0_fp_dest_valid_i = 0;
+        dut->uop0_fs3_i = 0;
+        dut->uop0_frm_i = 0;
+        dut->uop0_is_vec_i = 0;
+        dut->uop0_vec_dest_valid_i = 0;
+        dut->uop0_prd_vec_i = 0;
 
         dut->uop1_valid_i = 0;
         dut->uop1_rs1_i = 0;
@@ -366,6 +401,13 @@ public:
         dut->uop1_is_branch_i = 0;
         dut->uop1_is_jal_i = 0;
         dut->uop1_is_jalr_i = 0;
+        dut->uop1_is_fp_i = 0;
+        dut->uop1_fp_dest_valid_i = 0;
+        dut->uop1_fs3_i = 0;
+        dut->uop1_frm_i = 0;
+        dut->uop1_is_vec_i = 0;
+        dut->uop1_vec_dest_valid_i = 0;
+        dut->uop1_prd_vec_i = 0;
 
         dut->probe_paddr_i = 0;
         dut->test_inject_valid_i = 0;
@@ -374,6 +416,38 @@ public:
         dut->test_inject_rob_idx_i = 0;
         dut->test_inject_rob_epoch_i = 0;
         dut->test_inject_mispredict_i = 0;
+
+        dut->comp_fp_wb_valid_i = 0;
+        for (int i = 0; i < 3; i++) dut->comp_fp_wb_preg_i[i] = 0;
+        for (int i = 0; i < 5; i++) dut->comp_fflags_i[i] = 0;
+        dut->test_fp_w0_valid_i = 0; dut->test_fp_w0_paddr_i = 0; dut->test_fp_w0_data_i = 0;
+        dut->test_fp_w1_valid_i = 0; dut->test_fp_w1_paddr_i = 0; dut->test_fp_w1_data_i = 0;
+        dut->test_fp_w2_valid_i = 0; dut->test_fp_w2_paddr_i = 0; dut->test_fp_w2_data_i = 0;
+        dut->probe_fp_paddr_i = 0;
+
+        dut->test_vrf_w_valid_i = 0;
+        dut->test_vrf_w_paddr_i = 0;
+        dut->test_vrf_w_byte_mask_i = 0;
+        memset((void*)&dut->test_vrf_w_data_i, 0, sizeof(dut->test_vrf_w_data_i));
+        dut->probe_vrf_paddr_i = 0;
+        dut->test_vec_cfg_valid_i = 0;
+        dut->test_vec_cfg_avl_i = 0;
+        dut->test_vec_cfg_vtype_i = 0;
+        dut->test_vec_cfg_rs1_is_zero_i = 0;
+        dut->test_vec_cfg_rd_is_zero_i = 0;
+        dut->test_fof_fault_valid_i = 0;
+        dut->test_fof_fault_elem_i = 0;
+        dut->test_viq_alloc_valid_i = 0;
+        dut->test_viq_alloc_rob_idx_i = 0;
+        dut->test_viq_alloc_uop_class_i = 0;
+        dut->test_viq_alloc_sub_op_i = 0;
+        dut->test_viq_alloc_vd_i = 0;
+        dut->test_viq_alloc_vs1_i = 0;
+        dut->test_viq_alloc_vs2_i = 0;
+        dut->test_viq_alloc_vm_i = 0;
+        dut->test_viq_alloc_vtype_i = 0;
+        dut->test_viq_alloc_vl_i = 0;
+        dut->test_viq_issue_ready_i = 0;
 
         // Bus interface
         dut->bus_rd_req_ready_i = bus_rd_ready ? 1 : 0;
@@ -384,6 +458,17 @@ public:
         dut->bus_wr_req_ready_i = bus_wr_ready ? 1 : 0;
         dut->bus_wr_rsp_valid_i = 0;
 
+        // L1I & PTW external memory interfaces (inactive in frontend_en_i == 0)
+        dut->l1i_bus_rd_req_ready_i = 1;
+        dut->l1i_bus_rd_rsp_valid_i = 0;
+        dut->l1i_bus_rd_rsp_tag_i = 0;
+        memset((void*)&dut->l1i_bus_rd_rsp_data_i, 0, sizeof(dut->l1i_bus_rd_rsp_data_i));
+        dut->l1i_bus_rd_rsp_error_i = 0;
+        dut->ptw_mem_req_ready_i = 1;
+        dut->ptw_mem_rsp_valid_i = 0;
+        dut->ptw_mem_rsp_data_i = 0;
+        dut->ptw_mem_rsp_error_i = 0;
+
         // PTW interface
         dut->ptw_req_ready_i = 1;
         dut->ptw_rsp_valid_i = 0;
@@ -391,9 +476,43 @@ public:
         dut->ptw_rsp_pa_i    = 0;
         dut->ptw_rsp_page_fault_i   = 0;
         dut->ptw_rsp_access_fault_i = 0;
+
+        // IRQ / CSR / DTLB / Snoop / HPM test injection interfaces
+        dut->irq_timer_i = 0;
+        dut->irq_software_i = 0;
+        dut->irq_external_i = 0;
+        dut->irq_seip_i = 0;
+        dut->mtime_i = 0;
+        dut->test_csr_we_i = 0;
+        dut->test_csr_addr_i = 0;
+        dut->test_csr_wdata_i = 0;
+        dut->test_dtlb_req_valid_i = 0;
+        dut->test_dtlb_req_tr_id_i = 0;
+        dut->test_dtlb_req_vpn_i = 0;
+        dut->test_dtlb_req_is_store_i = 0;
+        dut->test_dtlb_req_is_amo_i = 0;
+        dut->snoop_req_valid_i = 0;
+        dut->snoop_req_addr_i = 0;
+        dut->snoop_req_type_i = 0;
+        dut->test_ev_fp_issue_i = 0;
+        dut->test_ev_fp_fma_busy_i = 0;
+        dut->test_ev_fp_fdiv_stall_i = 0;
+        dut->test_ev_fp_rename_stall_i = 0;
+        dut->test_ev_vec_uop_commit_i = 0;
+        dut->test_ev_vec_mem_traffic_i = 0;
+        dut->test_ev_vec_viq_full_i = 0;
+        dut->test_ev_vec_fof_trunc_i = 0;
+
+        // Dedicated MMIO interface
+        dut->mmio_req_ready_i = 1;
+        dut->mmio_rsp_valid_i = 0;
+        dut->mmio_rsp_rdata_i = 0;
+        dut->mmio_rsp_error_i = 0;
     }
 
     void reset(int cycles = 10) {
+        cfg_priv_mode = 3;
+        cfg_satp = 0;
         clear_inputs();
         ref_mem.clear();
         bus_mem.clear();
@@ -410,6 +529,7 @@ public:
         }
         bus_rd_queue.clear();
         ptw_queue.clear();
+        mmio_queue.clear();
         in_flight_uops.clear();
         in_flight_stores.clear();
         reservation_active = false;
@@ -418,6 +538,8 @@ public:
         bus_rd_ready = true;
         ptw_inject_page_fault = false;
         ptw_inject_access_fault = false;
+        last_exception_seen = false;
+        last_exc_cause = 0;
     }
 
     void write_ref_mem_bytes(uint64_t pa, const uint8_t* src, size_t n) {
@@ -470,16 +592,14 @@ public:
                   << " rd=x" << (int)dut->diag_head_rd_o
                   << " pnew=p" << (int)dut->diag_head_pnew_o
                   << " is_br=" << (int)dut->diag_head_is_branch_o << "\n";
-        std::cerr << "MemIQ free: " << (16 - (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_mem_iq__DOT__count) << "/16\n";
+        std::cerr << "MemIQ free: " << (32 - (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_mem_iq__DOT__count) << "/32\n";
         std::cerr << "LQ free: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__lq_free_count << "/16\n";
         std::cerr << "SQ free: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_free_count << "/16\n";
         std::cerr << "SQ drain_head: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_drain_head_q
                   << " | sq_head_committed: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_head_committed
                   << " | sq_tail: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__sq_tail_q << "\n";
-        std::cerr << "Disambig: valid=" << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__disambig_lq_valid
-                  << " idx=" << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__disambig_lq_idx
-                  << " fwd_stall=" << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__fwd_stall
-                  << " fwd_success=" << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__fwd_success
+        std::cerr << "Disambig: fwd_stall_mask=0x" << std::hex << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__lq_entry_fwd_stall
+                  << " fwd_success_mask=0x" << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__lq_entry_fwd_success << std::dec
                   << " p2_comp_valid=" << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_lsu_queues__DOT__p2_comp_valid << "\n";
         std::cerr << "MSHR free: " << (int)dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_l1d__DOT__mshr_free_count << "/4\n";
         std::cerr << "In-flight bus read queue: " << bus_rd_queue.size() << " | PTW queue: " << ptw_queue.size() << "\n";
@@ -580,12 +700,60 @@ public:
 
 
         // ---------------------------------------------------------------------
+        // 3b. Dedicated Uncached MMIO Responder
+        // ---------------------------------------------------------------------
+        if (dut->mmio_req_valid_o && dut->mmio_req_ready_i) {
+            MmioInFlight req;
+            req.addr         = dut->mmio_req_addr_o;
+            req.is_store     = dut->mmio_req_is_store_o;
+            req.size         = dut->mmio_req_size_o;
+            req.wdata        = dut->mmio_req_wdata_o;
+            req.wstrb        = dut->mmio_req_wstrb_o;
+            req.return_cycle = cycle_count + bus_rd_delay;
+            if (req.is_store) {
+                uint64_t aligned = req.addr & ~7ULL;
+                for (int b = 0; b < 8; b++) {
+                    if (req.wstrb & (1U << b)) {
+                        uint8_t val = (req.wdata >> (b * 8)) & 0xFFU;
+                        uint64_t pa = aligned + b;
+                        bus_mem[pa >> 6].data[pa & 0x3F] = val;
+                        if (!active_ref_check) ref_mem[pa] = val;
+                    }
+                }
+            }
+            mmio_queue.push_back(req);
+        }
+
+        if (!mmio_queue.empty() && mmio_queue.front().return_cycle <= cycle_count) {
+            MmioInFlight rsp = mmio_queue.front();
+            mmio_queue.pop_front();
+            uint64_t rdata = 0;
+            if (!rsp.is_store) {
+                uint64_t aligned = rsp.addr & ~7ULL;
+                for (int b = 0; b < 8; b++) {
+                    uint64_t pa = aligned + b;
+                    uint8_t val = bus_mem[pa >> 6].data[pa & 0x3F];
+                    rdata |= ((uint64_t)val << (b * 8));
+                }
+            }
+            dut->mmio_rsp_valid_i = 1;
+            dut->mmio_rsp_rdata_i = rdata;
+            dut->mmio_rsp_error_i = 0;
+        } else {
+            dut->mmio_rsp_valid_i = 0;
+        }
+
+        dut->eval();
+
+        // ---------------------------------------------------------------------
         // 4. In-Order Retirement & Active Reference Model Comparison
         // ---------------------------------------------------------------------
         bool retire_occurred = false;
         bool auto_flush = false;
         if (dut->retire_ready_i && !dut->flush_valid_i) {
             if (dut->retire_exception_o) {
+                last_exception_seen = true;
+                last_exc_cause = dut->retire_exc_cause_o;
                 dut->flush_valid_i = 1;
                 auto_flush = true;
                 exception_comparisons++;
@@ -665,8 +833,15 @@ public:
         }
 
         // Track cache statistics
-        if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load_rsp_valid) {
-            if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load_rsp_hit) {
+        if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load0_rsp_valid) {
+            if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load0_rsp_hit) {
+                cache_hits++;
+            } else {
+                cache_misses++;
+            }
+        }
+        if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load1_rsp_valid) {
+            if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load1_rsp_hit) {
                 cache_hits++;
             } else {
                 cache_misses++;
@@ -679,8 +854,10 @@ public:
             dirty_evictions++;
             wbb_occupancy_max = 2;
         }
-        if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load_req_valid &&
-            !dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load_req_ready) {
+        if ((dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT____Vcellinp__u_l1d__load0_req_valid_i &&
+             !dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load0_req_ready) ||
+            (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load1_req_valid &&
+             !dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__l1d_load1_req_ready)) {
             wbb_reservation_stalls++;
         }
         if (dut->rootp->fursoy_s1_core__DOT__u_backend__DOT__u_lsu__DOT__u_l1d__DOT__mshr_free_count == 0) {
@@ -944,7 +1121,7 @@ public:
 // Test 1: LB / LBU / LH / LHU / LW / LWU / LD: Data extraction and sign/zero extension
 bool test_01_load_extensions(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x20000;
+    uint64_t base_addr = 0x80020000ULL;
     // Set up known memory content at base_addr:
     // 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88
     uint8_t raw[8] = {0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88};
@@ -986,7 +1163,7 @@ bool test_01_load_extensions(CoreTB& tb) {
 // Test 2: SB / SH / SW / SD: Byte lane enable masks and physical positioning
 bool test_02_store_masks_and_positioning(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x21000;
+    uint64_t base_addr = 0x80021000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x55, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1004,7 +1181,7 @@ bool test_02_store_masks_and_positioning(CoreTB& tb) {
 // Test 3: Misalignment Exceptions & Faulting Store Immediate Completion
 bool test_03_misalignment_and_immediate_completion(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x22001; // unaligned for 64-bit and 32-bit
+    uint64_t base_addr = 0x80022001ULL; // unaligned for 64-bit and 32-bit
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -1024,7 +1201,7 @@ bool test_03_misalignment_and_immediate_completion(CoreTB& tb) {
 // Test 4: Store Address Resolves Before Data
 bool test_04_store_addr_before_data(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x23000;
+    uint64_t base_addr = 0x80023000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -1046,7 +1223,7 @@ bool test_04_store_addr_before_data(CoreTB& tb) {
 // Test 5: Successful Store Requires Data Valid (Bifurcated Completion)
 bool test_05_bifurcated_store_completion(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x24000;
+    uint64_t base_addr = 0x80024000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -1064,11 +1241,11 @@ bool test_05_bifurcated_store_completion(CoreTB& tb) {
 // Test 6: Load Waits Behind Unresolved Older Store PA
 bool test_06_load_waits_unresolved_store_pa(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x25000;
+    uint64_t base_addr = 0x80025000ULL;
     tb.write_ref_mem64(base_addr, 0x1122334455667788ULL);
 
     // Base address producer via divider (delays store address resolution)
-    tb.dispatch1(UOP_ALU_INT, ALU_ADD, 4, 0, 0, 0x25000 * 2, true, 0x100);
+    tb.dispatch1(UOP_ALU_INT, ALU_ADD, 4, 0, 0, 0x80025000ULL * 2, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 5, 0, 0, 2, true, 0x104);
     tb.dispatch1(UOP_DIV, D_DIV, 1, 4, 5, 0, false, 0x108); // slow base addr
 
@@ -1087,7 +1264,7 @@ bool test_06_load_waits_unresolved_store_pa(CoreTB& tb) {
 // Test 7: Overlapping Store with Data Not Ready Blocks Load
 bool test_07_overlapping_store_blocks_load(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x26000;
+    uint64_t base_addr = 0x80026000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -1109,7 +1286,7 @@ bool test_07_overlapping_store_blocks_load(CoreTB& tb) {
 // Test 8: Exact Store-to-Load Forwarding (1 cycle)
 bool test_08_exact_store_load_forwarding(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x27000;
+    uint64_t base_addr = 0x80027000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0xDEADBEEFCAFEULL, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1127,7 +1304,7 @@ bool test_08_exact_store_load_forwarding(CoreTB& tb) {
 // Test 9: Contained Sub-Word Forwarding
 bool test_09_contained_subword_forwarding(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x28000;
+    uint64_t base_addr = 0x80028000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x12345678, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1151,7 +1328,7 @@ bool test_09_contained_subword_forwarding(CoreTB& tb) {
 // Test 10: Partial Overlap Conservative Stall
 bool test_10_partial_overlap_stall(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x29000;
+    uint64_t base_addr = 0x80029000ULL;
     tb.write_ref_mem64(base_addr, 0x0102030405060708ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x99, true, 0x104);
@@ -1170,7 +1347,7 @@ bool test_10_partial_overlap_stall(CoreTB& tb) {
 // Test 11: Disjoint Younger-Mask Store Does Not Shadow Older Store
 bool test_11_disjoint_younger_store_no_shadow(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x2A000;
+    uint64_t base_addr = 0x8002A000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0xAAAA, true, 0x104);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, 0xBBBB, true, 0x108);
@@ -1192,7 +1369,7 @@ bool test_11_disjoint_younger_store_no_shadow(CoreTB& tb) {
 // Test 12: Youngest Older Matching Store Wins
 bool test_12_youngest_matching_store_wins(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x2B000;
+    uint64_t base_addr = 0x8002B000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 111, true, 0x104);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, 222, true, 0x108);
@@ -1214,7 +1391,7 @@ bool test_12_youngest_matching_store_wins(CoreTB& tb) {
 // Test 13: Multi-Store Combined Coverage Stalls
 bool test_13_multistore_coverage_stalls(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x2C000;
+    uint64_t base_addr = 0x8002C000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x11, true, 0x104);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, 0x22, true, 0x108);
@@ -1235,7 +1412,7 @@ bool test_13_multistore_coverage_stalls(CoreTB& tb) {
 // Test 14: SQ Older-Mask Deallocation Clearing & Wrap Immunity (P0-1 Closeout)
 bool test_14_sq_mask_dealloc_and_wrap(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x2D000;
+    uint64_t base_addr = 0x8002D000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x1122ULL, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1269,7 +1446,7 @@ bool test_14_sq_mask_dealloc_and_wrap(CoreTB& tb) {
 // Test 15: LQ Slot Reuse
 bool test_15_lq_slot_reuse(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x2E000;
+    uint64_t base_addr = 0x8002E000ULL;
     tb.write_ref_mem64(base_addr, 0x999ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
@@ -1288,7 +1465,7 @@ bool test_15_lq_slot_reuse(CoreTB& tb) {
 // Test 16: L1D Cache Hit (Single Cycle)
 bool test_16_l1d_cache_hit(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x2F000;
+    uint64_t base_addr = 0x8002F000ULL;
     tb.write_ref_mem64(base_addr, 0x55AA55AAULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
@@ -1310,7 +1487,7 @@ bool test_16_l1d_cache_hit(CoreTB& tb) {
 // Test 17: L1D Cache Miss (MSHR Refill)
 bool test_17_l1d_cache_miss(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x30000;
+    uint64_t base_addr = 0x80030000ULL;
     tb.write_ref_mem64(base_addr, 0x77777777ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
@@ -1328,13 +1505,13 @@ bool test_18_multiple_concurrent_mshrs(CoreTB& tb) {
     tb.reset();
     // 4 addresses mapping to different cache lines
     for (int i = 0; i < 4; i++) {
-        uint64_t addr = 0x31000 + i * 0x40;
+        uint64_t addr = 0x80031000ULL + i * 0x40;
         tb.write_ref_mem64(addr, 1000 + i);
     }
     tb.wait_until_quiescent(20);
 
     for (int i = 0; i < 4; i++) {
-        tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1 + i, 0, 0, 0x31000 + i * 0x40, true, 0x100 + i*8);
+        tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1 + i, 0, 0, 0x80031000ULL + i * 0x40, true, 0x100 + i*8);
         tb.dispatch1(UOP_LOAD, MEM_LD, 10 + i, 1 + i, 0, 0, true, 0x104 + i*8);
     }
     tb.wait_until_quiescent(120);
@@ -1349,7 +1526,7 @@ bool test_18_multiple_concurrent_mshrs(CoreTB& tb) {
 // Test 19: Same-Line Multi-Waiter Merge (P0-4)
 bool test_19_same_line_multi_waiter_merge(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x32000;
+    uint64_t base_addr = 0x80032000ULL;
     tb.write_ref_mem64(base_addr + 0, 0xAAAULL);
     tb.write_ref_mem64(base_addr + 8, 0xBBBULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
@@ -1370,7 +1547,7 @@ bool test_19_same_line_multi_waiter_merge(CoreTB& tb) {
 // Test 20: Selective Waiter Squash (P0-4)
 bool test_20_selective_waiter_squash(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x33000;
+    uint64_t base_addr = 0x80033000ULL;
     tb.write_ref_mem64(base_addr + 0, 0x123ULL);
     tb.write_ref_mem64(base_addr + 8, 0x456ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
@@ -1398,7 +1575,7 @@ bool test_20_selective_waiter_squash(CoreTB& tb) {
 // Test 21: All Waiters Squashed Then Refill Returns
 bool test_21_all_waiters_squashed_refill(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x34000;
+    uint64_t base_addr = 0x80034000ULL;
     tb.write_ref_mem64(base_addr, 0x456ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
@@ -1432,8 +1609,8 @@ bool test_21_all_waiters_squashed_refill(CoreTB& tb) {
 // Test 22: Structural Stale-Response Non-Aliasing Test (P0-2)
 bool test_22_stale_response_non_aliasing(CoreTB& tb) {
     tb.reset();
-    uint64_t addrA = 0x35000;
-    uint64_t addrB = 0x35040;
+    uint64_t addrA = 0x80035000ULL;
+    uint64_t addrB = 0x80035040ULL;
     tb.write_ref_mem64(addrA, 0x789ULL);
     tb.write_ref_mem64(addrB, 0x987ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addrA, true, 0x100);
@@ -1466,7 +1643,7 @@ bool test_22_stale_response_non_aliasing(CoreTB& tb) {
 // Test 23: Dirty Line Eviction to WBB
 bool test_23_dirty_line_eviction_to_wbb(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x36000;
+    uint64_t base_addr = 0x80036000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0xDEADULL, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1483,8 +1660,8 @@ bool test_23_dirty_line_eviction_to_wbb(CoreTB& tb) {
 bool test_24_wbb_full_blocks_miss_alloc(CoreTB& tb) {
     tb.reset();
     for (int w = 0; w < 4; w++) {
-        uint64_t addr0 = 0x80000ULL + ((uint64_t)w << 12) + (0 << 6);
-        uint64_t addr1 = 0x80000ULL + ((uint64_t)w << 12) + (1 << 6);
+        uint64_t addr0 = 0x80080000ULL + ((uint64_t)w << 12) + (0 << 6);
+        uint64_t addr1 = 0x80080000ULL + ((uint64_t)w << 12) + (1 << 6);
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr0, true, 0x100 + w*16);
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x100 + w, true, 0x104 + w*16);
         tb.dispatch1(UOP_STORE, MEM_SD, 0, 1, 2, 0, true, 0x108 + w*16);
@@ -1498,17 +1675,17 @@ bool test_24_wbb_full_blocks_miss_alloc(CoreTB& tb) {
     tb.dut->bus_wr_req_ready_i = 0;
     tb.bus_rd_delay = 5;
 
-    uint64_t miss_addr0 = 0x80000ULL + (4ULL << 12) + (0 << 6);
+    uint64_t miss_addr0 = 0x80080000ULL + (4ULL << 12) + (0 << 6);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, miss_addr0, true, 0x300);
     tb.dispatch1(UOP_LOAD, MEM_LD, 4, 1, 0, 0, true, 0x304);
     tb.wait_cycles(10);
 
-    uint64_t miss_addr1 = 0x80000ULL + (4ULL << 12) + (1 << 6);
+    uint64_t miss_addr1 = 0x80080000ULL + (4ULL << 12) + (1 << 6);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, miss_addr1, true, 0x308);
     tb.dispatch1(UOP_LOAD, MEM_LD, 5, 2, 0, 0, true, 0x30C);
     tb.wait_cycles(10);
 
-    uint64_t miss_addr2 = 0x80000ULL + (5ULL << 12) + (0 << 6);
+    uint64_t miss_addr2 = 0x80080000ULL + (5ULL << 12) + (0 << 6);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, miss_addr2, true, 0x310);
     tb.dispatch1(UOP_LOAD, MEM_LD, 6, 3, 0, 0, true, 0x314);
     tb.wait_cycles(10);
@@ -1526,7 +1703,7 @@ bool test_24_wbb_full_blocks_miss_alloc(CoreTB& tb) {
 // Test 25: Load to WBB-Resident Line (P1-3)
 bool test_25_load_to_wbb_resident_line(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x37000;
+    uint64_t base_addr = 0x80037000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0xBEEFULL, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1543,7 +1720,7 @@ bool test_25_load_to_wbb_resident_line(CoreTB& tb) {
 // Test 26: Committed Store to WBB-Resident Line (P1-3)
 bool test_26_store_to_wbb_resident_line(CoreTB& tb) {
     tb.reset();
-    uint64_t line_addr = 0x60000;
+    uint64_t line_addr = 0x80060000ULL;
     for (int w = 0; w < 4; w++) {
         uint64_t a = line_addr + ((uint64_t)w << 12);
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, a, true, 0x100 + w*12);
@@ -1579,7 +1756,7 @@ bool test_26_store_to_wbb_resident_line(CoreTB& tb) {
 // Test 27: Refill / WBB Same-Line Collision (P1-3)
 bool test_27_refill_wbb_collision(CoreTB& tb) {
     tb.reset();
-    uint64_t line_addr = 0x62000;
+    uint64_t line_addr = 0x80062000ULL;
     for (int w = 0; w < 4; w++) {
         uint64_t a = line_addr + ((uint64_t)w << 12);
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, a, true, 0x100 + w*12);
@@ -1611,8 +1788,8 @@ bool test_27_refill_wbb_collision(CoreTB& tb) {
 // Test 28: Non-Blocking Hit-Under-Miss
 bool test_28_hit_under_miss(CoreTB& tb) {
     tb.reset();
-    uint64_t hit_addr = 0x38000;
-    uint64_t miss_addr = 0x39000;
+    uint64_t hit_addr = 0x80038000ULL;
+    uint64_t miss_addr = 0x80039000ULL;
     tb.write_ref_mem64(hit_addr, 0x111ULL);
     tb.write_ref_mem64(miss_addr, 0x222ULL);
 
@@ -1639,8 +1816,8 @@ bool test_28_hit_under_miss(CoreTB& tb) {
 // Test 29: Non-Blocking Miss-Under-Miss
 bool test_29_miss_under_miss(CoreTB& tb) {
     tb.reset();
-    uint64_t miss1 = 0x3A000;
-    uint64_t miss2 = 0x3B000;
+    uint64_t miss1 = 0x8003A000ULL;
+    uint64_t miss2 = 0x8003B000ULL;
     tb.write_ref_mem64(miss1, 0xAAA1ULL);
     tb.write_ref_mem64(miss2, 0xBBB2ULL);
 
@@ -1662,7 +1839,7 @@ bool test_29_miss_under_miss(CoreTB& tb) {
 // Test 30: DTLB Hit
 bool test_30_dtlb_hit(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x3C000;
+    uint64_t addr = 0x8003C000ULL;
     tb.write_ref_mem64(addr, 0x3030ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.wait_until_quiescent(20);
@@ -1678,7 +1855,11 @@ bool test_30_dtlb_hit(CoreTB& tb) {
 // Test 31: DTLB Miss -> Pending -> Replay
 bool test_31_dtlb_miss_replay(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x3D000;
+    tb.cfg_priv_mode = 1;
+    tb.cfg_satp      = (8ULL << 60);
+    tb.dut->priv_mode_i = tb.cfg_priv_mode;
+    tb.dut->satp_i      = tb.cfg_satp;
+    uint64_t addr = 0x8003D000ULL;
     tb.write_ref_mem64(addr, 0x3131ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.wait_until_quiescent(20);
@@ -1694,9 +1875,13 @@ bool test_31_dtlb_miss_replay(CoreTB& tb) {
 // Test 32: Translation Stale-Response Attack & Persistent Request Ownership (P1-2 Closeout)
 bool test_32_translation_stale_response_attack(CoreTB& tb) {
     tb.reset();
+    tb.cfg_priv_mode = 1;
+    tb.cfg_satp      = (8ULL << 60);
+    tb.dut->priv_mode_i = tb.cfg_priv_mode;
+    tb.dut->satp_i      = tb.cfg_satp;
     tb.ptw_delay = 50;
 
-    uint64_t unmapped_addr = 0x70000;
+    uint64_t unmapped_addr = 0x80070000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, unmapped_addr, true, 0x100);
     tb.dispatch1(UOP_LOAD, MEM_LD, 2, 1, 0, 0, true, 0x104);
 
@@ -1729,7 +1914,11 @@ bool test_32_translation_stale_response_attack(CoreTB& tb) {
 // Test 33: Translation Page Fault with Pending Data
 bool test_33_page_fault_with_pending_data(CoreTB& tb) {
     tb.reset();
-    uint64_t fault_addr = 0x71000;
+    tb.cfg_priv_mode = 1;
+    tb.cfg_satp      = (8ULL << 60);
+    tb.dut->priv_mode_i = tb.cfg_priv_mode;
+    tb.dut->satp_i      = tb.cfg_satp;
+    uint64_t fault_addr = 0x80071000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, fault_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -1739,8 +1928,9 @@ bool test_33_page_fault_with_pending_data(CoreTB& tb) {
 
     int waited = 0;
     bool saw_exception = false;
-    while (waited < 60) {
-        if (tb.dut->retire_exception_o && tb.dut->retire_exc_cause_o == 15) {
+    while (waited < 150) {
+        if ((tb.dut->retire_exception_o && tb.dut->retire_exc_cause_o == 15) ||
+            (tb.last_exception_seen && tb.last_exc_cause == 15)) {
             saw_exception = true;
             break;
         }
@@ -1758,7 +1948,11 @@ bool test_33_page_fault_with_pending_data(CoreTB& tb) {
 // Test 34: PMP Access Fault Denial with Pending Data
 bool test_34_pmp_access_fault_denial(CoreTB& tb) {
     tb.reset();
-    uint64_t pmp_denied_addr = 0x72000;
+    tb.cfg_priv_mode = 1;
+    tb.cfg_satp      = (8ULL << 60);
+    tb.dut->priv_mode_i = tb.cfg_priv_mode;
+    tb.dut->satp_i      = tb.cfg_satp;
+    uint64_t pmp_denied_addr = 0x80072000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, pmp_denied_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -1768,7 +1962,8 @@ bool test_34_pmp_access_fault_denial(CoreTB& tb) {
     int waited = 0;
     bool saw_load_exc = false;
     while (waited < 100) {
-        if (tb.dut->retire_exception_o && tb.dut->retire_exc_cause_o == 5) {
+        if ((tb.dut->retire_exception_o && tb.dut->retire_exc_cause_o == 5) ||
+            (tb.last_exception_seen && tb.last_exc_cause == 5)) {
             saw_load_exc = true;
             break;
         }
@@ -1786,7 +1981,7 @@ bool test_34_pmp_access_fault_denial(CoreTB& tb) {
 // Test 35: Faulting Load Does Not Write PRF (P1-6)
 bool test_35_faulting_load_prf_suppressed(CoreTB& tb) {
     tb.reset();
-    uint64_t unaligned_addr = 0x3E001;
+    uint64_t unaligned_addr = 0x8003E001ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, unaligned_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -1803,7 +1998,7 @@ bool test_35_faulting_load_prf_suppressed(CoreTB& tb) {
 // Test 36: Speculative Store Causes Zero Cache/Bus Mutation (P1-1)
 bool test_36_speculative_store_zero_mutation(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x3F000;
+    uint64_t addr = 0x8003F000ULL;
     tb.write_ref_mem64(addr, 0x10101010ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x99999999ULL, true, 0x104);
@@ -1822,7 +2017,7 @@ bool test_36_speculative_store_zero_mutation(CoreTB& tb) {
 // Test 37: Committed Store Survives Full Flush (P0-3)
 bool test_37_committed_store_survives_flush(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x40000;
+    uint64_t addr = 0x80040000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x777ULL, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1860,7 +2055,7 @@ bool test_38_mmio_exactly_once(CoreTB& tb) {
     tb.dispatch1(UOP_LOAD, MEM_LD, 2, 1, 0, 0, true, 0x104);
 
     for (int c = 0; c < 40; c++) {
-        if (tb.dut->bus_rd_req_valid_o && tb.dut->bus_rd_req_ready_i) {
+        if (tb.dut->mmio_req_valid_o && tb.dut->mmio_req_ready_i) {
             req_handshakes++;
         }
         tb.step();
@@ -1885,7 +2080,7 @@ bool test_39_interrupt_deferred_during_mmio(CoreTB& tb) {
     tb.bus_rd_delay = 15;
     tb.dispatch1(UOP_LOAD, MEM_LD, 2, 1, 0, 0, true, 0x104);
 
-    for (int i = 0; !tb.dut->bus_rd_req_valid_o && i < 30; i++) tb.step();
+    for (int i = 0; !tb.dut->mmio_req_valid_o && i < 30; i++) tb.step();
     tb.step();
 
     tb.dut->flush_valid_i = 1;
@@ -1902,7 +2097,7 @@ bool test_39_interrupt_deferred_during_mmio(CoreTB& tb) {
 // Test 40: FENCE Complete Pipeline Drain (P2-3)
 bool test_40_fence_pipeline_drain(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x41000;
+    uint64_t addr = 0x80041000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x555ULL, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -1921,7 +2116,7 @@ bool test_40_fence_pipeline_drain(CoreTB& tb) {
 // Test 41: LR.W / LR.D Reservation Success Flow
 bool test_41_lr_sc_success_flow(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x42000;
+    uint64_t addr = 0x80042000ULL;
     tb.write_ref_mem64(addr, 0x100ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x200ULL, true, 0x104);
@@ -1945,7 +2140,7 @@ bool test_41_lr_sc_success_flow(CoreTB& tb) {
 // Test 42: LR / SC Invalidation on Conflicting Store
 bool test_42_lr_sc_invalidation_conflicting_store(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x43000;
+    uint64_t addr = 0x80043000ULL;
     tb.write_ref_mem64(addr, 0x10ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x20ULL, true, 0x104);
@@ -1969,7 +2164,7 @@ bool test_42_lr_sc_invalidation_conflicting_store(CoreTB& tb) {
 // Test 43: SC Size Mismatch Fails (P2-2)
 bool test_43_sc_size_mismatch_fails(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x44000;
+    uint64_t addr = 0x80044000ULL;
     tb.write_ref_mem64(addr, 0x10ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x20ULL, true, 0x104);
@@ -1990,7 +2185,7 @@ bool test_43_sc_size_mismatch_fails(CoreTB& tb) {
 // Test 44: AMO Non-Speculative Indivisible Execution
 bool test_44_amo_indivisible_execution(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x45000;
+    uint64_t addr = 0x80045000ULL;
     tb.write_ref_mem64(addr, 100ULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 25ULL, true, 0x104);
@@ -2011,7 +2206,7 @@ bool test_44_amo_indivisible_execution(CoreTB& tb) {
 // Test 45: ROB / LQ / SQ Circular Wrap Interaction
 bool test_45_queues_circular_wrap(CoreTB& tb) {
     tb.reset();
-    uint64_t base_addr = 0x46000;
+    uint64_t base_addr = 0x80046000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_addr, true, 0x100);
     tb.wait_until_quiescent(20);
 
@@ -2031,7 +2226,7 @@ bool test_45_queues_circular_wrap(CoreTB& tb) {
 // Test 46: Same-cycle SQ allocation + validated writeback capture race for store data on both dispatch lanes
 bool test_46_same_cycle_alloc_wb_capture(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x47000;
+    uint64_t addr = 0x80047000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, 0x1111ULL, true, 0x104);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 4, 0, 0, 0x2222ULL, true, 0x108);
@@ -2084,7 +2279,7 @@ bool test_46_same_cycle_alloc_wb_capture(CoreTB& tb) {
 // Test 47: Correct PRF R5 steering so lane-1 stores read the correct prs2
 bool test_47_lane1_store_r5_steering(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x48000;
+    uint64_t addr = 0x80048000ULL;
     // Set up x1 = addr, x2 = 0x1122334455667788ULL, x3 = 0x99AABBCCDDEEFF00ULL
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x1122334455667788ULL, true, 0x104);
@@ -2132,7 +2327,7 @@ bool test_47_lane1_store_r5_steering(CoreTB& tb) {
 // Test 48: P0-1: INT + MEM with 1 IntIQ slot and 1 MemIQ slot free -> both accepted
 bool test_48_int_mem_1slot_both_accepted(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x50000;
+    uint64_t base = 0x80050000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x50);
     tb.wait_until_quiescent(20);
 
@@ -2160,7 +2355,7 @@ bool test_48_int_mem_1slot_both_accepted(CoreTB& tb) {
 // Test 49: P0-1: MEM + INT with 1 IntIQ slot and 1 MemIQ slot free -> both accepted
 bool test_49_mem_int_1slot_both_accepted(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x51000;
+    uint64_t base = 0x80051000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x50);
     tb.wait_until_quiescent(20);
 
@@ -2188,7 +2383,7 @@ bool test_49_mem_int_1slot_both_accepted(CoreTB& tb) {
 // Test 50: P0-1: INT + MEM where MemIQ has exactly 1 free slot
 bool test_50_int_mem_memiq_1free_accepted(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x52000;
+    uint64_t base = 0x80052000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x50);
     tb.wait_until_quiescent(20);
 
@@ -2213,14 +2408,20 @@ bool test_50_int_mem_memiq_1free_accepted(CoreTB& tb) {
 // Test 51: P0-1: MEM + INT where IntIQ has exactly 1 free slot
 bool test_51_mem_int_intiq_1free_accepted(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x53000;
+    uint64_t base = 0x80053000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x50);
     tb.wait_until_quiescent(20);
 
     tb.dispatch1(UOP_DIV, D_DIV, 10, 0, 0, 100, true, 0x100);
+    // IntIQ depth is 32: stall 31 dependent ALUs behind D_DIV so 1 IntIQ slot remains free
     for (int i = 0; i < 15; i++) {
-        tb.dispatch1(UOP_ALU_INT, ALU_ADD, 11 + (i % 15), 10, 0, i, true, 0x104 + i*4);
+        tb.dispatch2(
+            UOP_ALU_INT, ALU_ADD, 11 + ((2*i) % 15),     10, 0, 2*i,     true,
+            UOP_ALU_INT, ALU_ADD, 11 + ((2*i + 1) % 15), 10, 0, 2*i + 1, true,
+            0x104 + i*8, 0x108 + i*8
+        );
     }
+    tb.dispatch1(UOP_ALU_INT, ALU_ADD, 11 + (30 % 15), 10, 0, 30, true, 0x200);
     tb.wait_cycles(2);
 
     uint8_t ack = tb.dispatch2(
@@ -2238,7 +2439,7 @@ bool test_51_mem_int_intiq_1free_accepted(CoreTB& tb) {
 // Test 52: P0-1: MEM + MEM with 1 free MemIQ slot -> only lane0 accepted
 bool test_52_mem_mem_1free_lane0_only(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x54000;
+    uint64_t base = 0x80054000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x50);
     tb.wait_until_quiescent(20);
 
@@ -2264,9 +2465,15 @@ bool test_52_mem_mem_1free_lane0_only(CoreTB& tb) {
 bool test_53_int_int_1free_lane0_only(CoreTB& tb) {
     tb.reset();
     tb.dispatch1(UOP_DIV, D_DIV, 10, 0, 0, 100, true, 0x100);
+    // IntIQ depth is 32: stall 31 dependent ALUs behind D_DIV so 1 IntIQ slot remains free
     for (int i = 0; i < 15; i++) {
-        tb.dispatch1(UOP_ALU_INT, ALU_ADD, 11 + (i % 15), 10, 0, i, true, 0x104 + i*4);
+        tb.dispatch2(
+            UOP_ALU_INT, ALU_ADD, 11 + ((2*i) % 15),     10, 0, 2*i,     true,
+            UOP_ALU_INT, ALU_ADD, 11 + ((2*i + 1) % 15), 10, 0, 2*i + 1, true,
+            0x104 + i*8, 0x108 + i*8
+        );
     }
+    tb.dispatch1(UOP_ALU_INT, ALU_ADD, 11 + (30 % 15), 10, 0, 30, true, 0x200);
     tb.wait_cycles(2);
 
     uint8_t ack = tb.dispatch2(
@@ -2284,7 +2491,7 @@ bool test_53_int_int_1free_lane0_only(CoreTB& tb) {
 // Test 54: P0-1: Load + Store with 1 LQ and 1 SQ slot available
 bool test_54_load_store_1lq_1sq_accepted(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x55000;
+    uint64_t base = 0x80055000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x50);
     tb.wait_until_quiescent(20);
 
@@ -2314,7 +2521,7 @@ bool test_54_load_store_1lq_1sq_accepted(CoreTB& tb) {
 // Test 55: P0-1: Store + Load reversed with 1 LQ and 1 SQ slot available
 bool test_55_store_load_1lq_1sq_accepted(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x56000;
+    uint64_t base = 0x80056000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x50);
     tb.wait_until_quiescent(20);
 
@@ -2344,7 +2551,7 @@ bool test_55_store_load_1lq_1sq_accepted(CoreTB& tb) {
 // Test 56: P0-1: Two stores presented simultaneously -> only lane0 accepted (single R5 rule)
 bool test_56_two_stores_single_r5_rule(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x57000;
+    uint64_t base = 0x80057000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x55, true, 0x104);
     tb.wait_until_quiescent(20);
@@ -2364,8 +2571,8 @@ bool test_56_two_stores_single_r5_rule(CoreTB& tb) {
 // Test 57: P0-2: Exact ROB store retirement matching across same-PC loop iterations + SQ wrap + branch squash
 bool test_57_same_pc_store_retirement_wrap_squash(CoreTB& tb) {
     tb.reset();
-    uint64_t base = 0x58000;
-    uint64_t dummy_base = 0x60000;
+    uint64_t base = 0x80058000ULL;
+    uint64_t dummy_base = 0x80060000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0x111ULL, true, 0x104);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, 0x222ULL, true, 0x108);
@@ -2413,7 +2620,7 @@ bool test_57_same_pc_store_retirement_wrap_squash(CoreTB& tb) {
 // Test 58: P0-3: Failed SC invisible to forwarding & store drain & unresolved SC stall
 bool test_58_failed_sc_lifecycle(CoreTB& tb) {
     tb.reset();
-    uint64_t addr = 0x59000;
+    uint64_t addr = 0x80059000ULL;
     tb.write_ref_mem64(addr, 0xAAAABBBBULL);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, addr, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0xCCCCDDDDULL, true, 0x104);
@@ -2468,8 +2675,8 @@ bool test_58_failed_sc_lifecycle(CoreTB& tb) {
 bool test_59_wbb_reservation_ownership_lifecycle(CoreTB& tb) {
     tb.reset();
     for (int w = 0; w < 4; w++) {
-        uint64_t a0 = 0x90000ULL + ((uint64_t)w << 12) + (0 << 6);
-        uint64_t a1 = 0x90000ULL + ((uint64_t)w << 12) + (1 << 6);
+        uint64_t a0 = 0x80090000ULL + ((uint64_t)w << 12) + (0 << 6);
+        uint64_t a1 = 0x80090000ULL + ((uint64_t)w << 12) + (1 << 6);
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, a0, true, 0x100 + w*16);
         tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, 0xD000ULL + w, true, 0x104 + w*16);
         tb.dispatch1(UOP_STORE, MEM_SD, 0, 1, 2, 0, true, 0x108 + w*16);
@@ -2483,8 +2690,8 @@ bool test_59_wbb_reservation_ownership_lifecycle(CoreTB& tb) {
     tb.bus_rd_delay = 10;
 
     // 1. Two consecutive dirty misses reserve different WBB slots
-    uint64_t miss0 = 0x90000ULL + (4ULL << 12) + (0 << 6);
-    uint64_t miss1 = 0x90000ULL + (4ULL << 12) + (1 << 6);
+    uint64_t miss0 = 0x80090000ULL + (4ULL << 12) + (0 << 6);
+    uint64_t miss1 = 0x80090000ULL + (4ULL << 12) + (1 << 6);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, miss0, true, 0x200);
     tb.dispatch1(UOP_LOAD, MEM_LD, 4, 1, 0, 0, true, 0x204);
     tb.wait_cycles(5);
@@ -2494,7 +2701,7 @@ bool test_59_wbb_reservation_ownership_lifecycle(CoreTB& tb) {
     tb.wait_cycles(5);
 
     // 2. Third dirty miss stalls
-    uint64_t miss2 = 0x90000ULL + (5ULL << 12) + (0 << 6);
+    uint64_t miss2 = 0x80090000ULL + (5ULL << 12) + (0 << 6);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, miss2, true, 0x210);
     tb.dispatch1(UOP_LOAD, MEM_LD, 6, 3, 0, 0, true, 0x214);
     tb.wait_cycles(5);
@@ -2529,7 +2736,7 @@ void run_randomized_stress(CoreTB& tb, uint32_t seed, int target_ops) {
     uint64_t start_cycle = tb.cycle_count;
 
     // Initialize base registers x1..x4 pointing to base memory 0x100000
-    uint64_t base_mem = 0x100000ULL;
+    uint64_t base_mem = 0x80100000ULL;
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 1, 0, 0, base_mem, true, 0x100);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 2, 0, 0, base_mem + 0x1000, true, 0x104);
     tb.dispatch1(UOP_ALU_INT, ALU_ADD, 3, 0, 0, base_mem + 0x2000, true, 0x108);

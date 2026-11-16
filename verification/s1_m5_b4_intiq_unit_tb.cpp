@@ -168,6 +168,7 @@ public:
         dut->can_issue_mul_i  = 1;
         dut->can_issue_alu1_i = 1;
         dut->can_issue_div_i  = 1;
+        dut->fconv_fprf_busy_i = 0;
     }
 
     void reset() {

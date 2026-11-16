@@ -205,6 +205,14 @@ public:
         dut->train_actual_taken_i = 0;
         dut->train_actual_target_i = 0;
         dut->train_br_type_i = 0;
+        dut->commit_valid0_i = 0;
+        dut->commit_pc0_i = 0;
+        dut->commit_br_type0_i = 0;
+        dut->commit_taken0_i = 0;
+        dut->commit_valid1_i = 0;
+        dut->commit_pc1_i = 0;
+        dut->commit_br_type1_i = 0;
+        dut->commit_taken1_i = 0;
     }
 
     void tick() {
@@ -848,6 +856,59 @@ int main(int argc, char** argv) {
         test_check(bp_recover_ok, "Backpressure Stress: Delayed Rename allocation & recovery exact for baseline slot 0 and IDs 12/18/25/26");
     }
 #endif
+
+    // =========================================================================
+    // PART 7C: ARCHITECTURAL RAS ARRAY TRAP/FLUSH RECOVERY
+    // =========================================================================
+    std::cout << "\n--- Executing Architectural RAS Array Trap/Flush Recovery ---" << std::endl;
+    {
+        tb.reset_dut();
+        GoldenRAS arch_gold;
+        arch_gold.reset();
+
+        // Commit 3 nested architectural CALLs and 1 architectural CORO swap
+        const uint64_t commit_pcs[4] = {0x80010000, 0x80010100, 0x80010200, 0x80010300};
+        const uint8_t  commit_ops[4] = {3 /* CALL */, 3 /* CALL */, 3 /* CALL */, 6 /* CORO */};
+        for (int i = 0; i < 4; i++) {
+            tb.dut->commit_valid0_i   = 1;
+            tb.dut->commit_pc0_i      = commit_pcs[i];
+            tb.dut->commit_br_type0_i = commit_ops[i];
+            tb.dut->commit_taken0_i   = 1;
+            if (commit_ops[i] == 3) {
+                arch_gold.do_push(commit_pcs[i] + 4);
+            } else {
+                arch_gold.do_coroutine_swap(commit_pcs[i] + 4);
+            }
+            tb.tick();
+        }
+        tb.dut->commit_valid0_i = 0;
+
+        // Corrupt speculative RAS via wrong-path CORO + 18 nested wrong-path CALLs
+        tb.train_btb(0x80060000, 6 /* CORO */, 0x80070000);
+        tb.dut->fetch_pc_i = 0x80060000;
+        tb.dut->fetch_lookup_valid_i = 1;
+        tb.tick();
+        tb.dut->fetch_lookup_valid_i = 0;
+
+        for (int i = 0; i < 18; i++) {
+            uint64_t wp_pc = 0x80061000 + i * 8;
+            tb.train_btb(wp_pc, 3 /* CALL */, 0x80071000);
+            tb.dut->fetch_pc_i = wp_pc;
+            tb.dut->fetch_lookup_valid_i = 1;
+            tb.tick();
+            tb.dut->fetch_lookup_valid_i = 0;
+        }
+
+        // Assert trap/privileged flush_valid_i: must restore arch_ras_array + TOS + depth cleanly
+        tb.dut->flush_valid_i = 1;
+        tb.tick();
+        tb.dut->flush_valid_i = 0;
+        tb.dut->eval();
+
+        GoldenRASSnapshot after_flush = tb.get_current_snapshot();
+        test_check(after_flush == arch_gold.snap,
+                   "Flush Restore: Architectural RAS array, TOS, and depth survive wrong-path CORO and >=16 wrong-path CALLs");
+    }
 
     // Reset
     tb.reset_dut();

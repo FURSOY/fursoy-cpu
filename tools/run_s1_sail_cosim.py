@@ -222,12 +222,16 @@ _start:
     fcvt.l.d s2, f6, rup
     fcvt.l.d s3, f6, rmm
 
-    # Single-precision + NaN-boxing load/store
+    # Single-precision + NaN-boxing load/store + directed subnormal fcvt.d.s
     fcvt.s.d f12, f6
     la       t1, fp_buf
     fsw      f12, 0(t1)
     flw      f13, 0(t1)
     fcvt.d.s f14, f13
+    li       t3, 0x00400000    # Largest SP subnormal (2^-127) -> 0x3800_0000_0000_0000
+    fmv.w.x  f31, t3
+    fcvt.d.s f31, f31
+    fmv.x.d  a3, f31
     fsd      f8, 8(t1)
     fld      f15, 8(t1)
 

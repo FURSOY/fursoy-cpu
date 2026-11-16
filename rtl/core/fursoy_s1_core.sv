@@ -152,7 +152,7 @@ module fursoy_s1_core
     output rob_idx_t               rob_tail_o,
     output logic [FL_CNT_W-1:0]    freelist_count_o,
     output logic [ROB_CNT_W-1:0]   rob_count_o,
-    output logic [3:0]             chkpt_free_count_o,
+    output logic [4:0]             chkpt_free_count_o,
     output logic [1:0]             dispatch_ready_o,
     output preg_t                  arat_map_o            [AREG_NUM],
     output preg_t                  srat_map_o            [AREG_NUM],
@@ -538,6 +538,9 @@ module fursoy_s1_core
     logic [63:0]    int_comp_val           [4:0];
     logic [4:0]     int_comp_fflags        [4:0];
     logic [4:0]     int_comp_ack;
+    rob_idx_t       int_p0_br_chk_rob_idx;
+    rob_epoch_t     int_p0_br_chk_epoch;
+    logic           int_p0_br_chk_ack;
     logic [4:0]     be_comp_fflags         [4:0];
     logic [2:0]     be_comp_fp_wb_valid;
     fpreg_t         be_comp_fp_wb_preg     [2:0];
@@ -915,7 +918,7 @@ module fursoy_s1_core
             backend_ptw_rsp_page_fault   = ptw_rsp_page_fault_i;
             backend_ptw_rsp_access_fault = ptw_rsp_access_fault_i;
             backend_ptw_rsp_level        = 2'd0;
-            backend_ptw_rsp_pte          = 64'd0;
+            backend_ptw_rsp_pte          = {10'd0, ptw_rsp_pa_i[55:12], ((eff_priv_mode == 2'b00) ? 10'h0DF : 10'h0CF)};
         end
     end
 
@@ -1019,6 +1022,9 @@ module fursoy_s1_core
         .comp_val_i              (int_comp_val),
         .comp_fflags_i           (int_comp_fflags),
         .comp_ack_o              (int_comp_ack),
+        .p0_br_chk_rob_idx_i     (int_p0_br_chk_rob_idx),
+        .p0_br_chk_epoch_i       (int_p0_br_chk_epoch),
+        .p0_br_chk_ack_o         (int_p0_br_chk_ack),
 
         .comp_fp_wb_valid_i      (int_comp_fp_wb_valid),
         .comp_fp_wb_preg_i       (int_comp_fp_wb_preg),
@@ -1215,6 +1221,9 @@ module fursoy_s1_core
         .comp_val_o              (int_comp_val),
         .comp_fflags_o           (be_comp_fflags),
         .comp_ack_i              (int_comp_ack),
+        .p0_br_chk_rob_idx_o     (int_p0_br_chk_rob_idx),
+        .p0_br_chk_epoch_o       (int_p0_br_chk_epoch),
+        .p0_br_chk_ack_i         (int_p0_br_chk_ack),
 
         .comp_fp_wb_valid_o      (be_comp_fp_wb_valid),
         .comp_fp_wb_preg_o       (be_comp_fp_wb_preg),
@@ -1287,13 +1296,13 @@ module fursoy_s1_core
         .dcache_clean_all_done_o (backend_dcache_clean_all_done),
         .sq_empty_o              (backend_sq_empty),
 
-        // Predictor Training Output
-        .train_valid_o           (int_train_valid),
-        .train_pc_o              (int_train_pc),
-        .train_actual_taken_o    (int_train_actual_taken),
-        .train_actual_target_o   (int_train_actual_target),
-        .train_br_type_o         (int_train_br_type),
-        .train_ghr_o             (int_train_ghr),
+        // Predictor Training Output (Port 0 Control-Flow Completion)
+        .train_valid_o           (be_ctrl_comp_valid),
+        .train_pc_o              (be_ctrl_comp_pc),
+        .train_actual_taken_o    (be_ctrl_comp_actual_taken),
+        .train_actual_target_o   (be_ctrl_comp_actual_target),
+        .train_br_type_o         (be_ctrl_comp_br_type),
+        .train_ghr_o             (be_ctrl_comp_ghr),
 
         // Privileged SYSTEM / CSR Execution Interface (Port 0)
         .p0_sys_valid_o          (backend_p0_sys_valid),
@@ -2306,12 +2315,176 @@ module fursoy_s1_core
     );
     /* verilator lint_on PINCONNECTEMPTY */
 
-    logic              int_train_valid;
-    logic [63:0]       int_train_pc;
-    logic              int_train_actual_taken;
-    logic [63:0]       int_train_actual_target;
-    branch_type_t      int_train_br_type;
-    ghr_t              int_train_ghr;
+    logic              be_ctrl_comp_valid;
+    logic [63:0]       be_ctrl_comp_pc;
+    logic              be_ctrl_comp_actual_taken;
+    logic [63:0]       be_ctrl_comp_actual_target;
+    branch_type_t      be_ctrl_comp_br_type;
+    ghr_t              be_ctrl_comp_ghr;
+
+    // -------------------------------------------------------------------------
+    // Commit-Time BPU Architectural State & Delayed TAGE/BTB/IBP Training
+    // -------------------------------------------------------------------------
+    // Port 0 resolves control-flow speculatively; buffer metadata by rob_idx
+    // until ROB commit (with same-cycle completion bypass) so BPU tables and
+    // architectural history never learn from wrong-path or trapping instructions.
+    typedef struct packed {
+        logic [63:0]  pc;
+        logic         actual_taken;
+        logic [63:0]  actual_target;
+        branch_type_t br_type;
+        ghr_t         ghr;
+    } ctrl_commit_meta_t;
+
+    logic [ROB_NUM-1:0] ctrl_commit_meta_valid_q;
+    rob_epoch_t         ctrl_commit_meta_epoch_q [ROB_NUM];
+    ctrl_commit_meta_t  ctrl_commit_meta_q [ROB_NUM];
+
+    wire ctrl_comp_match0 = be_ctrl_comp_valid &&
+                            (int_comp_rob_idx[0] == int_retire_rob_idx[0]) &&
+                            (int_comp_epoch[0]   == int_retire_epoch[0]);
+    wire ctrl_comp_match1 = be_ctrl_comp_valid &&
+                            (int_comp_rob_idx[0] == int_retire_rob_idx[1]) &&
+                            (int_comp_epoch[0]   == int_retire_epoch[1]);
+
+    ctrl_commit_meta_t ctrl_meta_ret0;
+    ctrl_commit_meta_t ctrl_meta_ret1;
+    logic              retire_commit_ctrl0;
+    logic              retire_commit_ctrl1;
+
+    always_comb begin
+        ctrl_commit_meta_t tbl0, tbl1, comp_meta;
+        logic              tbl0_valid, tbl1_valid;
+        rob_epoch_t        tbl0_epoch, tbl1_epoch;
+
+        tbl0_valid = ctrl_commit_meta_valid_q[int_retire_rob_idx[0]];
+        tbl1_valid = ctrl_commit_meta_valid_q[int_retire_rob_idx[1]];
+        tbl0_epoch = ctrl_commit_meta_epoch_q[int_retire_rob_idx[0]];
+        tbl1_epoch = ctrl_commit_meta_epoch_q[int_retire_rob_idx[1]];
+        tbl0 = ctrl_commit_meta_q[int_retire_rob_idx[0]];
+        tbl1 = ctrl_commit_meta_q[int_retire_rob_idx[1]];
+
+        comp_meta.pc            = be_ctrl_comp_pc;
+        comp_meta.actual_taken  = be_ctrl_comp_actual_taken;
+        comp_meta.actual_target = be_ctrl_comp_actual_target;
+        comp_meta.br_type       = be_ctrl_comp_br_type;
+        comp_meta.ghr           = be_ctrl_comp_ghr;
+
+        ctrl_meta_ret0 = ctrl_comp_match0 ? comp_meta : tbl0;
+        ctrl_meta_ret1 = ctrl_comp_match1 ? comp_meta : tbl1;
+
+        retire_commit_ctrl0 = retire_valid_o[0] &&
+                              (ctrl_comp_match0 || (tbl0_valid && (tbl0_epoch == int_retire_epoch[0])));
+        retire_commit_ctrl1 = retire_valid_o[1] &&
+                              (ctrl_comp_match1 || (tbl1_valid && (tbl1_epoch == int_retire_epoch[1])));
+    end
+
+    localparam int COMMIT_TRAIN_FIFO_DEPTH = 16;
+    typedef struct packed {
+        logic [63:0]  pc;
+        logic         actual_taken;
+        logic [63:0]  actual_target;
+        branch_type_t br_type;
+        ghr_t         ghr;
+    } commit_train_entry_t;
+
+    commit_train_entry_t commit_train_fifo_q [COMMIT_TRAIN_FIFO_DEPTH];
+    logic [3:0]          commit_train_head_q;
+    logic [3:0]          commit_train_tail_q;
+    logic [4:0]          commit_train_count_q;
+
+    wire                 commit_train_valid         = (commit_train_count_q > 5'd0);
+    wire [63:0]          commit_train_pc            = commit_train_fifo_q[commit_train_head_q].pc;
+    wire                 commit_train_actual_taken  = commit_train_fifo_q[commit_train_head_q].actual_taken;
+    wire [63:0]          commit_train_actual_target = commit_train_fifo_q[commit_train_head_q].actual_target;
+    wire branch_type_t   commit_train_br_type       = commit_train_fifo_q[commit_train_head_q].br_type;
+    wire ghr_t           commit_train_ghr           = commit_train_fifo_q[commit_train_head_q].ghr;
+
+    always_ff @(posedge clk_i) begin
+        if (rst_i) begin
+            ctrl_commit_meta_valid_q <= '0;
+            commit_train_head_q      <= 4'd0;
+            commit_train_tail_q      <= 4'd0;
+            commit_train_count_q     <= 5'd0;
+        end else begin
+            // Clear ROB metadata valid bits on full flush; keep commit_train_fifo_q intact
+            // since entries in it have already retired architecturally.
+            if (core_flush_valid) begin
+                ctrl_commit_meta_valid_q <= '0;
+            end else begin
+                if (be_ctrl_comp_valid &&
+                    !(retire_valid_o[0] && ctrl_comp_match0) &&
+                    !(retire_valid_o[1] && ctrl_comp_match1)) begin
+                    ctrl_commit_meta_valid_q[int_comp_rob_idx[0]]     <= 1'b1;
+                    ctrl_commit_meta_epoch_q[int_comp_rob_idx[0]]     <= int_comp_epoch[0];
+                    ctrl_commit_meta_q[int_comp_rob_idx[0]].pc            <= be_ctrl_comp_pc;
+                    ctrl_commit_meta_q[int_comp_rob_idx[0]].actual_taken  <= be_ctrl_comp_actual_taken;
+                    ctrl_commit_meta_q[int_comp_rob_idx[0]].actual_target <= be_ctrl_comp_actual_target;
+                    ctrl_commit_meta_q[int_comp_rob_idx[0]].br_type       <= be_ctrl_comp_br_type;
+                    ctrl_commit_meta_q[int_comp_rob_idx[0]].ghr           <= be_ctrl_comp_ghr;
+                end
+                if (retire_valid_o[0]) ctrl_commit_meta_valid_q[int_retire_rob_idx[0]] <= 1'b0;
+                if (retire_valid_o[1]) ctrl_commit_meta_valid_q[int_retire_rob_idx[1]] <= 1'b0;
+            end
+
+            begin : blk_commit_train_fifo
+                logic [3:0]          nxt_head, nxt_tail;
+                logic [4:0]          nxt_count;
+                commit_train_entry_t e0, e1;
+
+                nxt_head  = commit_train_head_q;
+                nxt_tail  = commit_train_tail_q;
+                nxt_count = commit_train_count_q;
+
+                if (commit_train_valid) begin
+                    nxt_head  = nxt_head + 4'd1;
+                    nxt_count = nxt_count - 5'd1;
+                end
+
+                e0.pc            = ctrl_meta_ret0.pc;
+                e0.actual_taken  = ctrl_meta_ret0.actual_taken;
+                e0.actual_target = ctrl_meta_ret0.actual_target;
+                e0.br_type       = ctrl_meta_ret0.br_type;
+                e0.ghr           = ctrl_meta_ret0.ghr;
+
+                e1.pc            = ctrl_meta_ret1.pc;
+                e1.actual_taken  = ctrl_meta_ret1.actual_taken;
+                e1.actual_target = ctrl_meta_ret1.actual_target;
+                e1.br_type       = ctrl_meta_ret1.br_type;
+                e1.ghr           = ctrl_meta_ret1.ghr;
+
+                case ({retire_commit_ctrl0, retire_commit_ctrl1})
+                    2'b11: begin
+                        if (nxt_count <= 5'd14) begin
+                            commit_train_fifo_q[nxt_tail]        <= e0;
+                            commit_train_fifo_q[nxt_tail + 4'd1] <= e1;
+                            nxt_tail  = nxt_tail + 4'd2;
+                            nxt_count = nxt_count + 5'd2;
+                        end
+                    end
+                    2'b10: begin
+                        if (nxt_count <= 5'd15) begin
+                            commit_train_fifo_q[nxt_tail] <= e0;
+                            nxt_tail  = nxt_tail + 4'd1;
+                            nxt_count = nxt_count + 5'd1;
+                        end
+                    end
+                    2'b01: begin
+                        if (nxt_count <= 5'd15) begin
+                            commit_train_fifo_q[nxt_tail] <= e1;
+                            nxt_tail  = nxt_tail + 4'd1;
+                            nxt_count = nxt_count + 5'd1;
+                        end
+                    end
+                    default: ;
+                endcase
+
+                commit_train_head_q  <= nxt_head;
+                commit_train_tail_q  <= nxt_tail;
+                commit_train_count_q <= nxt_count;
+            end
+        end
+    end
 
     // =========================================================================
     // 3. Milestone 4 Complete Frontend Subsystem
@@ -2364,13 +2537,23 @@ module fursoy_s1_core
         .chkpt_alloc_ras1_i      (fe_uop1_ras_chkpt),
         .chkpt_alloc_csr1_i      (fe_uop1_csr_chkpt),
 
-        // Predictor training from resolved branches
-        .train_valid_i           (int_train_valid),
-        .train_pc_i              (int_train_pc),
-        .train_actual_taken_i    (int_train_actual_taken),
-        .train_actual_target_i   (int_train_actual_target),
-        .train_br_type_i         (int_train_br_type),
-        .train_ghr_i             (int_train_ghr),
+        // Predictor training from committed control-flow instructions
+        .train_valid_i           (commit_train_valid),
+        .train_pc_i              (commit_train_pc),
+        .train_actual_taken_i    (commit_train_actual_taken),
+        .train_actual_target_i   (commit_train_actual_target),
+        .train_br_type_i         (commit_train_br_type),
+        .train_ghr_i             (commit_train_ghr),
+
+        // Architectural Commit History Interface
+        .commit_valid0_i         (retire_commit_ctrl0),
+        .commit_pc0_i            (ctrl_meta_ret0.pc),
+        .commit_br_type0_i       (ctrl_meta_ret0.br_type),
+        .commit_taken0_i         (ctrl_meta_ret0.actual_taken),
+        .commit_valid1_i         (retire_commit_ctrl1),
+        .commit_pc1_i            (ctrl_meta_ret1.pc),
+        .commit_br_type1_i       (ctrl_meta_ret1.br_type),
+        .commit_taken1_i         (ctrl_meta_ret1.actual_taken),
 
         // Decoded Micro-ops Handoff to Rename / Dispatch
         .uop0_valid_o            (fe_uop0_valid),
@@ -2518,7 +2701,7 @@ module fursoy_s1_core
     wire ev_stall_memiq_full = rename_stalled && uop0_is_mem_type && !backend_memiq_ready[0];
     wire ev_stall_lq_full    = rename_stalled && uop0_is_load_type && !backend_lq_ready[0];
     wire ev_stall_sq_full    = rename_stalled && uop0_is_store_type && !backend_sq_ready[0];
-    wire ev_stall_chkpt_full = rename_stalled && (chkpt_free_count_o == 4'd0) && (sub_uop0_is_branch || sub_uop1_is_branch);
+    wire ev_stall_chkpt_full = rename_stalled && (chkpt_free_count_o == 5'd0) && (sub_uop0_is_branch || sub_uop1_is_branch);
     wire ev_stall_recovery   = rename_stalled && int_recovering;
     wire ev_stall_freelist   = (rename_stalled && (freelist_count_o == FL_CNT_W'(0)) &&
                                 !sub_uop0_is_fp && !sub_uop0_is_vec && (sub_uop0_rd != 5'd0)) ||
@@ -2585,7 +2768,7 @@ module fursoy_s1_core
 
         .recover_valid_i         (int_recover_valid),
         .recover_rob_idx_i       (int_recover_rob_idx),
-        .recover_br_type_i       (int_train_br_type),
+        .recover_br_type_i       (be_ctrl_comp_br_type),
         .flush_valid_i           (core_flush_valid),
 
         .ev_fetch_cycles_i       (fe_event_fetch_cycles),

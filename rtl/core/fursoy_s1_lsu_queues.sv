@@ -1982,17 +1982,32 @@ module fursoy_s1_lsu_queues
             if (flush_valid_i) begin
                 res_valid_q <= 1'b0;
             end else begin
-                // Load-Reserved completion on Port 2 or Port 3 establishes reservation
+                // Load-Reserved completion on Port 2 or Port 3 establishes reservation unless
+                // a younger conflicting store simultaneously retires on lane 1.
                 if (p2_comp_valid && comp_ack_i && p2_clear_lq &&
                     ((lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_W) || (lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_D))) begin
-                    res_valid_q <= 1'b1;
-                    res_pa_q    <= lq_q[p2_cleared_lq_idx].pa;
-                    res_size_q  <= lq_q[p2_cleared_lq_idx].size;
+                    if (retire_valid_i[0] &&
+                        (lq_q[p2_cleared_lq_idx].rob_idx == retire_rob_idx_i[0]) &&
+                        (lq_q[p2_cleared_lq_idx].rob_epoch == retire_epoch_i[0]) &&
+                        store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == lq_q[p2_cleared_lq_idx].pa[55:6])) begin
+                        res_valid_q <= 1'b0;
+                    end else begin
+                        res_valid_q <= 1'b1;
+                        res_pa_q    <= lq_q[p2_cleared_lq_idx].pa;
+                        res_size_q  <= lq_q[p2_cleared_lq_idx].size;
+                    end
                 end else if (p3_comp_valid && p3_comp_ack_i && p3_clear_lq &&
                              ((lq_q[p3_cleared_lq_idx].sub_op == MEM_LR_W) || (lq_q[p3_cleared_lq_idx].sub_op == MEM_LR_D))) begin
-                    res_valid_q <= 1'b1;
-                    res_pa_q    <= lq_q[p3_cleared_lq_idx].pa;
-                    res_size_q  <= lq_q[p3_cleared_lq_idx].size;
+                    if (retire_valid_i[0] &&
+                        (lq_q[p3_cleared_lq_idx].rob_idx == retire_rob_idx_i[0]) &&
+                        (lq_q[p3_cleared_lq_idx].rob_epoch == retire_epoch_i[0]) &&
+                        store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == lq_q[p3_cleared_lq_idx].pa[55:6])) begin
+                        res_valid_q <= 1'b0;
+                    end else begin
+                        res_valid_q <= 1'b1;
+                        res_pa_q    <= lq_q[p3_cleared_lq_idx].pa;
+                        res_size_q  <= lq_q[p3_cleared_lq_idx].size;
+                    end
                 end else if ((store0_retiring && (sq_q[retire0_sq_slot].pa[55:6] == res_pa_q[55:6])) ||
                              (store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == res_pa_q[55:6])) ||
                              (p2_comp_valid && comp_ack_i && p2_clear_sq && sq_q[p2_cleared_sq_idx].is_sc)) begin

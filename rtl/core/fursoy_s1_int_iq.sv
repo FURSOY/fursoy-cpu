@@ -108,6 +108,7 @@ module fursoy_s1_int_iq
     input  logic              can_issue_mul_i,
     input  logic              can_issue_alu1_i,
     input  logic              can_issue_div_i,
+    input  logic              fconv_fprf_busy_i,
 
     // Issue Outputs to Register Fetch (RF Stage)
     output logic              issue0_valid_o,
@@ -248,6 +249,8 @@ module fursoy_s1_int_iq
             logic p1_credit_ok;
             logic is_sys;
             logic sys_ready;
+            logic is_int2fp;
+            logic int2fp_ready;
 
             prs1_r = entries_q[i].prs1_ready || (entries_q[i].prs1 == preg_t'(0));
 
@@ -256,16 +259,19 @@ module fursoy_s1_int_iq
 
             ops_ready = entries_q[i].valid && prs1_r && prs2_r;
 
-            is_sys    = (entries_q[i].uop_class == UOP_SYSTEM);
-            sys_ready = !is_sys || (entries_q[i].rob_idx == rob_head_i);
+            is_sys       = (entries_q[i].uop_class == UOP_SYSTEM);
+            sys_ready    = !is_sys || (entries_q[i].rob_idx == rob_head_i);
+            is_int2fp    = !entries_q[i].exception && (entries_q[i].uop_class == UOP_FP) &&
+                           is_int2fp_op(entries_q[i].sub_op);
+            int2fp_ready = !is_int2fp || !fconv_fprf_busy_i;
 
             // Classify eligibility
             is_p0_only[i] = entries_q[i].valid && (entries_q[i].port_mask == 2'b01);
             is_p1_only[i] = entries_q[i].valid && (entries_q[i].port_mask == 2'b10);
             is_flex[i]    = entries_q[i].valid && (entries_q[i].port_mask == 2'b11);
 
-            // Ready for Port 0 (ALU0, Branch, or Serialized System at ROB Head)
-            ready_p0[i] = ops_ready && entries_q[i].port_mask[0] && sys_ready;
+            // Ready for Port 0 (ALU0, Branch, Int2FP, or Serialized System at ROB Head)
+            ready_p0[i] = ops_ready && entries_q[i].port_mask[0] && sys_ready && int2fp_ready;
 
             // Ready for Port 1 (ALU1, Multiplier, or Divider)
             p1_credit_ok = 1'b0;
