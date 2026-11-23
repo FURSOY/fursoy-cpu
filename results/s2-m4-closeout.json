@@ -1,0 +1,470 @@
+{
+  "milestone": "S2-M4",
+  "generated_utc": "2026-11-22T21:25:57.884362+00:00",
+  "elapsed_sec": 1117.49,
+  "rtl_sha256": "bc0502b97739fd8f4556f533618a90b4f2d2cf3a44781c67ea2961298adf1f05",
+  "status": "pass",
+  "configs": [
+    {
+      "num_harts": 2,
+      "lint_passed": true,
+      "litmus": {
+        "status": "pass",
+        "num_harts": 2,
+        "cycles": 495111,
+        "all_tests_present": true,
+        "zero_forbidden": true,
+        "all_harts_ok": true,
+        "sb_ok": true,
+        "mp_ctrl_reordered": 0,
+        "mp_ctrl_seen11": 3,
+        "litmus_tests": {
+          "MP": {
+            "forbidden": 0,
+            "observed": 62
+          },
+          "SB": {
+            "forbidden": 0,
+            "observed": 128
+          },
+          "LB": {
+            "forbidden": 0,
+            "observed": 128
+          },
+          "IRIW": {
+            "forbidden": 0,
+            "observed": 0
+          },
+          "CoRR": {
+            "forbidden": 0,
+            "observed": 112
+          },
+          "CoWR": {
+            "forbidden": 0,
+            "observed": 1024
+          },
+          "CoRW": {
+            "forbidden": 0,
+            "observed": 62
+          },
+          "CoWW": {
+            "forbidden": 0,
+            "observed": 128
+          }
+        },
+        "swmr_violations": 0,
+        "metadata_violations": 0,
+        "inclusion_violations": 0,
+        "data_coherence_violations": 0,
+        "sb_cycle_checks": 495111,
+        "per_hart_commits": [
+          307668,
+          278215
+        ]
+      },
+      "torture": {
+        "status": "pass",
+        "num_harts": 2,
+        "cycles": 118815,
+        "total_commits": 166762,
+        "min_commits_ok": true,
+        "all_harts_ok": true,
+        "watchdog_ok": true,
+        "sb_ok": true,
+        "swmr_violations": 0,
+        "metadata_violations": 0,
+        "inclusion_violations": 0,
+        "data_coherence_violations": 0,
+        "sb_cycle_checks": 118815,
+        "seen_mesi_s_multi_hart": 234491,
+        "seen_mesi_e": 8256,
+        "seen_mesi_m": 4673827,
+        "seen_wbb_dirty": 1860,
+        "per_hart_commits": [
+          80369,
+          86393
+        ]
+      },
+      "status": "pass"
+    },
+    {
+      "num_harts": 4,
+      "lint_passed": true,
+      "litmus": {
+        "status": "pass",
+        "num_harts": 4,
+        "cycles": 581323,
+        "all_tests_present": true,
+        "zero_forbidden": true,
+        "all_harts_ok": true,
+        "sb_ok": true,
+        "mp_ctrl_reordered": 0,
+        "mp_ctrl_seen11": 60,
+        "litmus_tests": {
+          "MP": {
+            "forbidden": 0,
+            "observed": 68
+          },
+          "SB": {
+            "forbidden": 0,
+            "observed": 115
+          },
+          "LB": {
+            "forbidden": 0,
+            "observed": 121
+          },
+          "IRIW": {
+            "forbidden": 0,
+            "observed": 78
+          },
+          "CoRR": {
+            "forbidden": 0,
+            "observed": 343
+          },
+          "CoWR": {
+            "forbidden": 0,
+            "observed": 1024
+          },
+          "CoRW": {
+            "forbidden": 0,
+            "observed": 38
+          },
+          "CoWW": {
+            "forbidden": 0,
+            "observed": 128
+          }
+        },
+        "swmr_violations": 0,
+        "metadata_violations": 0,
+        "inclusion_violations": 0,
+        "data_coherence_violations": 0,
+        "sb_cycle_checks": 581323,
+        "per_hart_commits": [
+          377662,
+          255277,
+          257472,
+          261184
+        ]
+      },
+      "torture": {
+        "status": "pass",
+        "num_harts": 4,
+        "cycles": 123285,
+        "total_commits": 344879,
+        "min_commits_ok": true,
+        "all_harts_ok": true,
+        "watchdog_ok": true,
+        "sb_ok": true,
+        "swmr_violations": 0,
+        "metadata_violations": 0,
+        "inclusion_violations": 0,
+        "data_coherence_violations": 0,
+        "sb_cycle_checks": 123285,
+        "seen_mesi_s_multi_hart": 260263,
+        "seen_mesi_e": 7774,
+        "seen_mesi_m": 7725180,
+        "seen_wbb_dirty": 632,
+        "per_hart_commits": [
+          80955,
+          87709,
+          89319,
+          86896
+        ]
+      },
+      "status": "pass"
+    }
+  ],
+  "synth_500mhz": {
+    "target_clock_mhz": 500.0,
+    "target_period_ns": 2.0,
+    "all_slice2_pass": true,
+    "all_slice1_gated_pass": true,
+    "all_logs_fresh": true,
+    "warning_1216_count": 0,
+    "warning_441_count": 0,
+    "all_gated_pass": true,
+    "slice2_blocks": [
+      {
+        "key": "s2_clint",
+        "name": "fursoy_s2_clint",
+        "description": "4-Hart CLINT Timer & Software Interrupt Controller",
+        "params": {
+          "NUM_HARTS": 4
+        },
+        "sram_bb": false,
+        "logs_fresh": true,
+        "warning_1216_count": 0,
+        "warning_441_count": 0,
+        "yosys": {
+          "cell_count": 2979,
+          "dff_count": 394,
+          "chip_area_um2": 4606.854,
+          "gate_equivalent_ge": 5773.0
+        },
+        "sta": {
+          "wns_ns": 0.357,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.559,
+          "startpoint": "_5701_ (rising edge-triggered flip-flop clocked by clk)",
+          "endpoint": "_5762_ (rising edge-triggered flip-flop clocked by clk)"
+        },
+        "timing_met": true
+      },
+      {
+        "key": "s2_plic",
+        "name": "fursoy_s2_plic",
+        "description": "8-Context PLIC (Binary Priority Reduction Tree)",
+        "params": {
+          "NUM_HARTS": 4
+        },
+        "sram_bb": false,
+        "logs_fresh": true,
+        "warning_1216_count": 0,
+        "warning_441_count": 0,
+        "yosys": {
+          "cell_count": 10715,
+          "dff_count": 561,
+          "chip_area_um2": 14089.222,
+          "gate_equivalent_ge": 17655.7
+        },
+        "sta": {
+          "wns_ns": 0.505,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.407,
+          "startpoint": "_20817_ (rising edge-triggered flip-flop clocked by clk)",
+          "endpoint": "_20977_ (rising edge-triggered flip-flop clocked by clk)"
+        },
+        "timing_met": true
+      },
+      {
+        "key": "s2_mmio_xbar",
+        "name": "fursoy_s2_mmio_xbar",
+        "description": "4-Hart Registered MMIO Crossbar & Peripheral Decoder",
+        "params": {
+          "NUM_HARTS": 4
+        },
+        "sram_bb": false,
+        "logs_fresh": true,
+        "warning_1216_count": 0,
+        "warning_441_count": 0,
+        "yosys": {
+          "cell_count": 2059,
+          "dff_count": 213,
+          "chip_area_um2": 2861.096,
+          "gate_equivalent_ge": 3585.3
+        },
+        "sta": {
+          "wns_ns": 0.735,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.181,
+          "startpoint": "mmio_req_valid_i[0] (input port clocked by clk)",
+          "endpoint": "_3807_ (rising edge-triggered flip-flop clocked by clk)"
+        },
+        "timing_met": true
+      },
+      {
+        "key": "s2_l2",
+        "name": "fursoy_s2_l2",
+        "description": "Shared 8-Way Inclusive L2 Directory/Tag/PLRU (512 sets) + SRAM Blackbox (.lib)",
+        "params": {
+          "NUM_HARTS": 4,
+          "L2_SETS": 512
+        },
+        "sram_bb": true,
+        "logs_fresh": true,
+        "warning_1216_count": 0,
+        "warning_441_count": 0,
+        "yosys": {
+          "cell_count": 1558821,
+          "dff_count": 212480,
+          "chip_area_um2": 2609428.079979,
+          "gate_equivalent_ge": 3269960.0
+        },
+        "sta": {
+          "wns_ns": 0.314,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.436,
+          "startpoint": "lu_addr_i[0] (input port clocked by clk)",
+          "endpoint": "lu_hit_data_o[100] (output port clocked by clk)"
+        },
+        "timing_met": true
+      },
+      {
+        "key": "s2_coherence_mgr",
+        "name": "fursoy_s2_coherence_mgr",
+        "description": "4-Hart Directory Coherence Manager (C0/C1/C2 + DIR_MSHRs + L2 512 sets)",
+        "params": {
+          "NUM_HARTS": 4,
+          "L2_SETS": 512
+        },
+        "sram_bb": true,
+        "logs_fresh": true,
+        "warning_1216_count": 0,
+        "warning_441_count": 0,
+        "yosys": {
+          "cell_count": 1857576,
+          "dff_count": 224327,
+          "chip_area_um2": 3057617.33198,
+          "gate_equivalent_ge": 3831600.7
+        },
+        "sta": {
+          "wns_ns": 0.008,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.902,
+          "startpoint": "_577329_ (rising edge-triggered flip-flop clocked by clk)",
+          "endpoint": "_579575_ (rising edge-triggered flip-flop clocked by clk)"
+        },
+        "timing_met": true
+      },
+      {
+        "key": "s2_l1d",
+        "name": "fursoy_s1_l1d",
+        "description": "Coherent L1D Controller (SMP_COHERENCE_EN=1, 64 sets, 2-Stage Snoop, SC/AMO + SRAM .lib)",
+        "params": {
+          "SMP_COHERENCE_EN": 1,
+          "L1D_SETS_PARAM": 64
+        },
+        "sram_bb": true,
+        "logs_fresh": true,
+        "warning_1216_count": 0,
+        "warning_441_count": 0,
+        "yosys": {
+          "cell_count": 216202,
+          "dff_count": 20942,
+          "chip_area_um2": 373719.094001,
+          "gate_equivalent_ge": 468319.7
+        },
+        "sta": {
+          "wns_ns": 0.027,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.723,
+          "startpoint": "load0_req_pa_i[6] (input port clocked by clk)",
+          "endpoint": "load0_rsp_data_o[16] (output port clocked by clk)"
+        },
+        "timing_met": true
+      }
+    ],
+    "slice1_gated_blocks": [
+      {
+        "name": "fursoy_s1_branch_unit",
+        "yosys": {
+          "cell_count": 4086,
+          "dff_count": 0,
+          "chip_area_um2": 4346.174,
+          "gate_equivalent_ge": 5450.0
+        },
+        "sta": {
+          "wns_ns": 1.399,
+          "tns_ns": 0.0,
+          "max_delay_ns": 0.601
+        },
+        "timing_met": true
+      },
+      {
+        "name": "fursoy_s1_csr",
+        "yosys": {
+          "cell_count": 14491,
+          "dff_count": 1872,
+          "chip_area_um2": 22253.56,
+          "gate_equivalent_ge": 27890.0
+        },
+        "sta": {
+          "wns_ns": 0.623,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.342
+        },
+        "timing_met": true
+      },
+      {
+        "name": "fursoy_s1_dtlb",
+        "yosys": {
+          "cell_count": 50517,
+          "dff_count": 6515,
+          "chip_area_um2": 79694.398,
+          "gate_equivalent_ge": 99870.0
+        },
+        "sta": {
+          "wns_ns": 0.547,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.253
+        },
+        "timing_met": true
+      },
+      {
+        "name": "fursoy_s1_itlb",
+        "yosys": {
+          "cell_count": 36755,
+          "dff_count": 6304,
+          "chip_area_um2": 61856.97,
+          "gate_equivalent_ge": 77520.0
+        },
+        "sta": {
+          "wns_ns": 0.586,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.214
+        },
+        "timing_met": true
+      },
+      {
+        "name": "fursoy_s1_agu",
+        "yosys": {
+          "cell_count": 817,
+          "dff_count": 0,
+          "chip_area_um2": 856.254,
+          "gate_equivalent_ge": 1070.0
+        },
+        "sta": {
+          "wns_ns": 1.49,
+          "tns_ns": 0.0,
+          "max_delay_ns": 0.51
+        },
+        "timing_met": true
+      },
+      {
+        "name": "fursoy_s1_ptw",
+        "yosys": {
+          "cell_count": 1797,
+          "dff_count": 329,
+          "chip_area_um2": 3040.912,
+          "gate_equivalent_ge": 3810.0
+        },
+        "sta": {
+          "wns_ns": 1.069,
+          "tns_ns": 0.0,
+          "max_delay_ns": 0.892
+        },
+        "timing_met": true
+      },
+      {
+        "name": "fursoy_s1_decode",
+        "yosys": {
+          "cell_count": 2777,
+          "dff_count": 0,
+          "chip_area_um2": 2953.664,
+          "gate_equivalent_ge": 3700.0
+        },
+        "sta": {
+          "wns_ns": 1.021,
+          "tns_ns": 0.0,
+          "max_delay_ns": 0.979
+        },
+        "timing_met": true
+      },
+      {
+        "name": "fursoy_s1_alu",
+        "yosys": {
+          "cell_count": 4326,
+          "dff_count": 0,
+          "chip_area_um2": 5056.926,
+          "gate_equivalent_ge": 6340.0
+        },
+        "sta": {
+          "wns_ns": 0.847,
+          "tns_ns": 0.0,
+          "max_delay_ns": 1.153
+        },
+        "timing_met": true
+      }
+    ]
+  }
+}

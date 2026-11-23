@@ -1,0 +1,87 @@
+{
+  "milestone": "S2-M1",
+  "status": "PASS",
+  "timestamp_utc": "2026-11-22T21:02:51.606563+00:00",
+  "elapsed_seconds": 720.92,
+  "rtl_sha256": "bc0502b97739fd8f4556f533618a90b4f2d2cf3a44781c67ea2961298adf1f05",
+  "configs": {
+    "n2": {
+      "status": "pass",
+      "num_harts": 2,
+      "cycles": 11451,
+      "seen_all_pass": true,
+      "seen_fail": false,
+      "plic_4b_ok": true,
+      "all_harts_ok": true,
+      "per_hart_commits": [
+        2835,
+        2421
+      ],
+      "per_hart_msip_seen": [
+        true,
+        true
+      ],
+      "per_hart_mtip_seen": [
+        true,
+        true
+      ],
+      "per_hart_seip_seen": [
+        true,
+        true
+      ],
+      "plic_4b_winners": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "n4": {
+      "status": "pass",
+      "num_harts": 4,
+      "cycles": 19940,
+      "seen_all_pass": true,
+      "seen_fail": false,
+      "plic_4b_ok": true,
+      "all_harts_ok": true,
+      "per_hart_commits": [
+        3007,
+        2317,
+        2341,
+        2445
+      ],
+      "per_hart_msip_seen": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "per_hart_mtip_seen": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "per_hart_seip_seen": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "plic_4b_winners": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  }
+}

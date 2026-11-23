@@ -1,0 +1,55 @@
+{
+  "milestone": "S2-M2",
+  "status": "PASS",
+  "timestamp_utc": "2026-11-22T21:04:21.625691+00:00",
+  "elapsed_seconds": 89.98,
+  "rtl_sha256": "bc0502b97739fd8f4556f533618a90b4f2d2cf3a44781c67ea2961298adf1f05",
+  "configs": {
+    "n2": {
+      "status": "pass",
+      "num_harts": 2,
+      "cycles": 14551,
+      "tests_ok": true,
+      "all_harts_ok": true,
+      "sb_ok": true,
+      "mesi_cov_ok": true,
+      "swmr_violations": 0,
+      "metadata_violations": 0,
+      "inclusion_violations": 0,
+      "data_coherence_violations": 0,
+      "sb_cycle_checks": 14551,
+      "seen_mesi_s_multi_hart": 148744,
+      "seen_mesi_e": 15068,
+      "seen_mesi_m": 1124592,
+      "seen_wbb_dirty": 240,
+      "per_hart_commits": [
+        12198,
+        19146
+      ]
+    },
+    "n4": {
+      "status": "pass",
+      "num_harts": 4,
+      "cycles": 18468,
+      "tests_ok": true,
+      "all_harts_ok": true,
+      "sb_ok": true,
+      "mesi_cov_ok": true,
+      "swmr_violations": 0,
+      "metadata_violations": 0,
+      "inclusion_violations": 0,
+      "data_coherence_violations": 0,
+      "sb_cycle_checks": 18468,
+      "seen_mesi_s_multi_hart": 224704,
+      "seen_mesi_e": 12336,
+      "seen_mesi_m": 1258626,
+      "seen_wbb_dirty": 304,
+      "per_hart_commits": [
+        14739,
+        20829,
+        20926,
+        21506
+      ]
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "milestone": "S2-M3",
+  "title": "RV64A Atomics (LR/SC + AMO), Global FENCE Quiescence, and SMP SBI Firmware",
+  "status": "pass",
+  "elapsed_s": 178.67,
+  "timestamp_utc": "2026-11-22T21:07:20.349998+00:00",
+  "rtl_sha256": "bc0502b97739fd8f4556f533618a90b4f2d2cf3a44781c67ea2961298adf1f05",
+  "configs": {
+    "n2": {
+      "status": "pass",
+      "num_harts": 2,
+      "cycles": 53048,
+      "tests_ok": true,
+      "all_harts_ok": true,
+      "srst_halt_ok": true,
+      "sb_ok": true,
+      "seen_t1": true,
+      "seen_t2": true,
+      "seen_t3": true,
+      "seen_t4": true,
+      "seen_t5": true,
+      "swmr_violations": 0,
+      "metadata_violations": 0,
+      "inclusion_violations": 0,
+      "data_coherence_violations": 0,
+      "sb_cycle_checks": 53048,
+      "seen_mesi_s_multi_hart": 1125554,
+      "seen_mesi_e": 63937,
+      "seen_mesi_m": 8849303,
+      "seen_wbb_dirty": 68,
+      "per_hart_commits": [
+        34962,
+        27943
+      ]
+    },
+    "n4": {
+      "status": "pass",
+      "num_harts": 4,
+      "cycles": 85366,
+      "tests_ok": true,
+      "all_harts_ok": true,
+      "srst_halt_ok": true,
+      "sb_ok": true,
+      "seen_t1": true,
+      "seen_t2": true,
+      "seen_t3": true,
+      "seen_t4": true,
+      "seen_t5": true,
+      "swmr_violations": 0,
+      "metadata_violations": 0,
+      "inclusion_violations": 0,
+      "data_coherence_violations": 0,
+      "sb_cycle_checks": 85366,
+      "seen_mesi_s_multi_hart": 1878513,
+      "seen_mesi_e": 122191,
+      "seen_mesi_m": 19597002,
+      "seen_wbb_dirty": 534,
+      "per_hart_commits": [
+        48623,
+        32308,
+        28612,
+        31260
+      ]
+    }
+  }
+}

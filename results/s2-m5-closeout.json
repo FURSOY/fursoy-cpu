@@ -1,0 +1,139 @@
+{
+  "milestone": "S2-M5",
+  "mode": "full",
+  "status": "pass",
+  "timestamp_utc": "2026-11-23T14:55:04.008507+00:00",
+  "elapsed_sec": 34360.95,
+  "rtl_sha256": "bc0502b97739fd8f4556f533618a90b4f2d2cf3a44781c67ea2961298adf1f05",
+  "linux_version": "6.6.50",
+  "kernel_image": "/home/fsoye/fursoy-cpu/build/linux-6.6.50-smp/arch/riscv/boot/Image",
+  "kernel_sha256": "80b434fb37b5c84fe6890edcd2add39e5e7e4c9520027aa9b02fb93102cbe7ff",
+  "configs": {
+    "n2": {
+      "num_harts": 2,
+      "threads": 4,
+      "soc_build_sec": 0.0,
+      "link_sec": 1.27,
+      "dtb_path": "build/dts/fursoy_s2_n2.dtb",
+      "dtb_sha256": "9ff546b50e33421a0bada021e94e0e01564cb985ee41ae9e68331faebc3606df",
+      "sbi_sha256": "e654809c2eac6b95bd46f9b31f9cdb5dbd4a984c201128944d9f6f8d07cd600b",
+      "kernel_sha256": "80b434fb37b5c84fe6890edcd2add39e5e7e4c9520027aa9b02fb93102cbe7ff",
+      "simulation": {
+        "status": "pass",
+        "mode": "full",
+        "num_harts": 2,
+        "cycles": 41096621,
+        "wall_sec": 11790.98,
+        "cycles_per_sec": 3485.4,
+        "total_commits": 43732996,
+        "total_ipc": 1.0642,
+        "uart_bytes": 6272,
+        "seen_sbi_handoff": true,
+        "cyc_sbi_handoff": 548,
+        "seen_linux_banner": true,
+        "cyc_linux_banner": 414669,
+        "seen_smp_brought_up": true,
+        "cyc_smp_brought_up": 6569664,
+        "all_harts_smode": true,
+        "seen_run_init": true,
+        "cyc_run_init": 16908918,
+        "seen_cpuinfo_pass": true,
+        "seen_affinity_pass": true,
+        "seen_pthreads_pass": true,
+        "seen_busybox_pass": true,
+        "seen_all_pass": true,
+        "cyc_all_pass": 41092621,
+        "seen_kernel_panic": false,
+        "seen_oops": false,
+        "seen_rcu_stall": false,
+        "seen_sbi_trap": false,
+        "seen_userspace_fail": false,
+        "watchdog_triggered": false,
+        "per_hart_commits": [
+          26125673,
+          17607323
+        ],
+        "per_hart_ipc": [
+          0.6357,
+          0.4284
+        ],
+        "per_hart_smode_commits": [
+          23562882,
+          16619110
+        ],
+        "per_hart_umode_commits": [
+          1664367,
+          811853
+        ]
+      },
+      "status": "pass"
+    },
+    "n4": {
+      "num_harts": 4,
+      "threads": 2,
+      "soc_build_sec": 0.0,
+      "link_sec": 1.55,
+      "dtb_path": "build/dts/fursoy_s2_n4.dtb",
+      "dtb_sha256": "4da8a9e17626685317a9c654eae19c53c524c6aac9a767c7388ec4e64d57da8d",
+      "sbi_sha256": "32c199f6bc30ec0738d7c7346bd8b009449a8ad0c9632312dd16294fcfb950cb",
+      "kernel_sha256": "80b434fb37b5c84fe6890edcd2add39e5e7e4c9520027aa9b02fb93102cbe7ff",
+      "simulation": {
+        "status": "pass",
+        "mode": "full",
+        "num_harts": 4,
+        "cycles": 48380518,
+        "wall_sec": 34358.96,
+        "cycles_per_sec": 1408.1,
+        "total_commits": 60175709,
+        "total_ipc": 1.2438,
+        "uart_bytes": 6447,
+        "seen_sbi_handoff": true,
+        "cyc_sbi_handoff": 544,
+        "seen_linux_banner": true,
+        "cyc_linux_banner": 462998,
+        "seen_smp_brought_up": true,
+        "cyc_smp_brought_up": 7649659,
+        "all_harts_smode": true,
+        "seen_run_init": true,
+        "cyc_run_init": 18784797,
+        "seen_cpuinfo_pass": true,
+        "seen_affinity_pass": true,
+        "seen_pthreads_pass": true,
+        "seen_busybox_pass": true,
+        "seen_all_pass": true,
+        "cyc_all_pass": 48376518,
+        "seen_kernel_panic": false,
+        "seen_oops": false,
+        "seen_rcu_stall": false,
+        "seen_sbi_trap": false,
+        "seen_userspace_fail": false,
+        "watchdog_triggered": false,
+        "per_hart_commits": [
+          25414910,
+          10507133,
+          9399161,
+          14854505
+        ],
+        "per_hart_ipc": [
+          0.5253,
+          0.2172,
+          0.1943,
+          0.307
+        ],
+        "per_hart_smode_commits": [
+          23850727,
+          8411079,
+          8992976,
+          14085504
+        ],
+        "per_hart_umode_commits": [
+          711406,
+          1791315,
+          234329,
+          602758
+        ]
+      },
+      "status": "pass"
+    }
+  }
+}
