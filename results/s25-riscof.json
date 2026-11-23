@@ -1,0 +1,176 @@
+{
+  "milestone": "S2.5-M2a",
+  "status": "pass",
+  "timestamp_utc": "2026-11-23T18:57:37.312052+00:00",
+  "elapsed_seconds": 266.67,
+  "rtl_sha256": "3da97dcef426ef3d3bfebd6c21399df21ba24ea9fce2ce4fd5503e1b408da7dc",
+  "versions": {
+    "riscof": "RISC-V Architectural Test Framework., version 1.25.3",
+    "riscv_arch_test_commit": "281d71ef3d61e32111217b20305ea3ef9b1582e2",
+    "riscv_arch_test_tag": "ctp-2026-01-14-492dc4b",
+    "sail_riscv": "0.16"
+  },
+  "isa_string": "RV64IMAFDSUZicsr_Zifencei_Zba_Zbb",
+  "hw_data_misaligned_support": false,
+  "riscof_exit_code": 0,
+  "summary": {
+    "total_tests": 245,
+    "passed": 245,
+    "failed": 0,
+    "pass_rate_pct": 100.0
+  },
+  "per_suite": {
+    "A": {
+      "passed": 18,
+      "failed": 0,
+      "total": 18
+    },
+    "B": {
+      "passed": 32,
+      "failed": 0,
+      "total": 32
+    },
+    "D": {
+      "passed": 27,
+      "failed": 0,
+      "total": 27
+    },
+    "F": {
+      "passed": 18,
+      "failed": 0,
+      "total": 18
+    },
+    "I": {
+      "passed": 50,
+      "failed": 0,
+      "total": 50
+    },
+    "M": {
+      "passed": 13,
+      "failed": 0,
+      "total": 13
+    },
+    "Zifencei": {
+      "passed": 1,
+      "failed": 0,
+      "total": 1
+    },
+    "hints": {
+      "passed": 31,
+      "failed": 0,
+      "total": 31
+    },
+    "privilege": {
+      "passed": 19,
+      "failed": 0,
+      "total": 19
+    },
+    "vm_sv39": {
+      "passed": 36,
+      "failed": 0,
+      "total": 36
+    }
+  },
+  "failures": [],
+  "excluded_suites": {
+    "C": {
+      "test_count": 45,
+      "reason": "RVC 16-bit compressed instructions not implemented (deferred to Slice-3+)"
+    },
+    "D_Zcd": {
+      "test_count": 4,
+      "reason": "Requires C/Zcd compressed FP instructions (not implemented)"
+    },
+    "D_Zfa": {
+      "test_count": 28,
+      "reason": "Zfa additional FP instructions not implemented"
+    },
+    "F_Zfa": {
+      "test_count": 11,
+      "reason": "Zfa additional FP instructions not implemented"
+    },
+    "Zfh": {
+      "test_count": 18,
+      "reason": "Half-precision FP (Zfh/Zfhmin) not implemented"
+    },
+    "Zfinx": {
+      "test_count": 134,
+      "reason": "FP-in-GPR (Zfinx) mutually exclusive with F"
+    },
+    "Zdinx": {
+      "test_count": 15,
+      "reason": "FP-in-GPR (Zdinx) mutually exclusive with D"
+    },
+    "Zhinx": {
+      "test_count": 14,
+      "reason": "FP-in-GPR (Zhinx) not implemented"
+    },
+    "Zicond": {
+      "test_count": 2,
+      "reason": "Zicond conditional ops not implemented"
+    },
+    "Zimop": {
+      "test_count": 40,
+      "reason": "Zimop may-be-operations not implemented"
+    },
+    "Zcmop": {
+      "test_count": 8,
+      "reason": "Zcmop compressed may-be-operations not implemented"
+    },
+    "Zacas": {
+      "test_count": 3,
+      "reason": "Zacas atomic compare-and-swap not implemented"
+    },
+    "CMO": {
+      "test_count": 1,
+      "reason": "Zicbom/Zicboz cache management ops not implemented (deferred to Slice-3+)"
+    },
+    "K": {
+      "test_count": 53,
+      "reason": "Scalar cryptography (Zk*) not implemented"
+    },
+    "P_unratified": {
+      "test_count": 311,
+      "reason": "Unratified P-extension packed SIMD not implemented"
+    },
+    "Svadu": {
+      "test_count": 3,
+      "reason": "Hardware PTE A/D update (Svadu) not implemented; Fursoy implements Svade (fault on A=0/D=0)"
+    },
+    "pmp": {
+      "test_count": 70,
+      "reason": "Programmable PMP CSRs not implemented on fursoy_s1_core (deferred to Slice-3+)"
+    },
+    "vm_pmp": {
+      "test_count": 0,
+      "reason": "Requires programmable PMP CSRs (deferred to Slice-3+)"
+    },
+    "vm_sv48": {
+      "test_count": 36,
+      "reason": "Sv48 4-level paging not implemented (Fursoy implements Bare + Sv39)"
+    },
+    "vm_sv57": {
+      "test_count": 34,
+      "reason": "Sv57 5-level paging not implemented (Fursoy implements Bare + Sv39)"
+    }
+  },
+  "excluded_within_enabled_suites": {
+    "count": 13,
+    "reason": "Automatically filtered by riscof/riscv-config for non-implemented sub-extensions (Zbs/Zbc inside B; C-extension misaligned tests inside privilege)",
+    "tests": [
+      "B/bclr-01.S",
+      "B/bclri-01.S",
+      "B/bext-01.S",
+      "B/bexti-01.S",
+      "B/binv-01.S",
+      "B/binvi-01.S",
+      "B/bset-01.S",
+      "B/bseti-01.S",
+      "B/clmul-01.S",
+      "B/clmulh-01.S",
+      "B/clmulr-01.S",
+      "privilege/misalign1-cjalr-01.S",
+      "privilege/misalign1-cjr-01.S"
+    ]
+  }
+}

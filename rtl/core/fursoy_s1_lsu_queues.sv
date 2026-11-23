@@ -1342,6 +1342,7 @@ module fursoy_s1_lsu_queues
     rob_epoch_t  mmio_rob_epoch_q;
     /* verilator lint_off UNUSEDSIGNAL */
     logic [63:0] mmio_addr_q;
+    logic [63:0] mmio_va_q;
     logic [2:0]  mmio_size_q;
     uop_subop_t  mmio_subop_q;
     preg_t       mmio_pnew_q;
@@ -1385,6 +1386,7 @@ module fursoy_s1_lsu_queues
     rob_idx_t    mmio_cand_rob_idx;
     rob_epoch_t  mmio_cand_rob_epoch;
     logic [63:0] mmio_cand_addr;
+    logic [63:0] mmio_cand_va;
     mem_size_t   mmio_cand_size;
     uop_subop_t  mmio_cand_subop;
     preg_t       mmio_cand_pnew;
@@ -1401,6 +1403,7 @@ module fursoy_s1_lsu_queues
         mmio_cand_rob_idx   = '0;
         mmio_cand_rob_epoch = '0;
         mmio_cand_addr      = '0;
+        mmio_cand_va        = '0;
         mmio_cand_size      = MEM_SIZE_BYTE;
         mmio_cand_subop     = MEM_LB;
         mmio_cand_pnew      = '0;
@@ -1424,6 +1427,7 @@ module fursoy_s1_lsu_queues
                     mmio_cand_rob_idx   = lq_q[l].rob_idx;
                     mmio_cand_rob_epoch = lq_q[l].rob_epoch;
                     mmio_cand_addr      = {8'd0, lq_q[l].pa};
+                    mmio_cand_va        = lq_q[l].va;
                     mmio_cand_size      = lq_q[l].size;
                     mmio_cand_subop     = lq_q[l].sub_op;
                     mmio_cand_pnew      = lq_q[l].pnew;
@@ -1446,6 +1450,7 @@ module fursoy_s1_lsu_queues
                     mmio_cand_rob_idx   = sq_q[s].rob_idx;
                     mmio_cand_rob_epoch = sq_q[s].rob_epoch;
                     mmio_cand_addr      = {8'd0, sq_q[s].pa};
+                    mmio_cand_va        = sq_q[s].va;
                     mmio_cand_size      = sq_q[s].size;
                     mmio_cand_subop     = sq_q[s].sub_op;
                     mmio_cand_pnew      = sq_q[s].pnew;
@@ -1526,7 +1531,7 @@ module fursoy_s1_lsu_queues
             p2_comp_preg      = mmio_pnew_q;
             p2_comp_exception = mmio_rsp_error_i;
             p2_comp_cause     = mmio_is_store_q ? 5'd7 : 5'd5;
-            p2_comp_data      = mmio_rsp_error_i ? mmio_addr_q : mmio_formatted_rdata;
+            p2_comp_data      = mmio_rsp_error_i ? mmio_va_q : mmio_formatted_rdata;
             p2_comp_is_fp     = mmio_is_fp_q;
             p2_comp_prd_fp    = mmio_prd_fp_q;
             p2_clear_lq       = !mmio_is_store_q;
@@ -1791,6 +1796,7 @@ module fursoy_s1_lsu_queues
             mmio_rob_idx_q      <= '0;
             mmio_rob_epoch_q    <= '0;
             mmio_addr_q         <= '0;
+            mmio_va_q           <= '0;
             mmio_size_q         <= 3'd0;
             mmio_subop_q        <= MEM_LB;
             mmio_pnew_q         <= '0;
@@ -2633,6 +2639,7 @@ module fursoy_s1_lsu_queues
                         mmio_rob_idx_q      <= mmio_cand_rob_idx;
                         mmio_rob_epoch_q    <= mmio_cand_rob_epoch;
                         mmio_addr_q         <= mmio_cand_addr;
+                        mmio_va_q           <= mmio_cand_va;
                         mmio_size_q         <= {1'b0, mmio_cand_size};
                         mmio_subop_q        <= mmio_cand_subop;
                         mmio_pnew_q         <= mmio_cand_pnew;

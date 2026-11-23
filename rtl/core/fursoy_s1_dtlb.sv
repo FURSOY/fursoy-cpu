@@ -292,9 +292,10 @@ module fursoy_s1_dtlb
         p0_rsp_access_fault_o = 1'b0;
 
         if (!satp_mode_sv39) begin
-            // Bare Mode: Identity mapping (PA = VA[55:0])
-            p0_rsp_hit_o = 1'b1;
-            p0_rsp_pa_o  = p0_req_va_i[55:0];
+            // Bare Mode: Identity mapping (PA = VA[55:0]); addresses exceeding 56-bit PA fault
+            p0_rsp_hit_o          = 1'b1;
+            p0_rsp_pa_o           = p0_req_va_i[55:0];
+            p0_rsp_access_fault_o = (p0_req_va_i[63:56] != 8'd0);
         end else if (!p0_canonical) begin
             // Non-canonical Sv39 VA: Immediate page fault
             p0_rsp_hit_o        = 1'b1;
@@ -411,9 +412,10 @@ module fursoy_s1_dtlb
         p1_rsp_access_fault_o = 1'b0;
 
         if (!satp_mode_sv39) begin
-            // Bare Mode: Identity mapping
-            p1_rsp_hit_o = 1'b1;
-            p1_rsp_pa_o  = p1_req_va_i[55:0];
+            // Bare Mode: Identity mapping; addresses exceeding 56-bit PA fault
+            p1_rsp_hit_o          = 1'b1;
+            p1_rsp_pa_o           = p1_req_va_i[55:0];
+            p1_rsp_access_fault_o = (p1_req_va_i[63:56] != 8'd0);
         end else if (!p1_canonical) begin
             // Non-canonical Sv39 VA: Immediate page fault
             p1_rsp_hit_o        = 1'b1;

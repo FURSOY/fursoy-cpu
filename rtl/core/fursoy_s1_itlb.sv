@@ -254,11 +254,11 @@ module fursoy_s1_itlb
 
         if (trans_req_valid_i) begin
             if (!satp_mode_sv39) begin
-                // Bare mode (direct identity mapping)
+                // Bare mode (direct identity mapping); addresses exceeding 56-bit PA fault
                 trans_rsp_valid_o        = 1'b1;
                 trans_rsp_pa_o           = trans_req_va_i[55:0];
                 trans_rsp_page_fault_o   = 1'b0;
-                trans_rsp_access_fault_o = !pmp_allow_i;
+                trans_rsp_access_fault_o = !pmp_allow_i || (trans_req_va_i[63:56] != 8'd0);
             end else if (!va_canonical) begin
                 // Non-canonical virtual address generates immediate Instruction Page Fault (Cause 12)
                 trans_rsp_valid_o        = 1'b1;

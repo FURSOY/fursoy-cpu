@@ -170,6 +170,7 @@ module fursoy_s1_fconv
     logic               p4_s1_comb_guard;
     logic               p4_s1_comb_round;
     logic               p4_s1_comb_sticky;
+    logic               p4_s1_comb_tiny;
 
     always_comb begin
         logic [2:0] eff_rm;
@@ -187,6 +188,7 @@ module fursoy_s1_fconv
         logic signed [13:0] f2f_exp_sp;
         logic [24:0] f2f_mant_sp;
         logic f2f_guard, f2f_round_bit, f2f_sticky_bit;
+        logic f2f_unb_all1, f2f_unb_inexact, f2f_unb_inc;
         logic signed [13:0] f2f_shift;
         logic [54:0] f2f_tmp;
         logic [31:0] f2f_op;
@@ -205,6 +207,7 @@ module fursoy_s1_fconv
         f2f_s = '0; f2f_e = '0; f2f_f = '0;
         f2f_exp_sp = '0; f2f_mant_sp = '0;
         f2f_guard = '0; f2f_round_bit = '0; f2f_sticky_bit = '0;
+        f2f_unb_all1 = 1'b0; f2f_unb_inexact = 1'b0; f2f_unb_inc = 1'b0;
         f2f_shift = '0; f2f_tmp = '0;
         f2f_op = '0; f2f_lzc_raw = '0; f2f_lzc = '0; f2f_sh_f = '0; f2f_new_exp = '0;
 
@@ -219,6 +222,7 @@ module fursoy_s1_fconv
         p4_s1_comb_guard         = 1'b0;
         p4_s1_comb_round         = 1'b0;
         p4_s1_comb_sticky        = 1'b0;
+        p4_s1_comb_tiny          = 1'b0;
 
         if (p4_req_valid_i && p4_req_fp_dest_valid_i) begin
             case (p4_req_subop_i)
@@ -245,6 +249,20 @@ module fursoy_s1_fconv
                         f2f_guard      = f2f_f[28];
                         f2f_round_bit  = f2f_f[27];
                         f2f_sticky_bit = (f2f_f[26:0] != 27'd0);
+
+                        // IEEE-754-2008 §7.5 tininess after rounding (unbounded exponent)
+                        f2f_unb_all1    = &f2f_mant_sp[23:0];
+                        f2f_unb_inexact = f2f_guard || f2f_round_bit || f2f_sticky_bit;
+                        case (eff_rm)
+                            3'b000: f2f_unb_inc = f2f_guard;
+                            3'b001: f2f_unb_inc = 1'b0;
+                            3'b010: f2f_unb_inc = f2f_s && f2f_unb_inexact;
+                            3'b011: f2f_unb_inc = !f2f_s && f2f_unb_inexact;
+                            3'b100: f2f_unb_inc = f2f_guard;
+                            default: f2f_unb_inc = f2f_guard;
+                        endcase
+                        p4_s1_comb_tiny = (f2f_exp_sp < 14'sd0) ||
+                                          ((f2f_exp_sp == 14'sd0) && !(f2f_unb_all1 && f2f_unb_inc));
 
                         if (f2f_exp_sp <= 14'sd0) begin
                             f2f_shift = 14'sd1 - f2f_exp_sp;
@@ -429,6 +447,7 @@ module fursoy_s1_fconv
     logic               p4_s1_guard_q;
     logic               p4_s1_round_q;
     logic               p4_s1_sticky_q;
+    logic               p4_s1_tiny_q;
     fpreg_t             p4_s1_prd_fp_q;
     rob_idx_t           p4_s1_rob_idx_q;
     rob_epoch_t         p4_s1_rob_epoch_q;
@@ -497,13 +516,18 @@ module fursoy_s1_fconv
             if (f2f_exp_fin >= 14'sd255) begin
                 f2f_overflow  = 1'b1;
                 f2f_inexact   = 1'b1;
-                f2f_final_exp = 8'hFF;
-                f2f_mant_fin  = 25'd0;
-            end else if (f2f_exp_fin == 14'sd0) begin
-                f2f_final_exp = 8'd0;
-                if (f2f_inexact) f2f_underflow = 1'b1;
+                if ((p4_s1_rm_q == 3'b001) ||
+                    (p4_s1_rm_q == 3'b010 && !p4_s1_s_q) ||
+                    (p4_s1_rm_q == 3'b011 && p4_s1_s_q)) begin
+                    f2f_final_exp = 8'hFE;
+                    f2f_mant_fin  = 25'h07F_FFFF;
+                end else begin
+                    f2f_final_exp = 8'hFF;
+                    f2f_mant_fin  = 25'd0;
+                end
             end else begin
                 f2f_final_exp = f2f_exp_fin[7:0];
+                f2f_underflow = p4_s1_tiny_q && f2f_inexact;
             end
 
             p4_to_fprf_data   = {32'hFFFF_FFFF, p4_s1_s_q, f2f_final_exp, f2f_mant_fin[22:0]};
@@ -713,6 +737,7 @@ module fursoy_s1_fconv
             p4_s1_guard_q         <= 1'b0;
             p4_s1_round_q         <= 1'b0;
             p4_s1_sticky_q        <= 1'b0;
+            p4_s1_tiny_q          <= 1'b0;
             p4_s1_prd_fp_q        <= '0;
             p4_s1_rob_idx_q       <= '0;
             p4_s1_rob_epoch_q     <= '0;
@@ -744,6 +769,7 @@ module fursoy_s1_fconv
             p4_s1_guard_q         <= p4_s1_comb_guard;
             p4_s1_round_q         <= p4_s1_comb_round;
             p4_s1_sticky_q        <= p4_s1_comb_sticky;
+            p4_s1_tiny_q          <= p4_s1_comb_tiny;
             p4_s1_prd_fp_q        <= p4_req_prd_fp_i;
             p4_s1_rob_idx_q       <= p4_req_rob_idx_i;
             p4_s1_rob_epoch_q     <= p4_req_rob_epoch_i;

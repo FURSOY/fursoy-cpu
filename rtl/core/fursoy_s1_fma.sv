@@ -180,6 +180,7 @@ module fursoy_s1_fma
         logic [52:0]       mant_c_dp;
         logic              eff_sub_dp;
         logic              sign_prod_dp;
+        logic              zero_c_dp;
 
         // SP Unpacked state
         logic signed [11:0] exp_prod_sp;
@@ -188,6 +189,7 @@ module fursoy_s1_fma
         logic [23:0]       mant_c_sp;
         logic              eff_sub_sp;
         logic              sign_prod_sp;
+        logic              zero_c_sp;
 
         // Special condition flags
         logic              special_valid;
@@ -245,7 +247,8 @@ module fursoy_s1_fma
                     end
                     FP_FMUL_S: begin
                         op2 = req_rs2_data_i;
-                        op3 = {32'hFFFF_FFFF, 32'h0000_0000}; // +0.0f
+                        // Match product sign so FMUL zero/underflow always preserves s_a ^ s_b
+                        op3 = {32'hFFFF_FFFF, (req_rs1_data_i[31] ^ req_rs2_data_i[31]), 31'd0};
                     end
                     FP_FMSUB_S: begin
                         op2 = req_rs2_data_i;
@@ -283,6 +286,7 @@ module fursoy_s1_fma
                 // Multiply mantissas
                 s1_next.prod_sp    = 48'(m_a) * 48'(m_b);
                 s1_next.mant_c_sp  = m_c;
+                s1_next.zero_c_sp  = zero_c;
 
                 // Special case detection
                 if (nan_a || nan_b || nan_c) begin
@@ -315,6 +319,11 @@ module fursoy_s1_fma
                     s1_next.special_valid = 1'b1;
                     s1_next.special_res   = {32'hFFFF_FFFF, res_sign, 31'd0};
                     s1_next.special_flags = 5'b00000;
+                end else if (zero_a || zero_b) begin
+                    // Exact 0 + finite non-zero c = c (no rounding, no flags)
+                    s1_next.special_valid = 1'b1;
+                    s1_next.special_res   = {32'hFFFF_FFFF, s_c, e_c, m_c[22:0]};
+                    s1_next.special_flags = 5'b00000;
                 end
             end else begin
                 // --- Double-Precision EX1 ---
@@ -341,7 +350,8 @@ module fursoy_s1_fma
                     end
                     FP_FMUL_D: begin
                         op2 = req_rs2_data_i;
-                        op3 = 64'h0000_0000_0000_0000; // +0.0
+                        // Match product sign so FMUL zero/underflow always preserves s_a ^ s_b
+                        op3 = {(req_rs1_data_i[63] ^ req_rs2_data_i[63]), 63'd0};
                     end
                     FP_FMSUB_D: begin
                         op2 = req_rs2_data_i;
@@ -377,6 +387,7 @@ module fursoy_s1_fma
 
                 s1_next.prod_dp   = 106'(m_a) * 106'(m_b);
                 s1_next.mant_c_dp = m_c;
+                s1_next.zero_c_dp = zero_c;
 
                 // Special case detection
                 if (nan_a || nan_b || nan_c) begin
@@ -408,6 +419,11 @@ module fursoy_s1_fma
                     end
                     s1_next.special_valid = 1'b1;
                     s1_next.special_res   = {res_sign, 63'd0};
+                    s1_next.special_flags = 5'b00000;
+                end else if (zero_a || zero_b) begin
+                    // Exact 0 + finite non-zero c = c (no rounding, no flags)
+                    s1_next.special_valid = 1'b1;
+                    s1_next.special_res   = {s_c, e_c, m_c[51:0]};
                     s1_next.special_flags = 5'b00000;
                 end
             end
@@ -449,20 +465,20 @@ module fursoy_s1_fma
     always_comb begin
         logic signed [11:0] exp_diff_sp;
         logic [79:0] p_wide_sp, c_wide_sp;
-        logic sticky_sp_s2;
+        logic sticky_sp_s2, c_was_shifted_sp;
         logic [111:0] temp_c_sp;
         logic signed [11:0] shift_p_sp;
         logic [111:0] temp_p_sp;
 
         logic signed [13:0] exp_diff_dp;
         logic [163:0] p_wide_dp, c_wide_dp;
-        logic sticky_dp_s2;
+        logic sticky_dp_s2, c_was_shifted_dp;
         logic [227:0] temp_c_dp;
         logic signed [13:0] shift_p_dp;
         logic [227:0] temp_p_dp;
 
-        exp_diff_sp = '0; p_wide_sp = '0; c_wide_sp = '0; sticky_sp_s2 = '0; temp_c_sp = '0; shift_p_sp = '0; temp_p_sp = '0;
-        exp_diff_dp = '0; p_wide_dp = '0; c_wide_dp = '0; sticky_dp_s2 = '0; temp_c_dp = '0; shift_p_dp = '0; temp_p_dp = '0;
+        exp_diff_sp = '0; p_wide_sp = '0; c_wide_sp = '0; sticky_sp_s2 = '0; c_was_shifted_sp = 1'b0; temp_c_sp = '0; shift_p_sp = '0; temp_p_sp = '0;
+        exp_diff_dp = '0; p_wide_dp = '0; c_wide_dp = '0; sticky_dp_s2 = '0; c_was_shifted_dp = 1'b0; temp_c_dp = '0; shift_p_dp = '0; temp_p_dp = '0;
 
         s2_next = '0;
         s2_next.valid         = s1_q.valid;
@@ -481,96 +497,125 @@ module fursoy_s1_fma
                 // --- SP Alignment & Adder ---
                 // Product has 48 bits, implicit radix point at bit 46.
                 // Weight 1.0 is at bit 77 for both p and c.
-                exp_diff_sp = s1_q.exp_prod_sp - s1_q.exp_c_sp;
                 p_wide_sp = {1'b0, s1_q.prod_sp, 31'd0};
                 c_wide_sp = '0;
                 sticky_sp_s2 = 1'b0;
 
-                if (exp_diff_sp >= 0) begin
-                    // Addend c is smaller, shift c right
-                    s2_next.exp_res_sp = s1_q.exp_prod_sp;
-                    if (exp_diff_sp > 12'sd60) begin
-                        c_wide_sp = '0;
-                        sticky_sp_s2 = (s1_q.mant_c_sp != 24'd0);
-                    end else begin
-                        temp_c_sp = {2'b0, s1_q.mant_c_sp, 54'd0, 32'd0} >> exp_diff_sp;
-                        c_wide_sp = temp_c_sp[111:32];
-                        sticky_sp_s2 = (temp_c_sp[31:0] != 32'd0);
-                    end
-                end else begin
-                    // Product is smaller, shift p right
-                    shift_p_sp = -exp_diff_sp;
-                    s2_next.exp_res_sp = s1_q.exp_c_sp;
-                    c_wide_sp = {2'b0, s1_q.mant_c_sp, 54'd0};
-                    if (shift_p_sp > 12'sd70) begin
-                        p_wide_sp = '0;
-                        sticky_sp_s2 = (s1_q.prod_sp != 48'd0);
-                    end else begin
-                        temp_p_sp = {1'b0, s1_q.prod_sp, 31'd0, 32'd0} >> shift_p_sp;
-                        p_wide_sp = temp_p_sp[111:32];
-                        sticky_sp_s2 = (temp_p_sp[31:0] != 32'd0);
-                    end
-                end
-
-                if (!s1_q.eff_sub_sp) begin
-                    s2_next.sum_mant_sp = p_wide_sp + c_wide_sp;
+                if (s1_q.zero_c_sp) begin
+                    // Addend c == 0 (including FMUL): preserve exact product exponent
+                    s2_next.exp_res_sp  = s1_q.exp_prod_sp;
+                    s2_next.sum_mant_sp = p_wide_sp;
                     s2_next.sign_res_sp = s1_q.sign_prod_sp;
+                    s2_next.sticky_sp   = 1'b0;
                 end else begin
-                    if (p_wide_sp >= c_wide_sp) begin
-                        s2_next.sum_mant_sp = p_wide_sp - c_wide_sp;
+                    exp_diff_sp = s1_q.exp_prod_sp - s1_q.exp_c_sp;
+                    if (exp_diff_sp >= 0) begin
+                        // Addend c is smaller, shift c right
+                        c_was_shifted_sp = 1'b1;
+                        s2_next.exp_res_sp = s1_q.exp_prod_sp;
+                        if (exp_diff_sp > 12'sd60) begin
+                            c_wide_sp = '0;
+                            sticky_sp_s2 = (s1_q.mant_c_sp != 24'd0);
+                        end else begin
+                            temp_c_sp = {2'b0, s1_q.mant_c_sp, 54'd0, 32'd0} >> exp_diff_sp;
+                            c_wide_sp = temp_c_sp[111:32];
+                            sticky_sp_s2 = (temp_c_sp[31:0] != 32'd0);
+                        end
+                    end else begin
+                        // Product is smaller, shift p right
+                        c_was_shifted_sp = 1'b0;
+                        shift_p_sp = -exp_diff_sp;
+                        s2_next.exp_res_sp = s1_q.exp_c_sp;
+                        c_wide_sp = {2'b0, s1_q.mant_c_sp, 54'd0};
+                        if (shift_p_sp > 12'sd70) begin
+                            p_wide_sp = '0;
+                            sticky_sp_s2 = (s1_q.prod_sp != 48'd0);
+                        end else begin
+                            temp_p_sp = {1'b0, s1_q.prod_sp, 31'd0, 32'd0} >> shift_p_sp;
+                            p_wide_sp = temp_p_sp[111:32];
+                            sticky_sp_s2 = (temp_p_sp[31:0] != 32'd0);
+                        end
+                    end
+
+                    if (!s1_q.eff_sub_sp) begin
+                        s2_next.sum_mant_sp = p_wide_sp + c_wide_sp;
                         s2_next.sign_res_sp = s1_q.sign_prod_sp;
                     end else begin
-                        s2_next.sum_mant_sp = c_wide_sp - p_wide_sp;
-                        s2_next.sign_res_sp = s1_q.sign_c;
+                        // Effective subtraction with exact sticky-borrow:
+                        // If the subtrahend has shifted-out sticky bits (B + eps),
+                        // A - (B + eps) = (A - B - 1) + (1 - eps) -> borrow 1, sticky=1.
+                        if (p_wide_sp > c_wide_sp) begin
+                            s2_next.sum_mant_sp = p_wide_sp - c_wide_sp - (c_was_shifted_sp && sticky_sp_s2 ? 80'd1 : 80'd0);
+                            s2_next.sign_res_sp = s1_q.sign_prod_sp;
+                        end else if (c_wide_sp > p_wide_sp) begin
+                            s2_next.sum_mant_sp = c_wide_sp - p_wide_sp - (!c_was_shifted_sp && sticky_sp_s2 ? 80'd1 : 80'd0);
+                            s2_next.sign_res_sp = s1_q.sign_c;
+                        end else begin
+                            s2_next.sum_mant_sp = 80'd0;
+                            s2_next.sign_res_sp = c_was_shifted_sp ? s1_q.sign_c : s1_q.sign_prod_sp;
+                        end
                     end
+                    s2_next.sticky_sp = sticky_sp_s2;
                 end
-                s2_next.sticky_sp = sticky_sp_s2;
             end else begin
                 // --- DP Alignment & Adder ---
                 // Product has 106 bits, implicit radix point at bit 104.
                 // Weight 1.0 is at bit 161 for both p and c.
-                exp_diff_dp = s1_q.exp_prod - s1_q.exp_c;
                 p_wide_dp = {1'b0, s1_q.prod_dp, 57'd0};
                 c_wide_dp = '0;
                 sticky_dp_s2 = 1'b0;
 
-                if (exp_diff_dp >= 0) begin
-                    s2_next.exp_res_dp = s1_q.exp_prod;
-                    if (exp_diff_dp > 14'sd120) begin
-                        c_wide_dp = '0;
-                        sticky_dp_s2 = (s1_q.mant_c_dp != 53'd0);
-                    end else begin
-                        temp_c_dp = {2'b0, s1_q.mant_c_dp, 109'd0, 64'd0} >> exp_diff_dp;
-                        c_wide_dp = temp_c_dp[227:64];
-                        sticky_dp_s2 = (temp_c_dp[63:0] != 64'd0);
-                    end
-                end else begin
-                    shift_p_dp = -exp_diff_dp;
-                    s2_next.exp_res_dp = s1_q.exp_c;
-                    c_wide_dp = {2'b0, s1_q.mant_c_dp, 109'd0};
-                    if (shift_p_dp > 14'sd130) begin
-                        p_wide_dp = '0;
-                        sticky_dp_s2 = (s1_q.prod_dp != 106'd0);
-                    end else begin
-                        temp_p_dp = {1'b0, s1_q.prod_dp, 57'd0, 64'd0} >> shift_p_dp;
-                        p_wide_dp = temp_p_dp[227:64];
-                        sticky_dp_s2 = (temp_p_dp[63:0] != 64'd0);
-                    end
-                end
-
-                if (!s1_q.eff_sub_dp) begin
-                    s2_next.sum_mant_dp = p_wide_dp + c_wide_dp;
+                if (s1_q.zero_c_dp) begin
+                    // Addend c == 0 (including FMUL): preserve exact product exponent
+                    s2_next.exp_res_dp  = s1_q.exp_prod;
+                    s2_next.sum_mant_dp = p_wide_dp;
                     s2_next.sign_res_dp = s1_q.sign_prod_dp;
+                    s2_next.sticky_dp   = 1'b0;
                 end else begin
-                    if (p_wide_dp >= c_wide_dp) begin
-                        s2_next.sum_mant_dp = p_wide_dp - c_wide_dp;
+                    exp_diff_dp = s1_q.exp_prod - s1_q.exp_c;
+                    if (exp_diff_dp >= 0) begin
+                        c_was_shifted_dp = 1'b1;
+                        s2_next.exp_res_dp = s1_q.exp_prod;
+                        if (exp_diff_dp > 14'sd120) begin
+                            c_wide_dp = '0;
+                            sticky_dp_s2 = (s1_q.mant_c_dp != 53'd0);
+                        end else begin
+                            temp_c_dp = {2'b0, s1_q.mant_c_dp, 109'd0, 64'd0} >> exp_diff_dp;
+                            c_wide_dp = temp_c_dp[227:64];
+                            sticky_dp_s2 = (temp_c_dp[63:0] != 64'd0);
+                        end
+                    end else begin
+                        c_was_shifted_dp = 1'b0;
+                        shift_p_dp = -exp_diff_dp;
+                        s2_next.exp_res_dp = s1_q.exp_c;
+                        c_wide_dp = {2'b0, s1_q.mant_c_dp, 109'd0};
+                        if (shift_p_dp > 14'sd130) begin
+                            p_wide_dp = '0;
+                            sticky_dp_s2 = (s1_q.prod_dp != 106'd0);
+                        end else begin
+                            temp_p_dp = {1'b0, s1_q.prod_dp, 57'd0, 64'd0} >> shift_p_dp;
+                            p_wide_dp = temp_p_dp[227:64];
+                            sticky_dp_s2 = (temp_p_dp[63:0] != 64'd0);
+                        end
+                    end
+
+                    if (!s1_q.eff_sub_dp) begin
+                        s2_next.sum_mant_dp = p_wide_dp + c_wide_dp;
                         s2_next.sign_res_dp = s1_q.sign_prod_dp;
                     end else begin
-                        s2_next.sum_mant_dp = c_wide_dp - p_wide_dp;
-                        s2_next.sign_res_dp = s1_q.sign_c;
+                        if (p_wide_dp > c_wide_dp) begin
+                            s2_next.sum_mant_dp = p_wide_dp - c_wide_dp - (c_was_shifted_dp && sticky_dp_s2 ? 164'd1 : 164'd0);
+                            s2_next.sign_res_dp = s1_q.sign_prod_dp;
+                        end else if (c_wide_dp > p_wide_dp) begin
+                            s2_next.sum_mant_dp = c_wide_dp - p_wide_dp - (!c_was_shifted_dp && sticky_dp_s2 ? 164'd1 : 164'd0);
+                            s2_next.sign_res_dp = s1_q.sign_c;
+                        end else begin
+                            s2_next.sum_mant_dp = 164'd0;
+                            s2_next.sign_res_dp = c_was_shifted_dp ? s1_q.sign_c : s1_q.sign_prod_dp;
+                        end
                     end
+                    s2_next.sticky_dp = sticky_dp_s2;
                 end
-                s2_next.sticky_dp = sticky_dp_s2;
             end
         end
     end
@@ -627,6 +672,7 @@ module fursoy_s1_fma
         logic [7:0] final_exp;
         logic round_up;
         logic inexact, overflow, underflow;
+        logic tiny_after_rnd_sp, unb_all1_sp, unb_inexact_sp, unb_inc_sp;
         logic signed [11:0] rshift;
         logic [47:0] temp_s;
         logic s_zero;
@@ -640,6 +686,7 @@ module fursoy_s1_fma
         guard = '0; round_bit = '0; sticky_bit = '0;
         final_mant = '0; final_exp = '0;
         round_up = '0; inexact = '0; overflow = '0; underflow = '0;
+        tiny_after_rnd_sp = 1'b0; unb_all1_sp = 1'b0; unb_inexact_sp = 1'b0; unb_inc_sp = 1'b0;
         rshift = '0; temp_s = '0; s_zero = '0;
 
         s3_next = '0;
@@ -667,46 +714,70 @@ module fursoy_s1_fma
                     sp_done_valid  = 1'b1;
                     sp_done_data   = s2_q.special_res;
                     sp_done_fflags = s2_q.special_flags;
-                end else if (s2_q.sum_mant_sp == 80'd0) begin
+                end else if (s2_q.sum_mant_sp == 80'd0 && !s2_q.sticky_sp) begin
                     s_zero = (s2_q.eff_rm == 3'b010) ? 1'b1 : 1'b0; // -0 in RDN
                     sp_done_valid  = 1'b1;
                     sp_done_data   = {32'hFFFF_FFFF, s_zero, 31'd0};
                     sp_done_fflags = 5'b00000;
                 end else begin
-                    // Find leading zero count
-                    lzc_sp = 0;
-                    for (int k = 78; k >= 0; k--) begin
-                        if (s2_q.sum_mant_sp[k]) begin
-                            lzc_sp = 78 - k;
-                            break;
-                        end
-                    end
-
-                    norm_exp_sp  = s2_q.exp_res_sp + 12'sd1 - signed'(12'(lzc_sp));
-                    norm_mant_sp = s2_q.sum_mant_sp << lzc_sp;
-
-                    // Radix point at norm_mant_sp[78]
-                    final_mant = {1'b0, norm_mant_sp[78:55]};
-                    guard      = norm_mant_sp[54];
-                    round_bit  = norm_mant_sp[53];
-                    sticky_bit = (norm_mant_sp[52:0] != 53'd0) || s2_q.sticky_sp;
-
-                    // Subnormal handling if norm_exp_sp <= 0
-                    if (norm_exp_sp <= 12'sd0) begin
-                        rshift = 12'sd1 - norm_exp_sp;
-                        if (rshift > 12'sd40) begin
-                            final_mant = '0;
-                            guard      = 1'b0;
-                            round_bit  = 1'b0;
-                            sticky_bit = 1'b1;
-                        end else begin
-                            temp_s = {final_mant[23:0], guard, round_bit, 22'd0} >> rshift;
-                            final_mant = {1'b0, temp_s[47:24]};
-                            guard      = temp_s[23];
-                            round_bit  = temp_s[22];
-                            sticky_bit = sticky_bit || (temp_s[21:0] != 22'd0);
-                        end
+                    if (s2_q.sum_mant_sp == 80'd0) begin
+                        // Residual shifted-out epsilon only (non-zero, strictly tiny)
                         norm_exp_sp = 12'sd0;
+                        final_mant  = 25'd0;
+                        guard       = 1'b0;
+                        round_bit   = 1'b0;
+                        sticky_bit  = 1'b1;
+                        tiny_after_rnd_sp = 1'b1;
+                    end else begin
+                        // Find leading zero count
+                        lzc_sp = 0;
+                        for (int k = 78; k >= 0; k--) begin
+                            if (s2_q.sum_mant_sp[k]) begin
+                                lzc_sp = 78 - k;
+                                break;
+                            end
+                        end
+
+                        norm_exp_sp  = s2_q.exp_res_sp + 12'sd1 - signed'(12'(lzc_sp));
+                        norm_mant_sp = s2_q.sum_mant_sp << lzc_sp;
+
+                        // Radix point at norm_mant_sp[78]
+                        final_mant = {1'b0, norm_mant_sp[78:55]};
+                        guard      = norm_mant_sp[54];
+                        round_bit  = norm_mant_sp[53];
+                        sticky_bit = (norm_mant_sp[52:0] != 53'd0) || s2_q.sticky_sp;
+
+                        // IEEE-754-2008 §7.5 tininess after rounding (unbounded exponent)
+                        unb_all1_sp    = &final_mant[23:0];
+                        unb_inexact_sp = guard || round_bit || sticky_bit;
+                        case (s2_q.eff_rm)
+                            3'b000: unb_inc_sp = guard;
+                            3'b001: unb_inc_sp = 1'b0;
+                            3'b010: unb_inc_sp = s2_q.sign_res_sp && unb_inexact_sp;
+                            3'b011: unb_inc_sp = !s2_q.sign_res_sp && unb_inexact_sp;
+                            3'b100: unb_inc_sp = guard;
+                            default: unb_inc_sp = guard;
+                        endcase
+                        tiny_after_rnd_sp = (norm_exp_sp < 12'sd0) ||
+                                            ((norm_exp_sp == 12'sd0) && !(unb_all1_sp && unb_inc_sp));
+
+                        // Subnormal handling if norm_exp_sp <= 0
+                        if (norm_exp_sp <= 12'sd0) begin
+                            rshift = 12'sd1 - norm_exp_sp;
+                            if (rshift > 12'sd40) begin
+                                final_mant = '0;
+                                guard      = 1'b0;
+                                round_bit  = 1'b0;
+                                sticky_bit = 1'b1;
+                            end else begin
+                                temp_s = {final_mant[23:0], guard, round_bit, 22'd0} >> rshift;
+                                final_mant = {1'b0, temp_s[47:24]};
+                                guard      = temp_s[23];
+                                round_bit  = temp_s[22];
+                                sticky_bit = sticky_bit || (temp_s[21:0] != 22'd0);
+                            end
+                            norm_exp_sp = 12'sd0;
+                        end
                     end
 
                     // IEEE 754 Rounding decision
@@ -726,7 +797,7 @@ module fursoy_s1_fma
                         if (final_mant[23] && (norm_exp_sp == 12'sd0)) begin
                             // Subnormal rounded up to normal
                             norm_exp_sp = 12'sd1;
-                        end else if (final_mant == 25'h100_0000) begin
+                        end else if (final_mant[24]) begin
                             final_mant = final_mant >> 1;
                             norm_exp_sp   = norm_exp_sp + 12'sd1;
                         end
@@ -748,11 +819,9 @@ module fursoy_s1_fma
                             final_exp  = 8'hFF;
                             final_mant = 25'd0;
                         end
-                    end else if (norm_exp_sp == 12'sd0) begin
-                        final_exp = 8'd0;
-                        if (inexact) underflow = 1'b1;
                     end else begin
                         final_exp = norm_exp_sp[7:0];
+                        underflow = tiny_after_rnd_sp && inexact;
                     end
 
                     sp_done_valid = 1'b1;
@@ -762,9 +831,15 @@ module fursoy_s1_fma
             end else begin
                 // --- DP Normalization in Stage 3 -> Advances to Stage 4 ---
                 if (!s2_q.special_valid) begin
-                    if (s2_q.sum_mant_dp == 164'd0) begin
+                    if (s2_q.sum_mant_dp == 164'd0 && !s2_q.sticky_dp) begin
                         s3_next.zero_dp = 1'b1;
                         s3_next.sign_dp = (s2_q.eff_rm == 3'b010) ? 1'b1 : 1'b0;
+                    end else if (s2_q.sum_mant_dp == 164'd0) begin
+                        // Residual shifted-out epsilon only
+                        s3_next.sign_dp      = s2_q.sign_res_dp;
+                        s3_next.exp_dp       = -14'sd200;
+                        s3_next.mant_norm_dp = 55'd0;
+                        s3_next.sticky_dp    = 1'b1;
                     end else begin
                         lzc_dp = 0;
                         for (int k = 162; k >= 0; k--) begin
@@ -798,10 +873,11 @@ module fursoy_s1_fma
     rob_epoch_t        dp_done_rob_epoch;
 
     always_comb begin
-        logic [52:0] final_mant;
+        logic [53:0] final_mant;
         logic guard, round_bit, sticky_bit;
         logic signed [13:0] norm_exp;
         logic round_up, inexact, overflow, underflow;
+        logic tiny_after_rnd_dp, unb_all1_dp, unb_inexact_dp, unb_inc_dp;
         logic [10:0] final_exp;
         logic signed [13:0] rshift;
         logic [105:0] temp_d;
@@ -810,6 +886,7 @@ module fursoy_s1_fma
         guard = '0; round_bit = '0; sticky_bit = '0;
         norm_exp = '0;
         round_up = '0; inexact = '0; overflow = '0; underflow = '0;
+        tiny_after_rnd_dp = 1'b0; unb_all1_dp = 1'b0; unb_inexact_dp = 1'b0; unb_inc_dp = 1'b0;
         final_exp = '0;
         rshift = '0; temp_d = '0;
 
@@ -830,11 +907,25 @@ module fursoy_s1_fma
                 dp_done_data   = {s3_q.sign_dp, 63'd0};
                 dp_done_fflags = 5'b00000;
             end else begin
-                final_mant = s3_q.mant_norm_dp[54:2];
+                final_mant = {1'b0, s3_q.mant_norm_dp[54:2]};
                 guard      = s3_q.mant_norm_dp[1];
                 round_bit  = s3_q.mant_norm_dp[0];
                 sticky_bit = s3_q.sticky_dp;
                 norm_exp   = s3_q.exp_dp;
+
+                // IEEE-754-2008 §7.5 tininess after rounding (unbounded exponent)
+                unb_all1_dp    = &final_mant[52:0];
+                unb_inexact_dp = guard || round_bit || sticky_bit;
+                case (s3_q.eff_rm)
+                    3'b000: unb_inc_dp = guard;
+                    3'b001: unb_inc_dp = 1'b0;
+                    3'b010: unb_inc_dp = s3_q.sign_dp && unb_inexact_dp;
+                    3'b011: unb_inc_dp = !s3_q.sign_dp && unb_inexact_dp;
+                    3'b100: unb_inc_dp = guard;
+                    default: unb_inc_dp = guard;
+                endcase
+                tiny_after_rnd_dp = (norm_exp < 14'sd0) ||
+                                    ((norm_exp == 14'sd0) && !(unb_all1_dp && unb_inc_dp));
 
                 // Subnormal handling if norm_exp <= 0
                 if (norm_exp <= 14'sd0) begin
@@ -845,8 +936,8 @@ module fursoy_s1_fma
                         round_bit  = 1'b0;
                         sticky_bit = 1'b1;
                     end else begin
-                        temp_d = {final_mant, guard, round_bit, 51'd0} >> rshift;
-                        final_mant = temp_d[105:53];
+                        temp_d = {final_mant[52:0], guard, round_bit, 51'd0} >> rshift;
+                        final_mant = {1'b0, temp_d[105:53]};
                         guard      = temp_d[52];
                         round_bit  = temp_d[51];
                         sticky_bit = sticky_bit || (temp_d[50:0] != 51'd0);
@@ -866,10 +957,10 @@ module fursoy_s1_fma
                 endcase
 
                 if (round_up) begin
-                    final_mant = final_mant + 53'd1;
+                    final_mant = final_mant + 54'd1;
                     if (final_mant[52] && (norm_exp == 14'sd0)) begin
                         norm_exp = 14'sd1;
-                    end else if (final_mant == 53'h10_0000_0000_0000) begin
+                    end else if (final_mant[53]) begin
                         final_mant = final_mant >> 1;
                         norm_exp   = norm_exp + 14'sd1;
                     end
@@ -885,16 +976,14 @@ module fursoy_s1_fma
                         (s3_q.eff_rm == 3'b010 && !s3_q.sign_dp) ||
                         (s3_q.eff_rm == 3'b011 && s3_q.sign_dp)) begin
                         final_exp  = 11'h7FE;
-                        final_mant = 53'hF_FFFF_FFFF_FFFF;
+                        final_mant = 54'h0F_FFFF_FFFF_FFFF;
                     end else begin
                         final_exp  = 11'h7FF;
-                        final_mant = 53'd0;
+                        final_mant = 54'd0;
                     end
-                end else if (norm_exp == 14'sd0) begin
-                    final_exp = 11'd0;
-                    if (inexact) underflow = 1'b1;
                 end else begin
                     final_exp = norm_exp[10:0];
+                    underflow = tiny_after_rnd_dp && inexact;
                 end
 
                 dp_done_valid  = 1'b1;
