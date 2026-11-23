@@ -1,236 +1,190 @@
-# Fursoy Slice-1
+# FURSOY CPU
 
-**A 64-bit Out-of-Order Superscalar RISC-V Processor (`RV64IMAFDV + Zba + Zbb + Zicsr + Zifencei`) booting mainline Linux 6.6.50 and BusyBox userspace under Sv39 virtual memory.**
+**An open-source 64-bit, 2-wide Out-of-Order Superscalar RISC-V Processor (`RV64IMAFDV + Zba + Zbb + Zicsr + Zifencei` + Sv39) and 1→4-Hart Directory-MESI SMP SoC in SystemVerilog, booting mainline Linux 6.6.50 (`CONFIG_SMP=y`) and BusyBox userspace.**
 
-Fursoy Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`) is a 64-bit 2-wide out-of-order superscalar RISC-V processor in SystemVerilog, implementing Sv39 demand paging with 16-bit ASIDs, M/S/U privilege separation, cycle-exact hardware performance telemetry, 8-suite `sail-riscv` lockstep differential verification, and 500 MHz Nangate 45nm standard-cell synthesis closure across all 8 gated core blocks plus `fursoy_s1_fconv`.
-
-**Interactive Architecture & Telemetry Explorer:** [cpu.fursoy.com](https://cpu.fursoy.com) — inspect the full `F0`–`CMT` pipeline diagram, execution port matrix, 500 MHz Nangate 45nm STA breakdown, 8-suite Sail cosim metrics, and single-owner Linux 6.6.50 boot CPI conservation breakdown.
+**Canonical Architecture & Telemetry Site:** [fursoy.com/cpu](https://fursoy.com/cpu)
 
 ---
 
-## Microarchitecture Highlights
+## Status & Verification Snapshot
 
-- **2-Wide Superscalar OoO Core (`fursoy_s1_core`)**:
-  - Multi-stage frontend and OoO backend (`F0` GenPC → `F1` ReqMem → `F2` RspMem → `F3` Align/JAL → `F4` FetchQueue → `D0` Decode → `RN` Rename → `DS` Dispatch → `IS` Issue → `RF` RegRead → `EX` Execute → `WB` → `CMT` Retire) with `M/S/U` privilege modes, `medeleg`/`mideleg`, `WFI` (`mstatus.TW`), and `MRET`/`SRET`.
-  - **128-entry Reorder Buffer** (`ROB_DEPTH = 128`) with 4-bit wrap-safe epoch tags, instruction payload capture for `cause 2` `mtval`/`stval`, and precise exception/interrupt flush recovery.
-  - **16-checkpoint Speculative Recovery** (`NUM_CHECKPOINTS = 16`, `4-bit` checkpoint IDs) across integer `SRAT`, floating-point `FRAT`, vector `VRAT`, and BPU state for single-cycle branch rollback.
-  - **Physical Register Files**: `160 × 64b` Integer PRF (`p0..p159`, `32` arch + `128` speculative Free List), `64 × 64b` FP PRF (`fp0..fp63`), and **`64 × 256b` 4-banked 4R+1W Vector RF** (`VRF_NUM_PREGS = 64`, `p0..p31` arch + `p32..p63` bitmap freelist via `fursoy_s1_vrat`).
-  - **Decoupled Issue Queues**: `32`-entry `IntIQ`, `32`-entry `MemIQ`, `16`-entry `FPIQ`, and **`8`-entry OoO `VIQ8` (`fursoy_s1_vec_iq`)** with multi-reg vector/scalar wakeup, ROB-head vector memory serialization, dual-lane 128-bit SIMD beats, indexed RVV loads/stores, and non-zero `vstart` resumption.
-  - **Shared Prefix Datapath**: Shared 64-bit parallel-prefix Kogge-Stone adder (`fursoy_s1_ks_adder`) used across `fursoy_s1_alu`, `fursoy_s1_branch_unit`, `fursoy_s1_agu`, `fursoy_s1_csr`, and the 2-stage pipelined `fursoy_s1_fconv`.
-- **Branch Prediction & Architectural Recovery (`fursoy_s1_bpu`)**:
-  - `512`-entry 2-way BTB + **`30,208`-bit TAGE-Lite** (`T0` 2048×2b + `T1..T4` 512 entries, `108`-bit GHR) + **`64`-entry tagged Indirect Branch Predictor (`IBP`)** + `16`-entry RAS with **`INDEXED_RAS_CHKPT = 32`** checkpoint table (`slots 1..31`).
-  - Commit-time TAGE/BTB/IBP training FIFO with periodic 256K u-bit aging, plus full architectural GHR, folded CSR, and 16-entry `arch_ras_array_q` preservation across non-branch traps and pipeline flushes.
-- **Sv39 Virtual Memory & Non-Blocking Caches**:
-  - **Standalone Dual-Port Sv39 DTLB (`fursoy_s1_dtlb`)**: `64`-entry 4-way Tree-PLRU base TLB (`16` sets) + `8`-entry 2 MiB / 1 GiB superpage CAM + `32`-entry `TRT` with 16-bit ASIDs and `G == 1` `SFENCE.VMA` preservation.
-  - **Sv39 ITLB (`fursoy_s1_itlb`)**: `64`-entry 4-way base TLB + `8`-entry superpage CAM + `2`-entry `ITRT`.
-  - **Shared Hardware PTW (`fursoy_s1_ptw`)**: Reserved PTE `[63:54]` and non-leaf `U/A/D` fault checks, `priv == M && mstatus.MPRV` walk privilege, and **non-destructive L1D dirty snoop coherency** paired with `SFENCE.VMA` SQ drain + D-cache clean.
-  - **L1I (`fursoy_s1_l1i`) & L1D (`fursoy_s1_l1d`)**: `16 KiB`, 4-way VIPT (`64` sets × `64 B`), true 3-bit Tree-PLRU per L1D set, **8-bank** (`PA[5:3]`) non-blocking L1D with `16` LQ / `16` SQ / `4` MSHRs / `2` WBBs, and ROB-head `LR` serialization (`fursoy_s1_lsu_queues`).
-- **SoC & Peripherals (`fursoy_s1_soc`)**:
-  - **5-to-1 Priority Crossbar**: Core MMIO > PTW walks > L1I refills > L1D refills > L1D dirty writebacks, with anti-starvation fairness and unmapped-aperture Access Fault trapping.
-  - **Platform Devices**: `256 MiB` DRAM (`0x8000_0000`), unified load/store `CLINT` (`0x0200_0000`), preemptible `PLIC` (`0x0C00_0000`, `31` sources), `16550 UART` (`0x1000_0000`, 1B/2B/4B MMIO), and custom **SBI v2.0** M-mode firmware (`Base`, `TIME`, `SRST`, `DBCN`).
+- **Frozen Milestones:**
+  - **Slice-1 (`fursoy_s1_core` / `fursoy_s1_soc`, `SMP_COHERENCE_EN = 0`):** Full single-core 2-wide OoO `RV64IMAFDV + Zba + Zbb + Sv39` Linux 6.6.50 + BusyBox processor, 8/8 `sail-riscv v0.16` lockstep suites, 0 CPI conservation errors.
+  - **Slice-2 (`fursoy_s2_soc`, `SMP_COHERENCE_EN = 1`, `NUM_HARTS = 2` default, `4`-hart verified):** Directory-tracked MESI multicore cluster + shared 256 KiB 8-way inclusive L2, RV64A multi-hart `LR`/`SC` & locked `AMO`, global `FENCE` quiescence, custom SMP SBI v2.0, full RVWMO litmus + coherence torture, directed MMIO-vs-MSIP IRQ stress, **14/14 blocks closing 500 MHz Nangate 45nm OpenSTA**, and mainline **Linux 6.6.50 SMP (`N=2` & `N=4`)** closeout on canonical RTL SHA-256 `bc0502b97739fd8f4556f533618a90b4f2d2cf3a44781c67ea2961298adf1f05`.
+- **Design Stage & Benchmark Honesty:** Pre-tapeout RTL stage (pre-P&R, no physical SRAM compiler integration yet). **Synthetic benchmarks (`CoreMark`, `Dhrystone`, `SPEC CPU`) are not yet published** — all performance numbers reported below come directly from cycle-accurate Verilator RTL runs executing Linux 6.6.50, BusyBox, POSIX `pthreads`/`<stdatomic.h>`, and `mem_stress`.
 
 ---
 
-## Execution Engine & Pipeline Architecture
+## Core Microarchitecture & Pipeline (`fursoy_s1_core`)
+
+The core implements a **12-stage decoupled pipeline** (`F0` GenPC → `F1` ITLB/BPU → `F2` L1I/TAGE/IBP/RAS → `F3` Align/JAL → `F4` FetchQ16 → `D0` 2W Decode → `RN` 2W Rename → `DS` 2W Dispatch → `IS` OoO Issue → `RF` RegRead → `EX` Execute → `WB` / `CMT` 2W In-Order Retire) with `M/S/U` privilege modes, `medeleg`/`mideleg`, `WFI` (`mstatus.TW`), `MRET`/`SRET`, and 16-entry PMP:
+
+| Subsystem | Verified RTL Parameters | Primary Module(s) |
+| :--- | :--- | :--- |
+| **ISA & Privilege** | `RV64IMAFDV + Zba + Zbb + Zicsr + Zifencei` · M/S/U · Sv39 (16-bit ASIDs, 4 KiB / 2 MiB / 1 GiB) · `mhartid_i` | `fursoy_s1_decode.sv`, `fursoy_s1_csr.sv` |
+| **Frontend & BPU** | 2-wide fetch/decode (`FETCH_QUEUE_DEPTH = 16`) · **512-entry 2-way BTB** (`256×2`, 53b tag) · **30,208-bit TAGE-Lite** (`T0`: 2048×2b + `T1..T4`: 512 sets, 108-bit GHR) · **64-entry tagged IBP** (`IBP_ENTRIES = 64`) · **16-entry RAS** (`INDEXED_RAS_CHKPT = 32` slots) | `fursoy_s1_frontend.sv`, `fursoy_s1_bpu.sv`, `fursoy_s1_fetch_queue.sv` |
+| **ROB, PRFs & Recovery** | **`ROB_DEPTH = 128`** (2W alloc / 2W retire, 4-bit epochs) · **`NUM_CHECKPOINTS = 16`** (expanded 8→16; 1-cycle SRAT/FRAT/VRAT/GHR/RAS rollback) · **`PRF_SIZE = 160`** (`128` FL) · **`FPRF_SIZE = 64`** (`32` FL) | `fursoy_s1_pkg.sv`, `fursoy_s1_rob.sv`, `fursoy_s1_substrate.sv`, `fursoy_s1_rat.sv`, `fursoy_s1_frat.sv` |
+| **Issue Queues & Scalar Ports** | **`INT_IQ_DEPTH = 32`** (2W → **P0**: ALU0 KS / BRU KS / CSR / I2F; **P1**: ALU1 + `alu1_fifo` / 3c MUL / ~34c Radix-4 DIV) · **`MEM_IQ_DEPTH = 32`** (2W → **P2/AGU0**: all mem; **P3/AGU1**: loads only) · **`FPIQ_DEPTH = 16`** (1W → **P4**: 3c/4c FMA / 12–28c Radix-4 FDIV-FSQRT / 2-stage FCONV) | `fursoy_s1_int_iq.sv`, `fursoy_s1_mem_iq.sv`, `fursoy_s1_fp_iq.sv`, `fursoy_s1_ks_adder.sv` |
+| **RVV 1.0 Vector Unit** | **`VLEN = 256`**, **`ELEN = 64`**, **`VLENB = 32`** · **`VRF_NUM_PREGS = 64`** (`64 × 256b`, 4 banks × 64b, 4R+1W; `p0..p31` arch, `p32..p63` bitmap-renamed via `fursoy_s1_vrat`) · **`VIQ_DEPTH = 8`** · `LMUL = 1..8`, `vstart` resumption, 128-bit dual-lane SIMD beats, unit/strided/indexed (`vluxei`/`vsoxei`) memory | `fursoy_s1_vrat.sv`, `fursoy_s1_vrf.sv`, `fursoy_s1_vec_iq.sv`, `fursoy_s1_core.sv` |
+| **LSU & Disambiguation** | **`LQ_DEPTH = 16`**, **`SQ_DEPTH = 16`** store-to-load forwarding, speculative `S0`/`S1` snoop replay, coherence-point `sc_acquire_req` + LFSR ping-pong backoff, 2-cycle L1D `amo_line_lock_q`, atomic **MMIO-vs-IRQ preemption interlock** | `fursoy_s1_lsu.sv`, `fursoy_s1_lsu_queues.sv`, `fursoy_s1_trt.sv` |
+
+---
+
+## Memory Hierarchy & Multicore SMP Architecture (`fursoy_s2_soc`)
 
 ```text
-+---------------------------------------------------------------------------------------------------+
-|                             FRONTEND (2-Wide In-Order Fetch & Decode)                             |
-|                                                                                                   |
-|  [F0 GenPC] -> [F1 ITLB/BPU] -> [F2 L1I/TAGE/IBP/RAS/Skid] -> [F3 Align/JAL] -> [F4 FetchQ16 -> D0]|
-|   - 512-entry BTB (256x2-way)       - 64-entry tagged IBP           - 16-entry Fetch Queue        |
-|   - TAGE-Lite (30.2 kb, 108b GHR)   - ITLB: 64-ent 4W + 8-ent CAM   - 2W Decode (RV64IMAFDV +     |
-|   - 16-RAS (32-slot indexed chkpt)  - L1I:  16 KiB 4W VIPT, 2 IMSHR   Zba/Zbb/Zicsr/Zifencei)     |
-+-------------------------------------------------+-------------------------------------------------+
-                                                  | 2 uops / cycle
-                                                  v
-+---------------------------------------------------------------------------------------------------+
-|                           RENAME, DISPATCH & IN-ORDER RETIREMENT                                  |
-|                                                                                                   |
-|  [2-Wide Rename: Int SRAT/ARAT | FP FRAT/ARAT | VRAT Bitmap] <==== 16 Branch Checkpoints          |
-|  [128-Entry ROB (2W Alloc / 2W Retire, 4-bit Epoch Tags)]                                         |
-|  PRFs:  Int PRF 160 x 64b (32 arch + 128 FL) | FP PRF 64 x 64b | Vector RF 64 x 256b (4-bank 4R1W)|
-+-----------+-------------------------+--------------------------+--------------------+-------------+
-            |                         |                          |                    |
-            v                         v                          v                    v
-+-----------------------+ +-----------------------+ +--------------------+ +------------------------+
-| IntIQ (32 entries)    | | MemIQ (32 entries)    | | FPIQ (16 entries)  | | VIQ8 (fursoy_s1_vec_iq)|
-| 2W Issue (P0 + P1)    | | 2W Issue (P2 + P3)    | | 1W Issue (P4)      | | OoO ALU + Head-Mem     |
-+-----+-----------+-----+ +------+----------+-----+ +---------+----------+ +-----------+------------+
-      |           |              |          |                 |                        |
-      v           v              v          v                 v                        v
-+-----------+ +----------+ +-------------+ +-----------+ +----------------+ +-----------------------+
-| [Port 0]  | | [Port 1] | | [Port 2]    | | [Port 3]  | | [Port 4 (FP)]  | | [Dual-Lane Vector]    |
-| ALU0 (KS) | | ALU1(1c*)| | AGU0 (KS)   | | AGU1 (1c) | | FMA (3c / 4c)  | | 128b SIMD Beats +     |
-| BR (KS)   | | MUL (3c) | | Ld/St/AMO   | | Loads     | | FDIV (12..28c) | | Elem ALU/Red/Indexed  |
-| CSR / I2F | | DIV(~34c)| | FENCE/LR-SC | | (-> 8-bk) | | FCONV (2-stg)  | | Mem over 4R+1W VRF    |
-+-----+-----+ +----+-----+ +------+------+ +-----+-----+ +-------+--------+ +----------+------------+
-      |            |              |              |               |                     |
-      +------------+--------------+--------------+---------------+---------------------+
-                                                 |
-                                                 v
-+---------------------------------------------------------------------------------------------------+
-|                                  MEMORY & COHERENT SUBSYSTEM                                      |
-|                                                                                                   |
-|  [Standalone Dual-Port Sv39 DTLB] <---> [Hardware PTW] (Non-destructive L1D dirty snoop, MPRV)    |
-|   (64-ent 4-way Tree-PLRU + 8-ent CAM)                                                            |
-|  [16 KiB 4-Way 8-Bank L1D (PA[5:3])] --- 3-bit Tree-PLRU, 4 MSHRs, 2 WBBs, Snoop Coherent         |
-+-------------------------------------------------+-------------------------------------------------+
-                                                  |
-                                                  v
-+---------------------------------------------------------------------------------------------------+
-|                             SoC INTERCONNECT & PERIPHERALS (fursoy_s1_soc)                        |
-|                                                                                                   |
-|  [5-to-1 Priority Crossbar]:  Core MMIO > PTW Walks > L1I Refills > L1D Refills > L1D Writebacks  |
-|   -> DRAM (256 MiB @ 0x8000_0000) | CLINT (Unif.) | PLIC (31 src) | UART (1/2/4B) | Fault Trap    |
-+---------------------------------------------------------------------------------------------------+
+  +----------------------+         +----------------------+
+  |  fursoy_s1_core #0   |   ...   | fursoy_s1_core #N-1  |  N = 2 (default) or 4
+  |  SMP_COHERENCE_EN=1  |         |  SMP_COHERENCE_EN=1  |  2W OoO RV64IMAFDV + Sv39
+  |  L1I 16K · L1D 16K8B |         |  L1I 16K · L1D 16K8B |  ITLB/DTLB 64+8 · PTW
+  +----+------+------+---+         +----+------+------+---+
+       |      |      |                  |      |      |
+     MMIO    PTW   L1I / L1D (4-VC)   MMIO    PTW   L1I / L1D (4-VC)
+       |      |  VC0_RD / VC0_WR / VC1 / VC2   |      |
+       |      +------+------------------+------+------+
+       |             v
+       |   +--------------------------------------------+
+       |   |  fursoy_s2_coherence_mgr + fursoy_s2_l2    |  3-stage C0/C1/C2 Hub
+       |   |  256 KiB 8-Way Inclusive L2 (512 sets)     |  8 DIR_MSHRs · MESI Directory
+       |   +---------------------+----------------------+
+       |                         | 512-bit DRAM Port
+       v                         v
+  +------------------------+   256 MiB Main DRAM (0x8000_0000..0x8FFF_FFFF)
+  |  fursoy_s2_mmio_xbar   |   (Lower 2 MiB reserved: M-mode SBI v2.0 0xF00501)
+  +----+-------+-------+---+
+       |       |       |
+       v       v       v
+  fursoy_s2_clint  fursoy_s2_plic  fursoy_s0_uart
+  (0x0200_0000)    (0x0C00_0000)   (0x1000_0000)
 ```
 
-The backend issues across **five decoupled scalar execution ports** plus an **out-of-order vector execution pipe**:
-
-| Issue Queue | Capacity | Dispatch | Issue Port(s) | Functional Units & Latency | Constraints & Arbitration |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`IntIQ`** (`fursoy_s1_int_iq`) | 32 entries | 2-wide | **Port 0** (`P0`), **Port 1** (`P1`) | **P0**: `ALU0` (`1c`, `fursoy_s1_ks_adder`), `Branch` (`1c`), `System/CSR`, `int2fp`<br>**P1**: `ALU1` (`1c` via `alu1_fifo`), `MUL` (`3c` pipelined), `DIV` (`~34c` Radix-4 iterative; `1c` corner bypass) | Max **1 branch/cycle** (`P0` only); `DIV` single-occupancy; `int2fp` gated by `fconv_fprf_busy`; `ALU0` has PRF WB priority over `F2I` |
-| **`MemIQ`** (`fursoy_s1_mem_iq`) | 32 entries | 2-wide | **Port 2** (`P2/AGU0`), **Port 3** (`P3/AGU1`) | **P2**: `AGU0` (`1c` KS EA) for Loads, Stores, AMOs, `FENCE`/`FENCE.I`<br>**P3**: `AGU1` (`1c` EA) for Loads only | Max **2 loads/cycle** or **1 load + 1 store AGU/cycle** across **8 L1D banks** (`PA[5:3]`); `is_lr` serialized to `rob_head_i`; backed by `16 LQ / 16 SQ / 32 TRT / 4 MSHRs / 2 WBBs` |
-| **`FPIQ`** (`fursoy_s1_fp_iq`) | 16 entries | 2-wide | **Port 4** (`P4`) | **P4**: `FMA` (`3c` FP32 / `4c` FP64, `1/cyc`), `FDIV/FSQRT` (`12c` FDIV.S / `21c` FDIV.D / `15c` FSQRT.S / `28c` FSQRT.D), `FCONV` (`2`-stage pipelined + `16`-entry `f2i_fifo`/`fprf_fifo`) | Single FP issue port; `FMA` holds strict writeback priority over `FDIV` and `FCONV`; `frm`/`fcsr` CSR writes serialize pipeline flush |
-| **`VIQ8`** (`fursoy_s1_vec_iq`) | 8 entries | Serialized vec dispatch | **Vector Engine** (`u_vrat` + `u_vrf`) | OoO `RVV 1.0` ALU/mask/reduction/slide execution (`128b` dual-lane SIMD beats + elem path) and ROB-head serialized unit/strided/indexed memory (`vluxei`/`vsoxei`) over `64 × 256b` 4R+1W `VRF` | `fursoy_s1_vrat` bitmap freelist (`p32..p63`, 16 checkpoints); `vec_vstart_block` enforces ordered `vstart != 0` dispatch with age-qualified recovery |
+- **Sv39 MMU (`fursoy_s1_itlb`, `fursoy_s1_dtlb`, `fursoy_s1_ptw`):** Dual-port DTLB (`p0`+`p1`) and ITLB each pair a `64`-entry 4-way Tree-PLRU base TLB (`16` sets) with an `8`-entry 2 MiB / 1 GiB superpage CAM, `16`-bit ASIDs, `32`-entry `TRT` / `2`-entry `ITRT`. Shared PTW probes local dirty L1D lines in 1 cycle with zero eviction and routes local misses through `fursoy_s2_coherence_mgr` (`COH_GETS_NC`) to observe remote dirty PTEs.
+- **L1I (`fursoy_s1_l1i`):** `16 KiB`, 4-way VIPT (`64` sets × `64 B`), page-bounded conservative next-line prefetcher, `2` I-MSHRs with stale-response discard tracking across `FENCE.I`, coherent `COH_GETS_NC` L2 refill.
+- **L1D (`fursoy_s1_l1d`):** `16 KiB`, 4-way VIPT (`64` sets × `64 B`), **8-bank (`PA[5:3]`) non-blocking** write-back cache, 3-bit Tree-PLRU, `4` MSHRs (`COH_GETS`/`COH_GETM`/`COH_UPGRADE`), `2` WBBs (`PutM`), **2-stage registered snoop pipeline (`S0`/`S1`)**, and `SMP_COHERENCE_EN` toggle preserving bit-identical Slice-1 single-core behavior (`0`).
+- **Shared L2 & Directory MESI Hub (`fursoy_s2_l2`, `fursoy_s2_coherence_mgr`):** **`256 KiB` 8-way inclusive L2** (`512` sets × `8` ways × `64 B`) tracking per-line `L2_I`/`L2_S`/`L2_M`, `sharer_vec[N-1:0]`, and `owner_id` behind **`8` `DIR_MSHR`s** (`line_addr` + `victim_addr` hazard tracking). Four deadlock-free virtual channels (`VC0_RD`, `VC0_WR`, `VC1`, non-blocking `VC2`) across 3 pipeline stages (`C0`/`C1`/`C2`) with cache-to-cache `M→I`/`M→S` dirty forwarding.
+- **SMP Platform & Custom SBI v2.0:** Registered round-robin `fursoy_s2_mmio_xbar`, parameterized `fursoy_s2_clint` (`msip[h]`, `mtimecmp[h]`, `mtime`), `2*N`-context binary-tree `fursoy_s2_plic` (`31` sources), shared `16550 UART` (`fursoy_s0_uart`), and custom M-mode **SBI v2.0** (`software/firmware/fursoy_s2_sbi_*`, `IMPL_ID = 0xF00501`: `BASE`, `TIME`, `sPI`, re-entrant `RFENCE`, `HSM`, `SRST`, `DBCN`).
 
 ---
 
-## Physical Synthesis & STA (Nangate 45nm @ 500 MHz)
+## Verified Silicon & Software Proof
 
-Evaluated standalone using **Yosys 0.33** + **sv2v v0.0.13** + **OpenSTA 3.1.0** on **NangateOpenCellLibrary (45nm Typical, 1.10V, 25C)** targeting **500 MHz (`2.000 ns` clock period)** (`tools/run_s1_synth.py --run-synth`, full report in [`build/synth/s1_synth_report.json`](build/synth/s1_synth_report.json)):
+All metrics below were measured on final canonical RTL (`bc0502b9...`).
 
-| Module | Type | Gate | Cells | DFFs | Area (kGE) | Baseline Arrival / WNS | Opt Arrival | Opt WNS @ 500 MHz |
-| :--- | :--- | :---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `fursoy_s1_agu` | Comb | Yes | 817 | 0 | 1.07 | 2.301 ns (`-0.301 ns`) | **0.510 ns** | **+1.490 ns (MET)** |
-| `fursoy_s1_branch_unit` | Comb | Yes | 4,086 | 0 | 5.45 | 3.712 ns (`-1.712 ns`) | **0.601 ns** | **+1.399 ns (MET)** |
-| `fursoy_s1_ptw` | Seq | Yes | 1,843 | 329 | 3.83 | 1.956 ns (`+0.005 ns`) | **0.931 ns** | **+1.031 ns (MET)** |
-| `fursoy_s1_decode` | Comb | Yes | 2,777 | 0 | 3.70 | 0.875 ns (`+1.125 ns`) | **0.979 ns** | **+1.021 ns (MET)** |
-| `fursoy_s1_alu` | Comb | Yes | 4,326 | 0 | 6.34 | 3.823 ns (`-1.823 ns`) | **1.153 ns** | **+0.847 ns (MET)** |
-| `fursoy_s1_csr` | Seq | Yes | 14,699 | 1,872 | 28.00 | 22.776 ns (`-21.120 ns`) | **1.179 ns** | **+0.621 ns (MET)** |
-| `fursoy_s1_itlb` | Seq | Yes | 36,755 | 6,304 | 77.52 | 4.057 ns (`-2.102 ns`) | **1.214 ns** | **+0.586 ns (MET)** |
-| `fursoy_s1_dtlb` | Seq | Yes | 50,517 | 6,515 | 99.87 | 11.011 ns (`-9.211 ns`) | **1.253 ns** | **+0.547 ns (MET)** |
-| **Total (8 Gated Blocks)** | — | **8/8** | **115,820** | **15,020** | **225.77** | — | **8 / 8 MET** | **TNS = 0.00 ns** |
-| `fursoy_s1_fconv` *(visibility)* | Seq | No | 23,907 | 3,218 | 46.83 | — | **1.949 ns** | **+0.009 ns (MET)** |
+### 1. Mainline Linux 6.6.50 + BusyBox Boot Closeout (Single-Core & SMP)
 
-> **Synthesis Scope & Macro Boundary:** `GATE` closure (`8 / 8 MET`, `180,161.53 um^2` at `NAND2_X1 = 0.798 um^2`) targets combinational datapath and register-bounded control blocks (plus 2-stage `fursoy_s1_fconv` visibility, yielding `9 / 16` closed blocks). SRAM-macro-dependent caches (`l1i`, `l1d`), large associative/age-matrix queues/predictors (`int_iq`, `lsu_queues`, `vrat`, `vec_iq`, `bpu`), and 110b combinational/multi-cycle FP arrays (`fma`, `fdiv`) either hit ABC/Yosys flattening timeouts (`bpu`, `l1d`, `int_iq`, `vrat`, `vec_iq`, `fma`, `fdiv`) or are excluded (`l1i`, `lsu_queues`) from macro-area comparisons; in particular, `fursoy_s1_dtlb` (`99.87 kGE`) and `fursoy_s1_itlb` (`77.52 kGE`) currently synthesize as standard-cell flip-flop arrays until compiled SRAM macros are integrated in a physical backend flow.
+| Configuration | Artifact | Cycles | Retired Insts | Aggregate IPC | Verified Userspace & Correctness |
+| :--- | :--- | ---: | ---: | ---: | :--- |
+| **`S2-M5` · `N=2` SMP** | [`results/s2-m5-closeout.json`](results/s2-m5-closeout.json) | 41,096,621 | 43,732,996 | **1.0642** | `CONFIG_SMP=y`, 2 online harts (`U`-commits `1.66M / 0.81M`), `pthreads` + `<stdatomic.h>` (`atomic=4000, cas=6000, mutex=600`) + `mem_stress` + BusyBox PASS, 0 panics/traps |
+| **`S2-M5` · `N=4` SMP** | [`results/s2-m5-closeout.json`](results/s2-m5-closeout.json) | 48,380,518 | 60,175,709 | **1.2438** | `CONFIG_SMP=y`, 4 online harts (`U`-commits `0.71M / 1.79M / 0.23M / 0.60M`), `pthreads` + `<stdatomic.h>` (`atomic=8000, cas=20000, mutex=2000`) + `mem_stress` + BusyBox PASS, 0 panics/traps |
+| **`S1-M9` · Single-Core** | `SMP_COHERENCE_EN=0` non-reg (`build/s2_m5/s1_m9_nonreg.json`) | 90,325,303 | 76,299,307 | **0.8447** | 20 BusyBox shell tests + `mem_stress`, `2,232,455` U-commits, `2,255` page faults (`1,026` U-mode), **0 CPI conservation errors** across all 90,325,303 cycles |
 
----
+<details>
+<summary><strong>Single-Owner 8-Bucket CPI Conservation Breakdown (Post-P0-1 S1-M9 Non-Regression: 90,325,303 Cycles, 0 Errors)</strong></summary>
 
-## Sail-RISC-V Differential Co-Simulation
-
-Lockstep comparison (`tools/run_s1_sail_cosim.py`, saved in [`results/s1-sail-cosim.json`](results/s1-sail-cosim.json)) against official **`sail-riscv v0.16`** passes all **8 workloads** (`1,177` Sail steps: `826` GPR, `37` FPR, `55` VRF group, and `24` trap checks) with **0 mismatches**, including `mstatus`, `frm`, `vstart`, `mtval`/`stval` (`causes 2, 4, 6, 13, 15`), and multi-register `LMUL = 2, 4, 8` vector groups:
-
-| Workload | Sail Steps | GPR Checks | FPR Checks | VRF Checks | Trap Checks | Mismatches |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `01_rv64im_zba_zbb` | 155 | 130 | 0 | 0 | 0 | 0 |
-| `02_rv64fd_fp` | 89 | 38 | 32 | 0 | 2 | 0 |
-| `03_rvv_vector` | 83 | 46 | 0 | 21 | 1 | 0 |
-| `04_sv39_mmu_traps` | 304 | 234 | 0 | 0 | 4 | 0 |
-| `05_rv64a_atomics` | 52 | 45 | 0 | 0 | 0 | 0 |
-| `06_priv_traps_mprv_tbit` | 356 | 261 | 0 | 0 | 9 | 0 |
-| `07_fp_edge_cases` | 62 | 30 | 5 | 0 | 4 | 0 |
-| `08_rvv_lmul_vstart_traps` | 76 | 42 | 0 | 34 | 4 | 0 |
-| **Total (8 Suites)** | **1,177** | **826** | **37** | **55** | **24** | **0** |
-
----
-
-## Linux 6.6.50 Boot & Single-Owner CPI Telemetry
-
-The Milestone 9 closeout (`tools/run_s1_m9_closeout.py`, saved in [`results/s1-m9-closeout.json`](results/s1-m9-closeout.json)) boots mainline **Linux 6.6.50** in Verilator with zero kernel panics, zero oopses, zero access faults, active 16-bit Sv39 ASIDs, and **0** CPI conservation errors across **90,304,592** simulated cycles (`76,281,757` retired instructions, `2,233,243` U-mode commits, `2,253` demand page faults / `1,027` U-mode, `1,732` U-ecalls, `1,758` S-ecalls, `28,555` UART bytes, `IPC = 0.8447`):
-
-```text
-[    0.000000] Linux version 6.6.50 ... (riscv64-linux-gnu-gcc 13.3.0)
-[    0.000000] SBI specification v2.0 detected
-[    0.000000] SBI implementation ID=0xf00501 Version=0x1
-[    0.000000] earlycon: uart8250 at MMIO32 0x0000000010000000 (options '')
-...
-[    6.809584] Run /init as init process
-[INIT] Fursoy Slice-0 Linux BusyBox Userspace active!
-FURSOY_USERSPACE_BEGIN
-[TEST 01] uname ... Linux (none) 6.6.50 riscv64 GNU/Linux
-...
-[TEST 20] repeated process creation/exit
-[TEST 21] userspace memory stress
-[MEM_STRESS_START] Running stack and heap multi-width memory validation...
-[MEM_STRESS_PASS] All stack, heap, multi-width, and strided tests passed.
-FURSOY_USERSPACE_PASS
-```
-
-### Cycle-Exact 8-Category CPI Conservation Breakdown
-
-Every cycle is mutually exclusively owned by one hardware-asserted bucket (`sum(C_k) == mcycle = 90,304,592`, `cpi_conservation_errors = 0`). Expanding branch checkpoints from 8 to 16 cut `C_be_rename` stalls by **-24.82%** (`5,709,439` → `4,292,514` cycles):
-
-| CPI Category | Cycles | Share | Description |
+| CPI Category | Cycles | Share | Architectural Cause |
 | :--- | ---: | ---: | :--- |
-| `C_productive` | 42,627,877 | 47.20% | Active useful graduation / commit cycles |
-| `C_br_recover` | 16,573,571 | 18.35% | Branch misprediction & exception flush recovery |
-| `C_idle_other` | 15,481,507 | 17.14% | WFI idle, non-stalled pipeline drain & other bubbles |
-| `C_mem_stall` | 5,417,240 | 6.00% | L1D miss / bank conflict / DTLB-PTW memory stalls |
-| `C_be_rename` | 4,292,514 | 4.75% | Rename stalls (ROB / Free List / checkpoint capacity) |
-| `C_be_sched` | 3,033,600 | 3.36% | Issue queue scheduling / execution operand stalls |
-| `C_serialize` | 2,428,266 | 2.69% | CSR / `SFENCE.VMA` / `FENCE.I` / trap serialization |
-| `C_fe_starve` | 450,017 | 0.50% | Frontend fetch queue empty (L1I miss / ITLB miss) |
-| **Total (`mcycle`)** | **90,304,592** | **100.00%** | **76,281,757 commits (`IPC = 0.8447`)** |
+| `C_productive` | 42,643,226 | 47.21% | Active useful graduation / commit cycles |
+| `C_br_recover` | 16,565,588 | 18.34% | Branch misprediction & exception flush recovery |
+| `C_idle_other` | 15,477,240 | 17.14% | `WFI` idle, non-stalled pipeline drain & bubbles |
+| `C_mem_stall` | 5,419,980 | 6.00% | L1D miss / bank conflict / DTLB-PTW memory stalls |
+| `C_be_rename` | 4,295,243 | 4.76% | Rename stalls (ROB / Free List / 16-checkpoint capacity) |
+| `C_be_sched` | 3,035,353 | 3.36% | Issue queue scheduling / operand stalls |
+| `C_serialize` | 2,437,534 | 2.70% | CSR / `SFENCE.VMA` / `FENCE.I` / trap serialization |
+| `C_fe_starve` | 451,139 | 0.50% | Frontend fetch queue empty (L1I / ITLB miss) |
+| **Total (`mcycle`)** | **90,325,303** | **100.00%** | **76,299,307 commits (`IPC = 0.8447`, 0 conservation errors)** |
+
+</details>
+
+### 2. Formal Reference Parity, RVWMO Litmus, Coherence Torture & Directed Stress
+
+| Verification Suite | Artifact / Runner | Result | Key Metrics |
+| :--- | :--- | :---: | :--- |
+| **Sail-RISC-V `v0.16` Co-Sim** | [`results/s1-sail-cosim.json`](results/s1-sail-cosim.json) | **PASS** | `8/8` suites (`1,177` Sail steps: `826` GPR, `37` FPR, `55` VRF group, `24` trap checks) — **0 mismatches** |
+| **`S2-M1` Multi-Hart Bring-Up** | [`results/s2-m1-closeout.json`](results/s2-m1-closeout.json) | **PASS** | `N=2` (`11,451` cyc) & `N=4` (`19,940` cyc): per-hart `mhartid`, CLINT MSIP/MTIP, PLIC multi-context |
+| **`S2-M2` MESI Coherence + SWMR** | [`results/s2-m2-closeout.json`](results/s2-m2-closeout.json) | **PASS** | `N=2` (`14,551` cyc) & `N=4` (`18,468` cyc): `M→S`/`M→I` forwarding, WBB races, coherent L1I/PTW — **0 SWMR violations** |
+| **`S2-M3` RV64A Atomics & SBI** | [`results/s2-m3-closeout.json`](results/s2-m3-closeout.json) | **PASS** | `N=2` (`53,048` cyc) & `N=4` (`85,366` cyc): contended `LR`/`SC`, `AMO`, global `FENCE`, simultaneous `SBI RFENCE` — **0 SWMR violations** |
+| **`S2-M4` RVWMO Litmus Suite** | [`results/s2-m4-closeout.json`](results/s2-m4-closeout.json) | **PASS** | `MP`, `SB`, `LB`, `IRIW`, `CoRR`, `CoWR`, `CoRW`, `CoWW` on `N=2` (`495,111` cyc) & `N=4` (`581,323` cyc) — **0 forbidden**, **0 SWMR violations** |
+| **`S2-M4` Coherence Torture** | [`results/s2-m4-closeout.json`](results/s2-m4-closeout.json) | **PASS** | `N=2` (`166,762` commits) & `N=4` (`344,879` commits) exercising MESI `S`/`E`/`M` & dirty WBBs — **0 SWMR/data/inclusion violations** |
+| **MMIO-vs-MSIP IRQ Stress** | `tools/run_s2_mmio_irq_stress.py` | **PASS** | `84,854` cyc, `952` M-mode MSIP preemptions, `128/128` exact UART bytes (`0` dups/drops), `128/128` exact PLIC Claims (`0` bad claims, `0` leaked `in_service`), **0 SWMR violations** |
+
+### 3. Physical Synthesis & 500 MHz Nangate 45nm OpenSTA (`14 / 14 MET`)
+
+Synthesized via `sv2v v0.0.13` → `Yosys 0.33` → `OpenSTA 3.1.0` on **NangateOpenCellLibrary 45nm Typical (1.10V, 25C)** (`NAND2_X1 = 0.798 um²`) targeting **500 MHz (`2.000 ns`)**, pre-P&R (`tools/run_s2_synth.py`, recorded in [`results/s2-m4-closeout.json`](results/s2-m4-closeout.json); `all_logs_fresh = true`, `0` OpenSTA Warning 1216/441, **`TNS = 0.000 ns`**):
+
+| Module | Scope | Cells | DFFs | Area (kGE) | Max Delay | WNS @ 500 MHz |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| `fursoy_s2_mmio_xbar` (`N=4`) | Slice-2 SMP | 2,059 | 213 | 3.59 | 1.181 ns | **+0.735 ns (MET)** |
+| `fursoy_s2_plic` (`N=4`, 8-ctx) | Slice-2 SMP | 10,715 | 561 | 17.66 | 1.407 ns | **+0.505 ns (MET)** |
+| `fursoy_s2_l2` (`N=4`, 512 sets, SRAM `.lib`) | Slice-2 SMP | 1,558,821 | 212,480 | 3,269.96 | 1.436 ns | **+0.314 ns (MET)** |
+| `fursoy_s2_clint` (`N=4`) | Slice-2 SMP | 2,979 | 394 | 5.77 | 1.559 ns | **+0.357 ns (MET)** |
+| `fursoy_s1_l1d` (`SMP=1`, 64 sets, SRAM `.lib`) | Slice-2 SMP | 216,202 | 20,942 | 468.32 | 1.723 ns | **+0.027 ns (MET)** |
+| `fursoy_s2_coherence_mgr` (`N=4`, 512 sets, SRAM `.lib`) | Slice-2 SMP | 1,857,576 | 224,327 | 3,831.60 | 1.902 ns | **+0.008 ns (MET)** |
+| `fursoy_s1_agu` | Slice-1 Core | 817 | 0 | 1.07 | 0.510 ns | **+1.490 ns (MET)** |
+| `fursoy_s1_branch_unit` | Slice-1 Core | 4,086 | 0 | 5.45 | 0.601 ns | **+1.399 ns (MET)** |
+| `fursoy_s1_ptw` | Slice-1 Core | 1,797 | 329 | 3.81 | 0.892 ns | **+1.069 ns (MET)** |
+| `fursoy_s1_decode` | Slice-1 Core | 2,777 | 0 | 3.70 | 0.979 ns | **+1.021 ns (MET)** |
+| `fursoy_s1_alu` | Slice-1 Core | 4,326 | 0 | 6.34 | 1.153 ns | **+0.847 ns (MET)** |
+| `fursoy_s1_itlb` (flop array) | Slice-1 Core | 36,755 | 6,304 | 77.52 | 1.214 ns | **+0.586 ns (MET)** |
+| `fursoy_s1_dtlb` (flop array) | Slice-1 Core | 50,517 | 6,515 | 99.87 | 1.253 ns | **+0.547 ns (MET)** |
+| `fursoy_s1_csr` | Slice-1 Core | 14,491 | 1,872 | 27.89 | 1.342 ns | **+0.623 ns (MET)** |
+
+> **Macro & Area Note:** Slice-1 8 gated blocks total `115,566` cells / `15,020` DFFs / `225.65 kGE` (`180,058.86 um²`). `fursoy_s2_l2`, `fursoy_s2_coherence_mgr`, and `fursoy_s1_l1d` use deterministic Liberty SRAM timing blackboxes (generated cleanly by `tools/run_s2_synth.py`) for cache data arrays while tag/directory/TLB arrays remain standard-cell flip-flop synthesized prior to physical SRAM macro compilation and P&R.
 
 ---
 
-## Quickstart (Prerequisites & Verification)
+## Reproducibility & Open-Source EDA Toolchain
 
-### Prerequisites (Ubuntu 24.04 / WSL2)
+### Verified Environment (Ubuntu 24.04 Linux / WSL2)
+
+- **Simulation & Compilers:** `Verilator 5.020`, `g++`, `Python 3`, `device-tree-compiler`, `RISC-V GCC 13.2.0` (`gcc-riscv64-unknown-elf`, `gcc-riscv64-linux-gnu`)
+- **Golden Model:** `sail-riscv 0.16` (`tools/sail/bin/bin/sail_riscv_sim`, config at [`tools/sail/fursoy_s1_sail_config.json`](tools/sail/fursoy_s1_sail_config.json))
+- **Synthesis & STA:** `sv2v v0.0.13`, `Yosys 0.33`, `OpenSTA 3.1.0`, Nangate 45nm Typical `.lib` (`FURSOY_LIBERTY` or `tools/synth/lib/NangateOpenCellLibrary_typical.lib`)
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
+sudo apt-get update && sudo apt-get install -y \
   verilator g++ python3 device-tree-compiler \
   gcc-riscv64-unknown-elf gcc-riscv64-linux-gnu
 ```
 
-*(Optional, for physical synthesis & STA: `yosys`, `sv2v`, OpenSTA `sta`, and Nangate45 `.lib` via `FURSOY_LIBERTY` or `tools/synth/lib/NangateOpenCellLibrary_typical.lib`. For `sail-riscv` golden-model differential co-simulation: extract the official `sail-riscv v0.16` Linux x86_64 release tarball so `tools/sail/bin/bin/sail_riscv_sim` exists; the Fursoy-matched machine configuration is checked in at [`tools/sail/fursoy_s1_sail_config.json`](tools/sail/fursoy_s1_sail_config.json).)*
-
-### Running Verification
-
-From the repository root:
+### Clean-Clone Verification Commands
 
 ```bash
-# 1. Production RTL lint (Verilator --lint-only, expects 0 warnings/errors)
+# 1. Production RTL lint (Verilator --lint-only -Wall, expects 0 warnings/errors)
 python3 tools/run_s1_lint.py
 
-# 2. Fast Slice-1 verification regressions
-python3 tools/run_s1_m9_phase_a.py   # Interrupts, mideleg, WFI, precise trap boundaries
-python3 tools/run_s1_m9_phase_b.py   # CLINT, PLIC, UART 16550 platform peripherals
-python3 tools/run_s1_m9_phase_c.py   # 5-master crossbar, DTB, unmapped faults
-python3 tools/run_s1_m9_phase_d.py   # SBI v2.0 firmware + mixed-privilege stress
-python3 tools/run_s1_m8_closeout.py  # RV64FD + RVV 1.0 FP/Vector backend
-python3 tools/run_s1_m7_closeout.py  # Multi-bank non-blocking L1D + coherency
-python3 tools/run_s1_m6_closeout.py  # Frontend BPU / IBP / RAS / ITLB / L1I NLP
-
-# 3. Sail-RISC-V golden-model differential co-simulation (8 suites, RV64IMAFDV + Zba + Zbb + Sv39 + traps)
+# 2. Sail-RISC-V v0.16 8-suite lockstep differential co-simulation
 python3 tools/run_s1_sail_cosim.py
 
-# 4. Nangate 45nm @ 500 MHz synthesis & OpenSTA check
-python3 tools/run_s1_synth.py --run-synth
+# 3. Slice-2 SMP verification suite (N=2 & N=4)
+python3 tools/run_s2_m1.py              # Multi-hart mhartid, CLINT MSIP/MTIP, PLIC contexts
+python3 tools/run_s2_m2.py              # Directory MESI coherence, 2-stage snoop, SWMR monitor
+python3 tools/run_s2_m3.py              # RV64A LR/SC & AMO, global FENCE, SMP SBI v2.0
+python3 tools/run_s2_mmio_irq_stress.py # Directed atomic MMIO-vs-MSIP IRQ preemption stress
+python3 tools/run_s2_m4.py              # RVWMO Litmus + randomized multi-hart torture + 500 MHz STA
 
-# 5. Full Linux 6.6.50 + BusyBox boot closeout (~2.5-3 hours wall time)
-# Requires a built RISC-V Image at build/linux-6.6.50/arch/riscv/boot/Image
-# (kernel config/patches in software/linux/, initramfs helper in tools/build_initramfs.py).
-python3 tools/run_s1_m9_closeout.py
+# 4. Standalone 14-block 500 MHz Nangate 45nm synthesis & OpenSTA check
+python3 tools/run_s2_synth.py
+
+# 5. Full mainline Linux 6.6.50 + BusyBox boot closeouts
+#    (Kernel defconfigs in software/linux/fursoy_s0_defconfig & fursoy_s2_defconfig;
+#     initramfs builder in tools/build_initramfs.py; parameterized DTB in tools/gen_s2_dts.py)
+python3 tools/run_s2_m5.py              # Linux 6.6.50 CONFIG_SMP=y (N=2 & N=4) + pthreads/atomics
+python3 tools/run_s1_m9_closeout.py     # Slice-1 single-core (SMP_COHERENCE_EN=0) non-regression
 ```
 
 ---
 
-## Repository Layout
+## Repository & RTL Module Hierarchy
 
-| Directory | Contents |
+| Directory | Key Modules & Artifacts |
 | :--- | :--- |
-| [`rtl/core/`](rtl/core/) | Slice-1 64-bit OoO core SystemVerilog modules (`fursoy_s1_core`, ROB, IntRAT/FRAT/VRAT, IQs, `ks_adder`, ALU/Branch/Mul/Div, FP/Vec, DTLB/ITLB/PTW, L1I/L1D) |
-| [`rtl/platform/`](rtl/platform/) | Slice-1/Slice-0 SoC integration (`fursoy_s1_soc`), 5-master crossbar, CLINT, PLIC, 16550 UART |
-| [`software/`](software/) | Minimal SBI v2.0 M-mode firmware, Fursoy Slice-1 Device Tree (`fursoy_s1.dts`), Linux 6.6.50 defconfig/patches, BusyBox `/init` & `mem_stress` |
-| [`verification/`](verification/) | Verilator C++ self-checking testbenches (`s1_m9_closeout_tb.cpp`, `s1_sail_cosim_tb.cpp`, M5–M9 phase/closeout benches, unit checks) |
-| [`tools/`](tools/) | Python lint, regression, Sail cosim (`run_s1_sail_cosim.py`), Linux closeout, synthesis (`run_s1_synth.py`), and analysis runners |
-| [`docs/architecture/`](docs/architecture/) | Normative microarchitecture, MMU, cache, and SoC specification documents |
-| [`results/`](results/) | Verified milestone JSON evidence reports (`s1-lint.json`, `s1-sail-cosim.json`, `s1-m9-closeout.json`) |
+| [`rtl/core/`](rtl/core/) | `fursoy_s1_core.sv` (`fursoy_s1_pkg.sv`, `frontend`, `bpu`, `fetch_queue`, `decode`, `substrate`, `rat`/`frat`/`vrat`, `rob`, `prf`/`fprf`/`vrf`, `int_iq`/`mem_iq`/`fp_iq`/`vec_iq`, `ks_adder`, `alu`/`branch_unit`/`multiplier`/`divider`/`fma`/`fdiv`/`fconv`, `agu`/`lsu`/`lsu_queues`/`trt`, `itlb`/`dtlb`/`ptw`, `l1i`/`l1d`, `csr`, `hpm`) + Slice-0 reference modules |
+| [`rtl/platform/`](rtl/platform/) | **Slice-2 SMP:** `fursoy_s2_soc.sv`, `fursoy_s2_coherence_mgr.sv`, `fursoy_s2_l2.sv`, `fursoy_s2_mmio_xbar.sv`, `fursoy_s2_clint.sv`, `fursoy_s2_plic.sv` · **Slice-1/0:** `fursoy_s1_soc.sv`, `fursoy_s0_uart.sv`, `fursoy_s0_clint.sv`, `fursoy_s0_plic.sv` |
+| [`software/`](software/) | Custom M-mode SBI v2.0 (`fursoy_s1_sbi_*`, `fursoy_s2_sbi_*`), Linux 6.6.50 defconfigs (`fursoy_s0_defconfig`, `fursoy_s2_defconfig`), BusyBox `/init` + `s2_smp_test.c`, and bare-metal SMP/litmus/torture/IRQ-stress tests |
+| [`verification/`](verification/) | Verilator C++ testbenches (`s2_swmr_scoreboard.h`, `s2_m1..m5*_tb.cpp`, `s2_mmio_irq_stress_tb.cpp`, `s1_sail_cosim_tb.cpp`, `s1_m9_closeout_tb.cpp`) |
+| [`tools/`](tools/) | Python runners (`run_s1_lint.py`, `run_s1_sail_cosim.py`, `run_s1_m9_closeout.py`, `run_s2_m1..m5.py`, `run_s2_mmio_irq_stress.py`, `run_s2_synth.py`, `gen_s2_dts.py`, `build_initramfs.py`) |
+| [`docs/architecture/`](docs/architecture/) | Frozen architecture contracts (`slice2-smp-v1.md`, `slice1-core-v1.md`, `slice1-m7-multibank-l1d-v1.md`, `slice1-m9-soc-linux-v1.md`, `sv39-mmu-v1.md`, `pmp-v1.md`, `plic-v1.md`, `rv64a-v1.md`) |
+| [`results/`](results/) | Verified milestone JSON evidence (`s1-lint.json`, `s1-sail-cosim.json`, `s1-m9-closeout.json`, `s2-m1..m5-closeout.json`) |
 
 ---
 
