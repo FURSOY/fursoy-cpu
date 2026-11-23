@@ -37,6 +37,7 @@ CORE_RTL: list[Path] = [
     ROOT / "rtl/core/fursoy_s1_fp_iq.sv",
     ROOT / "rtl/core/fursoy_s1_vrat.sv",
     ROOT / "rtl/core/fursoy_s1_vec_iq.sv",
+    ROOT / "rtl/core/fursoy_s1_vec_div.sv",
     ROOT / "rtl/core/fursoy_s1_backend.sv",
     ROOT / "rtl/core/fursoy_s1_bpu.sv",
     ROOT / "rtl/core/fursoy_s1_ptw.sv",
@@ -60,6 +61,7 @@ _M8_ONLY_MODULES = {
     "fursoy_s1_vrf.sv",
     "fursoy_s1_vrat.sv",
     "fursoy_s1_vec_iq.sv",
+    "fursoy_s1_vec_div.sv",
 }
 
 M6_M7_CORE_RTL: list[Path] = [p for p in CORE_RTL if p.name not in _M8_ONLY_MODULES]

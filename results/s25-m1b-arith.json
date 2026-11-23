@@ -1,0 +1,152 @@
+{
+  "milestone": "S2.5-M1b",
+  "status": "pass",
+  "timestamp_utc": "2026-11-23T16:54:04.445840+00:00",
+  "elapsed_seconds": 394.83,
+  "rtl_sha256": "167fa9fb11fffa4cf36485232d417b2bec01f2278b8dedf3aa97c24810c59ebf",
+  "static_audit": {
+    "passed": true,
+    "findings": [],
+    "files": [
+      {
+        "file": "rtl/core/fursoy_s1_fdiv.sv",
+        "scope": "full",
+        "slash_ops": 0,
+        "mod_ops": 0,
+        "unrolled_isqrt": 0
+      },
+      {
+        "file": "rtl/core/fursoy_s1_vec_div.sv",
+        "scope": "full",
+        "slash_ops": 0,
+        "mod_ops": 0,
+        "unrolled_isqrt": 0
+      },
+      {
+        "file": "rtl/core/fursoy_s1_multiplier.sv",
+        "scope": "full",
+        "slash_ops": 0,
+        "mod_ops": 0,
+        "unrolled_isqrt": 0
+      },
+      {
+        "file": "rtl/core/fursoy_s1_core.sv",
+        "scope": "VEC_VDIV..VEC_VREM",
+        "slash_ops": 0,
+        "mod_ops": 0,
+        "unrolled_isqrt": 0
+      }
+    ]
+  },
+  "synth_sta_nangate45_500mhz": {
+    "passed": true,
+    "modules": {
+      "fursoy_s1_fdiv": {
+        "description": "Iterative Parallel Radix-4 Restoring IEEE-754 FDIV/FSQRT (SP 17c / DP 31c)",
+        "yosys_div_cells": 0,
+        "yosys_mod_cells": 0,
+        "cells": 12564,
+        "dffs": 850,
+        "area_um2": 18267.02,
+        "kge": 22.89,
+        "target_period_ns": 2.0,
+        "max_delay_ns": 1.431,
+        "slack_ns": 0.48,
+        "wns_ns": 0.0,
+        "tns_ns": 0.0,
+        "fmax_mhz": 657.9,
+        "timing_status": "MET",
+        "passed": true
+      },
+      "fursoy_s1_vec_div": {
+        "description": "Iterative Parallel Radix-4 Restoring RVV Element Divider (SEW=8/16/32/64)",
+        "yosys_div_cells": 0,
+        "yosys_mod_cells": 0,
+        "cells": 8666,
+        "dffs": 334,
+        "area_um2": 10876.47,
+        "kge": 13.63,
+        "target_period_ns": 2.0,
+        "max_delay_ns": 1.023,
+        "slack_ns": 0.887,
+        "wns_ns": 0.0,
+        "tns_ns": 0.0,
+        "fmax_mhz": 898.5,
+        "timing_status": "MET",
+        "passed": true
+      },
+      "fursoy_s1_multiplier": {
+        "description": "3-Stage Pipelined 65x65 Signed Radix-4 Booth + 8-Level Wallace CSA + KS CPA",
+        "yosys_div_cells": 0,
+        "yosys_mod_cells": 0,
+        "cells": 23551,
+        "dffs": 1026,
+        "area_um2": 32913.51,
+        "kge": 41.24,
+        "target_period_ns": 2.0,
+        "max_delay_ns": 1.139,
+        "slack_ns": 0.776,
+        "wns_ns": 0.0,
+        "tns_ns": 0.0,
+        "fmax_mhz": 817.0,
+        "timing_status": "MET",
+        "passed": true
+      }
+    }
+  },
+  "sail_cosim_expanded": {
+    "passed": true,
+    "sail_version": "0.16",
+    "total_steps": 4908,
+    "total_gprs_checked": 3327,
+    "total_fprs_checked": 1058,
+    "total_vrfs_checked": 62,
+    "total_mismatches": 0,
+    "workloads": [
+      {
+        "name": "s25_fdiv_fsqrt_directed",
+        "matched": true,
+        "sail_steps": 1733,
+        "fursoy_events": 1734,
+        "gprs_checked": 894,
+        "fprs_checked": 598,
+        "vrfs_checked": 0,
+        "traps_checked": 0,
+        "mismatches": []
+      },
+      {
+        "name": "s25_fdiv_fsqrt_rand",
+        "matched": true,
+        "sail_steps": 2093,
+        "fursoy_events": 2093,
+        "gprs_checked": 1449,
+        "fprs_checked": 460,
+        "vrfs_checked": 0,
+        "traps_checked": 0,
+        "mismatches": []
+      },
+      {
+        "name": "s25_mul_pipelined",
+        "matched": true,
+        "sail_steps": 959,
+        "fursoy_events": 959,
+        "gprs_checked": 927,
+        "fprs_checked": 0,
+        "vrfs_checked": 0,
+        "traps_checked": 0,
+        "mismatches": []
+      },
+      {
+        "name": "s25_vdiv_rvv",
+        "matched": true,
+        "sail_steps": 123,
+        "fursoy_events": 124,
+        "gprs_checked": 57,
+        "fprs_checked": 0,
+        "vrfs_checked": 62,
+        "traps_checked": 0,
+        "mismatches": []
+      }
+    ]
+  }
+}

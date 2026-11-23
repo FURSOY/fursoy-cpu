@@ -31,6 +31,7 @@
 `include "fursoy_s1_frontend.sv"
 `include "fursoy_s1_csr.sv"
 `include "fursoy_s1_hpm.sv"
+`include "fursoy_s1_vec_div.sv"
 
 module fursoy_s1_core
     import fursoy_s1_pkg::*;
@@ -2324,11 +2325,33 @@ module fursoy_s1_core
                                    |vec_w0_bmask_q[15:8],  |vec_w0_bmask_q[7:0]};
     assign vec_vrf_w0_data      = vec_w0_data_q;
 
-    // Element ALU / SIMD Slice / Memory / ROB Completion Evaluation
+    // Element ALU / SIMD Slice / Iterative Vector Divider / Memory / ROB Completion Evaluation
     logic [63:0]  vec_alu_op1, vec_alu_op2, vec_alu_res;
     logic         vec_cmp_res;
     logic [127:0] vec_simd_slice_res;
     logic [63:0]  vec_indexed_va;
+
+    wire          vec_is_div = (vec_exec_q.sub_op == VEC_VDIV) || (vec_exec_q.sub_op == VEC_VDIVU);
+    logic         vec_div_busy;
+    logic         vec_div_done;
+    logic [63:0]  vec_div_result;
+    wire          vec_div_start = (vec_state_q == VEC_EXEC_ELEM) && vec_is_div &&
+                                  vec_elem_mask_en && !vec_div_busy && !vec_div_done &&
+                                  !vec_exec_squashed && !vec_completing_q;
+
+    fursoy_s1_vec_div u_vec_div (
+        .clk_i       (clk_i),
+        .rst_i       (rst_i),
+        .flush_i     (core_flush_valid || vec_exec_squashed),
+        .start_i     (vec_div_start),
+        .is_signed_i (vec_exec_q.sub_op == VEC_VDIV),
+        .sew_i       (vec_exec_sew),
+        .dividend_i  (vec_alu_op2),
+        .divisor_i   (vec_alu_op1),
+        .busy_o      (vec_div_busy),
+        .done_o      (vec_div_done),
+        .result_o    (vec_div_result)
+    );
 
     always_comb begin
         vec_alu_op1 = 64'd0;
@@ -2386,16 +2409,7 @@ module fursoy_s1_core
                     s_op2 = vec_sign_ext(vec_alu_op2, vec_exec_sew);
 
                     case (vec_exec_q.sub_op)
-                        VEC_VDIVU: vec_alu_res = (vec_alu_op1 == 64'd0) ? em : ((vec_alu_op2 / vec_alu_op1) & em);
-                        VEC_VDIV: begin
-                            if (s_op1 == 64'sd0) begin
-                                vec_alu_res = em;
-                            end else if ((vec_alu_op2 == (vec_sign_min(vec_exec_sew) & em)) && (s_op1 == -64'sd1)) begin
-                                vec_alu_res = vec_alu_op2;
-                            end else begin
-                                vec_alu_res = ($unsigned(s_op2 / s_op1)) & em;
-                            end
-                        end
+                        // VEC_VDIV / VEC_VDIVU execute iteratively in u_vec_div (fursoy_s1_vec_div)
                         VEC_VSLIDEUP:   vec_alu_res = vec_alu_op2;
                         VEC_VSLIDEDOWN: vec_alu_res = vec_src_elem_oob ? 64'd0 : vec_alu_op2;
                         VEC_VSLIDE1UP,
@@ -2611,49 +2625,71 @@ module fursoy_s1_core
                     end
 
                     VEC_EXEC_ELEM: begin
-                        if (is_vec_mask_dest_subop(vec_exec_q.sub_op) && vec_elem_mask_en) begin
-                            vec_mask_buf_q[vec_elem_idx_q[7:0]] <= vec_cmp_res;
-                        end else if (vec_exec_q.sub_op == VEC_VREDSUM && vec_elem_mask_en) begin
-                            vec_acc_q <= (vec_acc_q + vec_alu_op2) & vec_elem_mask(vec_exec_sew);
-                        end else if (!is_vec_mask_dest_subop(vec_exec_q.sub_op) &&
-                                     (vec_exec_q.sub_op != VEC_VREDSUM) &&
-                                     vec_elem_mask_en &&
-                                     !((vec_exec_q.sub_op == VEC_VSLIDEUP) && vec_src_elem_oob)) begin
-                            vec_w0_valid_q <= 1'b1;
-                            vec_w0_paddr_q <= vec_exec_q.vd_map_flat[vec_cur_reg_off[2:0]*6 +: 6];
-                            vec_w0_bmask_q <= vec_elem_byte_mask(vec_cur_boff, vec_exec_sew);
-                            vec_w0_data_q  <= {192'd0, vec_alu_res} << {vec_cur_boff, 3'b000};
-                        end
-
-                        if (vec_exec_q.sub_op == VEC_VSLIDEUP || vec_exec_q.sub_op == VEC_VSLIDE1UP) begin
-                            if (vec_elem_idx_q <= vec_exec_q.vstart) begin
-                                vec_completing_q <= 1'b1;
-                                vec_state_q      <= VEC_IDLE;
-                            end else begin
-                                vec_elem_idx_q <= vec_elem_idx_q - 9'd1;
-                            end
-                        end else if ((vec_elem_idx_q + 9'd1) >= vec_exec_q.vl) begin
-                            if (is_vec_mask_dest_subop(vec_exec_q.sub_op)) begin
-                                vec_w0_valid_q <= 1'b1;
-                                vec_w0_paddr_q <= vec_exec_q.vd_map_flat[5:0];
-                                vec_w0_bmask_q <= 32'hFFFF_FFFF;
-                                vec_w0_data_q  <= vec_mask_buf_q;
-                                if (vec_elem_mask_en) begin
-                                    vec_w0_data_q[vec_elem_idx_q[7:0]] <= vec_cmp_res;
+                        if (vec_is_div) begin
+                            if (!vec_elem_mask_en) begin
+                                if ((vec_elem_idx_q + 9'd1) >= vec_exec_q.vl) begin
+                                    vec_completing_q <= 1'b1;
+                                    vec_state_q      <= VEC_IDLE;
+                                end else begin
+                                    vec_elem_idx_q <= vec_elem_idx_q + 9'd1;
                                 end
-                                vec_state_q <= VEC_MASK_WB;
-                            end else if (vec_exec_q.sub_op == VEC_VREDSUM) begin
+                            end else if (vec_div_done) begin
                                 vec_w0_valid_q <= 1'b1;
-                                vec_w0_paddr_q <= vec_exec_q.vd_map_flat[5:0];
-                                vec_w0_bmask_q <= vec_elem_byte_mask(5'd0, vec_exec_sew);
-                                vec_w0_data_q  <= {192'd0, ((vec_elem_mask_en ? (vec_acc_q + vec_alu_op2) : vec_acc_q) & vec_elem_mask(vec_exec_sew))};
-                                vec_state_q    <= VEC_RED_WB;
-                            end else begin
-                                vec_completing_q <= 1'b1;
-                                vec_state_q      <= VEC_IDLE;
+                                vec_w0_paddr_q <= vec_exec_q.vd_map_flat[vec_cur_reg_off[2:0]*6 +: 6];
+                                vec_w0_bmask_q <= vec_elem_byte_mask(vec_cur_boff, vec_exec_sew);
+                                vec_w0_data_q  <= {192'd0, vec_div_result} << {vec_cur_boff, 3'b000};
+                                if ((vec_elem_idx_q + 9'd1) >= vec_exec_q.vl) begin
+                                    vec_completing_q <= 1'b1;
+                                    vec_state_q      <= VEC_IDLE;
+                                end else begin
+                                    vec_elem_idx_q <= vec_elem_idx_q + 9'd1;
+                                end
                             end
                         end else begin
-                            vec_elem_idx_q <= vec_elem_idx_q + 9'd1;
+                            if (is_vec_mask_dest_subop(vec_exec_q.sub_op) && vec_elem_mask_en) begin
+                                vec_mask_buf_q[vec_elem_idx_q[7:0]] <= vec_cmp_res;
+                            end else if (vec_exec_q.sub_op == VEC_VREDSUM && vec_elem_mask_en) begin
+                                vec_acc_q <= (vec_acc_q + vec_alu_op2) & vec_elem_mask(vec_exec_sew);
+                            end else if (!is_vec_mask_dest_subop(vec_exec_q.sub_op) &&
+                                         (vec_exec_q.sub_op != VEC_VREDSUM) &&
+                                         vec_elem_mask_en &&
+                                         !((vec_exec_q.sub_op == VEC_VSLIDEUP) && vec_src_elem_oob)) begin
+                                vec_w0_valid_q <= 1'b1;
+                                vec_w0_paddr_q <= vec_exec_q.vd_map_flat[vec_cur_reg_off[2:0]*6 +: 6];
+                                vec_w0_bmask_q <= vec_elem_byte_mask(vec_cur_boff, vec_exec_sew);
+                                vec_w0_data_q  <= {192'd0, vec_alu_res} << {vec_cur_boff, 3'b000};
+                            end
+
+                            if (vec_exec_q.sub_op == VEC_VSLIDEUP || vec_exec_q.sub_op == VEC_VSLIDE1UP) begin
+                                if (vec_elem_idx_q <= vec_exec_q.vstart) begin
+                                    vec_completing_q <= 1'b1;
+                                    vec_state_q      <= VEC_IDLE;
+                                end else begin
+                                    vec_elem_idx_q <= vec_elem_idx_q - 9'd1;
+                                end
+                            end else if ((vec_elem_idx_q + 9'd1) >= vec_exec_q.vl) begin
+                                if (is_vec_mask_dest_subop(vec_exec_q.sub_op)) begin
+                                    vec_w0_valid_q <= 1'b1;
+                                    vec_w0_paddr_q <= vec_exec_q.vd_map_flat[5:0];
+                                    vec_w0_bmask_q <= 32'hFFFF_FFFF;
+                                    vec_w0_data_q  <= vec_mask_buf_q;
+                                    if (vec_elem_mask_en) begin
+                                        vec_w0_data_q[vec_elem_idx_q[7:0]] <= vec_cmp_res;
+                                    end
+                                    vec_state_q <= VEC_MASK_WB;
+                                end else if (vec_exec_q.sub_op == VEC_VREDSUM) begin
+                                    vec_w0_valid_q <= 1'b1;
+                                    vec_w0_paddr_q <= vec_exec_q.vd_map_flat[5:0];
+                                    vec_w0_bmask_q <= vec_elem_byte_mask(5'd0, vec_exec_sew);
+                                    vec_w0_data_q  <= {192'd0, ((vec_elem_mask_en ? (vec_acc_q + vec_alu_op2) : vec_acc_q) & vec_elem_mask(vec_exec_sew))};
+                                    vec_state_q    <= VEC_RED_WB;
+                                end else begin
+                                    vec_completing_q <= 1'b1;
+                                    vec_state_q      <= VEC_IDLE;
+                                end
+                            end else begin
+                                vec_elem_idx_q <= vec_elem_idx_q + 9'd1;
+                            end
                         end
                     end
 
