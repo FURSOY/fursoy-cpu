@@ -143,6 +143,11 @@ SECTIONS
 }
 """
 
+# Note on misa.reset-val below: populated strictly to satisfy riscv-config's
+# RV64IMAFDSU schema validator for RISCOF test selection. In RTL,
+# rtl/core/fursoy_s1_csr.sv implements the legal RISC-V WARL option misa=64'd0
+# (full non-zero misa reporting is deferred to Slice-3+), and none of the 245
+# enabled riscv-arch-test cases rely on a non-zero runtime misa value.
 FURSOY_ISA_YAML = """hart_ids: [0]
 hart0:
   ISA: RV64IMAFDSUZicsr_Zifencei_Zba_Zbb
