@@ -663,10 +663,12 @@ module fursoy_s1_soc
         .PRF_COUNT        (PRF_SIZE),
         .AREG_NUM         (AREG_COUNT),
         .ROB_NUM          (ROB_DEPTH),
-        .CHKPT_NUM        (NUM_CHECKPOINTS)
+        .CHKPT_NUM        (NUM_CHECKPOINTS),
+        .SMP_COHERENCE_EN (1'b0)
     ) u_core (
         .clk_i            (clk_i),
         .rst_i            (rst_i),
+        .mhartid_i        (64'd0),
 
         .frontend_en_i    (frontend_en_i),
         .priv_mode_i      (2'b11), // 2'b11 activates internal csr_priv_mode without override
@@ -874,14 +876,18 @@ module fursoy_s1_soc
         .bus_rd_req_valid_o       (bus_rd_req_valid),
         .bus_rd_req_addr_o        (bus_rd_req_addr),
         .bus_rd_req_tag_o         (bus_rd_req_tag),
+        .bus_rd_req_op_o          (),
         .bus_rd_req_ready_i       (bus_rd_req_ready),
         .bus_rd_rsp_valid_i       (bus_rd_rsp_valid),
         .bus_rd_rsp_tag_i         (bus_rd_rsp_tag),
         .bus_rd_rsp_data_i        (bus_rd_rsp_data),
+        .bus_rd_rsp_state_i       (MESI_I),
+        .bus_rd_rsp_has_data_i    (1'b0),
 
         .bus_wr_req_valid_o       (bus_wr_req_valid),
         .bus_wr_req_addr_o        (bus_wr_req_addr),
         .bus_wr_req_data_o        (bus_wr_req_data),
+        .bus_wr_req_dirty_o       (),
         .bus_wr_req_ready_i       (bus_wr_req_ready),
         .bus_wr_rsp_valid_i       (bus_wr_rsp_valid),
 
@@ -905,6 +911,8 @@ module fursoy_s1_soc
         .l1i_bus_rd_rsp_tag_i     (l1i_bus_rd_rsp_tag),
         .l1i_bus_rd_rsp_data_i    (l1i_bus_rd_rsp_data),
         .l1i_bus_rd_rsp_error_i   (l1i_bus_rd_rsp_error),
+        .l1i_inval_line_valid_i   (1'b0),
+        .l1i_inval_line_addr_i    (50'd0),
 
         // Shared PTW Memory Channel
         .ptw_mem_req_valid_o      (ptw_mem_req_valid),
@@ -983,10 +991,13 @@ module fursoy_s1_soc
         .snoop_req_valid_i        (1'b0),
         .snoop_req_addr_i         (56'h0),
         .snoop_req_type_i         (2'b0),
+        .snoop_req_ready_o        (),
         .snoop_rsp_valid_o        (),
         .snoop_rsp_has_data_o     (),
         .snoop_rsp_was_dirty_o    (),
         .snoop_rsp_data_o         (),
+        .snoop_rsp_ready_i        (1'b1),
+        .snoop_rsp_ack_only_o     (),
 
         .test_ev_fp_issue_i       (1'b0),
         .test_ev_fp_fma_busy_i    (1'b0),

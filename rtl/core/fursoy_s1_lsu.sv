@@ -27,7 +27,9 @@
 
 module fursoy_s1_lsu
     import fursoy_s1_pkg::*;
-(
+#(
+    parameter bit SMP_COHERENCE_EN = 1'b0
+) (
     input  logic              clk_i,
     input  logic              rst_i,
     input  logic              flush_valid_i,
@@ -176,16 +178,20 @@ module fursoy_s1_lsu
     output logic              bus_rd_req_valid_o,
     output logic [49:0]       bus_rd_req_addr_o,
     output mshr_idx_t         bus_rd_req_tag_o,
+    output coh_req_op_t       bus_rd_req_op_o,
     input  logic              bus_rd_req_ready_i,
 
     input  logic              bus_rd_rsp_valid_i,
     input  mshr_idx_t         bus_rd_rsp_tag_i,
     input  logic [511:0]      bus_rd_rsp_data_i,
+    input  mesi_state_t       bus_rd_rsp_state_i,
+    input  logic              bus_rd_rsp_has_data_i,
 
     // Write Channel (WBB Dirty Evictions)
     output logic              bus_wr_req_valid_o,
     output logic [49:0]       bus_wr_req_addr_o,
     output logic [511:0]      bus_wr_req_data_o,
+    output logic              bus_wr_req_dirty_o,
     input  logic              bus_wr_req_ready_i,
 
     input  logic              bus_wr_rsp_valid_i,
@@ -250,19 +256,26 @@ module fursoy_s1_lsu
     output logic [4:0]        lq_count_o,
     output logic [MEM_IQ_DEPTH-1:0] memiq_diag_ready_o,
 
-    // External Coherence Snoop Interface (Milestone 7 Section 8)
+    // External Coherence Snoop Interface (Milestone 7 Section 8 / Slice-2)
     input  logic              snoop_req_valid_i,
     input  logic [55:0]       snoop_req_addr_i,
     input  logic [1:0]        snoop_req_type_i,
+    output logic              snoop_req_ready_o,
     output logic              snoop_rsp_valid_o,
     output logic              snoop_rsp_has_data_o,
     output logic              snoop_rsp_was_dirty_o,
     output logic [511:0]      snoop_rsp_data_o,
+    input  logic              snoop_rsp_ready_i,
+    output logic              snoop_rsp_ack_only_o,
 
     // Hardware PTW Coherent Dirty-Line Snoop (Read-Only, Non-Destructive)
     input  logic [55:0]       ptw_snoop_pa_i,
     output logic              ptw_snoop_dirty_hit_o,
     output logic [63:0]       ptw_snoop_data_o,
+
+    // Slice-2 Non-Speculative IRQ Interlock for SC/AMO
+    input  logic              irq_pending_i,
+    output logic              atomic_irq_inhibit_o,
 
     // Milestone 7 Telemetry Events (Section 10.2)
     output logic              event_mem_dual_issue_o,
@@ -716,6 +729,7 @@ module fursoy_s1_lsu
     preg_t       l1d_load0_req_pnew;
     rob_idx_t    l1d_load0_req_rob_idx;
     rob_epoch_t  l1d_load0_req_rob_epoch;
+    logic        l1d_load0_req_is_amo;
     logic        l1d_load0_req_ready;
 
     logic        l1d_load0_rsp_valid;
@@ -755,8 +769,21 @@ module fursoy_s1_lsu
     logic        l1d_store_drain_ready;
     logic        l1d_store_drain_done;
     logic        l1d_quiescent;
+    logic        l1d_snoop_s0_valid;
+    logic [49:0] l1d_snoop_s0_addr;
+    logic        l1d_snoop_s0_do_inv;
+    logic        l1d_sc_acquire_valid;
+    logic [55:0] l1d_sc_acquire_pa;
+    logic [7:0]  l1d_sc_acquire_mask;
+    logic [63:0] l1d_sc_acquire_data;
+    logic        l1d_sc_res_valid;
+    logic        l1d_sc_acquire_accepted;
+    logic        l1d_sc_acquire_done;
+    logic        l1d_sc_acquire_ok;
 
-    fursoy_s1_l1d u_l1d (
+    fursoy_s1_l1d #(
+        .SMP_COHERENCE_EN           (SMP_COHERENCE_EN)
+    ) u_l1d (
         .clk_i                      (clk_i),
         .rst_i                      (rst_i),
         .flush_valid_i              (flush_valid_i),
@@ -772,6 +799,7 @@ module fursoy_s1_lsu
         .load0_req_pnew_i           (vmem_active ? preg_t'(0)              : l1d_load0_req_pnew),
         .load0_req_rob_idx_i        (vmem_active ? vec_mem_req_rob_idx_i   : l1d_load0_req_rob_idx),
         .load0_req_rob_epoch_i      (vmem_active ? vec_mem_req_rob_epoch_i : l1d_load0_req_rob_epoch),
+        .load0_req_is_amo_i         (vmem_active ? 1'b0                    : l1d_load0_req_is_amo),
         .load0_req_ready_o          (l1d_load0_req_ready),
 
         .load0_rsp_valid_o          (l1d_load0_rsp_valid),
@@ -804,6 +832,15 @@ module fursoy_s1_lsu
         .store_drain_ready_o        (l1d_store_drain_ready),
         .store_drain_done_o         (l1d_store_drain_done),
 
+        .sc_acquire_valid_i         (vmem_active ? 1'b0 : l1d_sc_acquire_valid),
+        .sc_acquire_pa_i            (l1d_sc_acquire_pa),
+        .sc_acquire_mask_i          (l1d_sc_acquire_mask),
+        .sc_acquire_data_i          (l1d_sc_acquire_data),
+        .sc_res_valid_i             (l1d_sc_res_valid),
+        .sc_acquire_accepted_o      (l1d_sc_acquire_accepted),
+        .sc_acquire_done_o          (l1d_sc_acquire_done),
+        .sc_acquire_ok_o            (l1d_sc_acquire_ok),
+
         .refill_comp_valid_o        (refill_comp_valid),
         .refill_comp_lq_idx_o       (refill_comp_lq_idx),
         .refill_comp_pnew_o         (refill_comp_pnew),
@@ -828,15 +865,19 @@ module fursoy_s1_lsu
         .bus_rd_req_valid_o         (bus_rd_req_valid_o),
         .bus_rd_req_addr_o          (bus_rd_req_addr_o),
         .bus_rd_req_tag_o           (bus_rd_req_tag_o),
+        .bus_rd_req_op_o            (bus_rd_req_op_o),
         .bus_rd_req_ready_i         (bus_rd_req_ready_i),
 
         .bus_rd_rsp_valid_i         (bus_rd_rsp_valid_i),
         .bus_rd_rsp_tag_i           (bus_rd_rsp_tag_i),
         .bus_rd_rsp_data_i          (bus_rd_rsp_data_i),
+        .bus_rd_rsp_state_i         (bus_rd_rsp_state_i),
+        .bus_rd_rsp_has_data_i      (bus_rd_rsp_has_data_i),
 
         .bus_wr_req_valid_o         (bus_wr_req_valid_o),
         .bus_wr_req_addr_o          (bus_wr_req_addr_o),
         .bus_wr_req_data_o          (bus_wr_req_data_o),
+        .bus_wr_req_dirty_o         (bus_wr_req_dirty_o),
         .bus_wr_req_ready_i         (bus_wr_req_ready_i),
 
         .bus_wr_rsp_valid_i         (bus_wr_rsp_valid_i),
@@ -848,13 +889,17 @@ module fursoy_s1_lsu
         .snoop_req_valid_i          (snoop_req_valid_i),
         .snoop_req_addr_i           (snoop_req_addr_i[55:6]),
         .snoop_req_type_i           (snoop_req_type_i),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .snoop_req_ready_o          (),
-        /* verilator lint_on PINCONNECTEMPTY */
+        .snoop_req_ready_o          (snoop_req_ready_o),
         .snoop_rsp_valid_o          (snoop_rsp_valid_o),
         .snoop_rsp_has_data_o       (snoop_rsp_has_data_o),
         .snoop_rsp_data_o           (snoop_rsp_data_o),
         .snoop_rsp_was_dirty_o      (snoop_rsp_was_dirty_o),
+        .snoop_rsp_ready_i          (snoop_rsp_ready_i),
+        .snoop_rsp_ack_only_o       (snoop_rsp_ack_only_o),
+
+        .snoop_s0_valid_o           (l1d_snoop_s0_valid),
+        .snoop_s0_addr_o            (l1d_snoop_s0_addr),
+        .snoop_s0_do_inv_o          (l1d_snoop_s0_do_inv),
 
         .ptw_snoop_pa_i             (ptw_snoop_pa_i),
         .ptw_snoop_dirty_hit_o      (ptw_snoop_dirty_hit_o),
@@ -864,7 +909,9 @@ module fursoy_s1_lsu
     // =========================================================================
     // 5. Load Queue (LQ) & Store Queue (SQ)
     // =========================================================================
-    fursoy_s1_lsu_queues u_lsu_queues (
+    fursoy_s1_lsu_queues #(
+        .SMP_COHERENCE_EN           (SMP_COHERENCE_EN)
+    ) u_lsu_queues (
         .clk_i                      (clk_i),
         .rst_i                      (rst_i),
         .flush_valid_i              (flush_valid_i),
@@ -999,6 +1046,7 @@ module fursoy_s1_lsu
         .l1d_load0_req_pnew_o       (l1d_load0_req_pnew),
         .l1d_load0_req_rob_idx_o    (l1d_load0_req_rob_idx),
         .l1d_load0_req_rob_epoch_o  (l1d_load0_req_rob_epoch),
+        .l1d_load0_req_is_amo_o     (l1d_load0_req_is_amo),
         .l1d_load0_req_ready_i      (l1d_load0_req_ready),
 
         .l1d_load0_rsp_valid_i      (vmem_active ? 1'b0 : l1d_load0_rsp_valid),
@@ -1039,6 +1087,17 @@ module fursoy_s1_lsu
         .l1d_store_drain_done_i     (vmem_active ? 1'b0 : l1d_store_drain_done),
         .l1d_quiescent_i            (l1d_quiescent),
         .sq_empty_o                 (sq_empty_o),
+
+        .l1d_sc_acquire_valid_o     (l1d_sc_acquire_valid),
+        .l1d_sc_acquire_pa_o        (l1d_sc_acquire_pa),
+        .l1d_sc_acquire_mask_o      (l1d_sc_acquire_mask),
+        .l1d_sc_acquire_data_o      (l1d_sc_acquire_data),
+        .l1d_sc_res_valid_o         (l1d_sc_res_valid),
+        .l1d_sc_acquire_accepted_i  (l1d_sc_acquire_accepted),
+        .l1d_sc_acquire_done_i      (l1d_sc_acquire_done),
+        .l1d_sc_acquire_ok_i        (l1d_sc_acquire_ok),
+        .irq_pending_i              (irq_pending_i),
+        .atomic_irq_inhibit_o       (atomic_irq_inhibit_o),
 
         .retire_valid_i             (retire_valid_i),
         .retire_pnew_i              (retire_pnew_i),
@@ -1088,6 +1147,10 @@ module fursoy_s1_lsu
         .snoop_req_valid_i          (snoop_req_valid_i),
         .snoop_req_addr_i           (snoop_req_addr_i),
         .snoop_req_type_i           (snoop_req_type_i),
+        .snoop_req_ready_i          (snoop_req_ready_o),
+        .l1d_snoop_s0_valid_i       (l1d_snoop_s0_valid),
+        .l1d_snoop_s0_addr_i        (l1d_snoop_s0_addr),
+        .l1d_snoop_s0_do_inv_i      (l1d_snoop_s0_do_inv),
         .event_snoop_replay_o       (event_snoop_replay_o),
 
         .mmio_req_valid_o           (mmio_req_valid_o),

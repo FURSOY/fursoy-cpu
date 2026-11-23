@@ -23,7 +23,11 @@
 
 module fursoy_s1_lsu_queues
     import fursoy_s1_pkg::*;
-(
+#(
+    /* verilator lint_off UNUSEDPARAM */
+    parameter bit SMP_COHERENCE_EN = 1'b0
+    /* verilator lint_on UNUSEDPARAM */
+) (
     input  logic              clk_i,
     input  logic              rst_i,
     input  logic              flush_valid_i,
@@ -189,6 +193,7 @@ module fursoy_s1_lsu_queues
     output preg_t             l1d_load0_req_pnew_o,
     output rob_idx_t          l1d_load0_req_rob_idx_o,
     output rob_epoch_t        l1d_load0_req_rob_epoch_o,
+    output logic              l1d_load0_req_is_amo_o,
     input  logic              l1d_load0_req_ready_i,
 
     input  logic              l1d_load0_rsp_valid_i,
@@ -236,6 +241,20 @@ module fursoy_s1_lsu_queues
     input  logic              l1d_store_drain_done_i,
     input  logic              l1d_quiescent_i,
     output logic              sq_empty_o,
+
+    // Coherence-Point SC Acquire Channel & Non-Speculative IRQ Interlock (Slice-2)
+    output logic              l1d_sc_acquire_valid_o,
+    output logic [55:0]       l1d_sc_acquire_pa_o,
+    output logic [7:0]        l1d_sc_acquire_mask_o,
+    output logic [63:0]       l1d_sc_acquire_data_o,
+    output logic              l1d_sc_res_valid_o,
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic              l1d_sc_acquire_accepted_i,
+    input  logic              l1d_sc_acquire_done_i,
+    input  logic              l1d_sc_acquire_ok_i,
+    input  logic              irq_pending_i,
+    /* verilator lint_on UNUSEDSIGNAL */
+    output logic              atomic_irq_inhibit_o,
 
     // -------------------------------------------------------------------------
     // In-Order Store Retirement Handshake at ROB Head (Section 5.2)
@@ -299,12 +318,18 @@ module fursoy_s1_lsu_queues
     output logic              lsu_retire0_allow_o,
     output logic              lsu_retire1_allow_o,
 
-    // External Coherence Snoop Interface (Milestone 7 §8.3, PROP_M7_36)
+    // External Coherence Snoop Interface (Milestone 7 §8.3, PROP_M7_36 & Slice-2 S0/S1)
     input  logic              snoop_req_valid_i,
     /* verilator lint_off UNUSEDSIGNAL */
     input  logic [55:0]       snoop_req_addr_i,
     /* verilator lint_on UNUSEDSIGNAL */
     input  logic [1:0]        snoop_req_type_i,
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic              snoop_req_ready_i,
+    input  logic              l1d_snoop_s0_valid_i,
+    input  logic [49:0]       l1d_snoop_s0_addr_i,
+    input  logic              l1d_snoop_s0_do_inv_i,
+    /* verilator lint_on UNUSEDSIGNAL */
     output logic              event_snoop_replay_o,
 
     // -------------------------------------------------------------------------
@@ -338,6 +363,19 @@ module fursoy_s1_lsu_queues
     logic        res_valid_q;
     logic [55:0] res_pa_q;
     mem_size_t   res_size_q;
+
+    // Slice-2 Coherence-Point SC Acquire & LFSR Livelock Backoff State
+    typedef enum logic [1:0] {
+        SC_IDLE       = 2'd0,
+        SC_WAIT_L1D   = 2'd1,
+        SC_READY_COMP = 2'd2
+    } sc_state_t;
+
+    sc_state_t   sc_state_q;
+    logic        sc_acq_ok_q;
+    logic [3:0]  sc_fail_streak_q;
+    logic [3:0]  sc_backoff_cnt_q;
+    logic [3:0]  sc_lfsr_q;
 
     // Milestone 5 Phase B1: Dual-Channel Store Resolution CAM & Violation Tracking
     /* verilator lint_off UNUSEDSIGNAL */
@@ -409,9 +447,18 @@ module fursoy_s1_lsu_queues
     assign port2_busy_o = p3_dtlb_retry_q || !trt_alloc_ready_i;
     assign port3_busy_o = p3_dtlb_retry_q || !trt_alloc_ready_i;
 
-    // External Coherence Snoop Hazard Evaluation (§8.3, PROP_M7_36)
-    wire snoop_do_inv = (snoop_req_type_i[0] == 1'b1) || (snoop_req_type_i == 2'b00);
-    wire [49:0] snoop_line_addr = snoop_req_addr_i[55:6];
+    // External Coherence Snoop Hazard Evaluation (§8.3, PROP_M7_36 & Slice-2 S0/S1 Window)
+    wire        snoop_do_inv        = (snoop_req_type_i[0] == 1'b1) || (snoop_req_type_i == 2'b00);
+    wire        snoop_req_inv_valid = snoop_req_valid_i && snoop_do_inv;
+    wire [49:0] snoop_req_line_addr = snoop_req_addr_i[55:6];
+    wire        snoop_s0_inv_valid  = SMP_COHERENCE_EN && l1d_snoop_s0_valid_i && l1d_snoop_s0_do_inv_i;
+    wire [49:0] snoop_s0_line_addr  = l1d_snoop_s0_addr_i;
+    wire        snoop_chk_valid     = snoop_req_inv_valid || snoop_s0_inv_valid;
+
+    function automatic logic matches_inv_snoop(input logic [49:0] line_pa);
+        return (snoop_req_inv_valid && (line_pa == snoop_req_line_addr)) ||
+               (snoop_s0_inv_valid  && (line_pa == snoop_s0_line_addr));
+    endfunction
 
     logic [LQ_DEPTH-1:0] snoop_lq_match;
     logic                snoop_match_found;
@@ -421,14 +468,41 @@ module fursoy_s1_lsu_queues
         snoop_match_found    = 1'b0;
         oldest_snoop_viol_lq = '0;
         for (int l = 0; l < LQ_DEPTH; l++) begin
-            snoop_lq_match[l] = snoop_req_valid_i && snoop_do_inv &&
-                                lq_q[l].valid && lq_q[l].pa_valid &&
-                                (lq_q[l].pa[55:6] == snoop_line_addr) &&
+            snoop_lq_match[l] = lq_q[l].valid && lq_q[l].pa_valid &&
+                                matches_inv_snoop(lq_q[l].pa[55:6]) &&
                                 (lq_q[l].completed || lq_q[l].wb_done || lq_q[l].forwarded);
             if (snoop_lq_match[l]) begin
                 if (!snoop_match_found || (rob_dist(lq_q[l].rob_idx, rob_head_i) < rob_dist(lq_q[oldest_snoop_viol_lq].rob_idx, rob_head_i))) begin
                     oldest_snoop_viol_lq = lq_idx_t'(l);
                     snoop_match_found    = 1'b1;
+                end
+            end
+        end
+    end
+
+    // Separate registered-latch path for same-cycle L1D hit/MSHR-refill responses
+    // (avoids combinational loop flush_valid_i -> l1d_rsp_valid -> snoop_match_found -> core_flush_valid)
+    logic [LQ_DEPTH-1:0] snoop_inflight_match;
+    logic                snoop_inflight_viol_found;
+    lq_idx_t             oldest_snoop_inflight_lq;
+
+    always_comb begin
+        snoop_inflight_viol_found = 1'b0;
+        oldest_snoop_inflight_lq  = '0;
+        for (int l = 0; l < LQ_DEPTH; l++) begin
+            logic l_in_flight_rsp;
+            l_in_flight_rsp = SMP_COHERENCE_EN && (
+                (l1d_load0_rsp_valid_i && l1d_load0_rsp_hit_i && (l1d_load0_rsp_lq_idx_i == lq_idx_t'(l))) ||
+                (l1d_load1_rsp_valid_i && l1d_load1_rsp_hit_i && (l1d_load1_rsp_lq_idx_i == lq_idx_t'(l))) ||
+                (mshr_refill_valid_i   && (mshr_refill_lq_idx_i == lq_idx_t'(l)))
+            );
+            snoop_inflight_match[l] = lq_q[l].valid && lq_q[l].pa_valid &&
+                                      matches_inv_snoop(lq_q[l].pa[55:6]) &&
+                                      l_in_flight_rsp;
+            if (snoop_inflight_match[l]) begin
+                if (!snoop_inflight_viol_found || (rob_dist(lq_q[l].rob_idx, rob_head_i) < rob_dist(lq_q[oldest_snoop_inflight_lq].rob_idx, rob_head_i))) begin
+                    oldest_snoop_inflight_lq  = lq_idx_t'(l);
+                    snoop_inflight_viol_found = 1'b1;
                 end
             end
         end
@@ -542,6 +616,8 @@ module fursoy_s1_lsu_queues
             end else if (sq_q[sq_drain_head_q].is_fence && l1d_quiescent_i) begin
                 sq_dealloc_comb[sq_drain_head_q] = 1'b1;
             end else if (sq_q[sq_drain_head_q].is_mmio && sq_q[sq_drain_head_q].drained) begin
+                sq_dealloc_comb[sq_drain_head_q] = 1'b1;
+            end else if (SMP_COHERENCE_EN && sq_q[sq_drain_head_q].is_sc && sq_q[sq_drain_head_q].drained) begin
                 sq_dealloc_comb[sq_drain_head_q] = 1'b1;
             end
         end
@@ -704,7 +780,9 @@ module fursoy_s1_lsu_queues
                                           !lq_q[l].page_fault && !lq_q[l].access_fault &&
                                           !lq_q[l].align_fault && !has_older_fence_l;
 
-                if (!lq_q[l].is_mmio && (!lq_q[l].is_lr || (lq_q[l].rob_idx == rob_head_i)) && (all_older_pa_valid_l || cand_is_eligible_spec_l)) begin
+                if (!lq_q[l].is_mmio &&
+                    (!lq_q[l].is_lr || ((lq_q[l].rob_idx == rob_head_i) && (!SMP_COHERENCE_EN || (sc_backoff_cnt_q == 4'd0)))) &&
+                    (all_older_pa_valid_l || cand_is_eligible_spec_l)) begin
                     lq_entry_is_speculative[l] = !all_older_pa_valid_l;
 
                     for (int s = 0; s < SQ_DEPTH; s++) begin
@@ -806,6 +884,7 @@ module fursoy_s1_lsu_queues
 
     // Non-speculative Indivisible AMO Read Trigger at ROB & SQ Head
     wire amo_cand_ready = (amo_state_q == AMO_IDLE) && !flush_valid_i && !recover_valid_i &&
+                          (!SMP_COHERENCE_EN || (!irq_pending_i && (sc_state_q == SC_IDLE))) &&
                           sq_q[sq_drain_head_q].valid && !sq_q[sq_drain_head_q].committed &&
                           !sq_q[sq_drain_head_q].completed && !sq_q[sq_drain_head_q].exception_pending &&
                           sq_q[sq_drain_head_q].is_amo && !sq_q[sq_drain_head_q].is_mmio &&
@@ -850,6 +929,7 @@ module fursoy_s1_lsu_queues
     assign l1d_load0_req_pnew_o     = amo_cand_ready ? sq_q[sq_drain_head_q].pnew : lq_q[cand_slot0].pnew;
     assign l1d_load0_req_rob_idx_o  = amo_cand_ready ? sq_q[sq_drain_head_q].rob_idx : lq_q[cand_slot0].rob_idx;
     assign l1d_load0_req_rob_epoch_o= amo_cand_ready ? sq_q[sq_drain_head_q].rob_epoch : lq_q[cand_slot0].rob_epoch;
+    assign l1d_load0_req_is_amo_o   = amo_cand_ready;
 
     // Speculative Load Issue to L1D (Port 1 / Lane 1)
     assign l1d_load1_req_valid_o    = !amo_l1d_override && has_cand1 && !lq_entry_fwd_success[cand_slot1];
@@ -865,6 +945,32 @@ module fursoy_s1_lsu_queues
     // 4. Committed Store In-Order Drain to L1D (Sections 5.2, 5.3)
     // =========================================================================
     wire sq_head_committed = sq_q[sq_drain_head_q].valid && sq_q[sq_drain_head_q].committed;
+
+    // Coherence-Point SC Acquire Channel Evaluation (Slice-2)
+    wire sc_head_eligible = SMP_COHERENCE_EN &&
+                            sq_q[sq_drain_head_q].valid && !sq_q[sq_drain_head_q].committed &&
+                            !sq_q[sq_drain_head_q].completed && !sq_q[sq_drain_head_q].exception_pending &&
+                            sq_q[sq_drain_head_q].is_sc && !sq_q[sq_drain_head_q].is_mmio &&
+                            sq_q[sq_drain_head_q].pa_valid && sq_q[sq_drain_head_q].data_valid &&
+                            (sq_q[sq_drain_head_q].rob_idx == rob_head_i);
+    wire sc_res_snoop_hit = SMP_COHERENCE_EN && res_valid_q && matches_inv_snoop(res_pa_q[55:6]);
+    wire sc_local_res_ok  = res_valid_q && !sc_res_snoop_hit &&
+                            (res_pa_q == sq_q[sq_drain_head_q].pa) &&
+                            (res_size_q == sq_q[sq_drain_head_q].size);
+    wire sc_written_uncommitted = SMP_COHERENCE_EN &&
+                                  sq_q[sq_drain_head_q].valid && !sq_q[sq_drain_head_q].committed &&
+                                  sq_q[sq_drain_head_q].is_sc && sq_q[sq_drain_head_q].drained;
+
+    assign l1d_sc_acquire_valid_o = (sc_state_q == SC_IDLE) && sc_head_eligible && sc_local_res_ok &&
+                                    !irq_pending_i && (amo_state_q == AMO_IDLE) && !flush_valid_i && !recover_valid_i;
+    assign l1d_sc_acquire_pa_o    = sq_q[sq_drain_head_q].pa;
+    assign l1d_sc_acquire_mask_o  = sq_q[sq_drain_head_q].mask;
+    assign l1d_sc_acquire_data_o  = format_store_payload(
+        sq_q[sq_drain_head_q].data,
+        sq_q[sq_drain_head_q].va[2:0],
+        sq_q[sq_drain_head_q].size
+    );
+    assign l1d_sc_res_valid_o     = sc_local_res_ok;
 
     assign l1d_store_drain_valid_o  = sq_head_committed && !sq_q[sq_drain_head_q].drained &&
                                       !sq_q[sq_drain_head_q].is_fence &&
@@ -1184,15 +1290,17 @@ module fursoy_s1_lsu_queues
                     end
                 end else if (sq_q[s].pa_valid && sq_q[s].data_valid && !sq_q[s].exception_pending && !sq_q[s].completed) begin
                     if (sq_q[s].is_fence && ((sq_drain_head_q != 4'(s)) || !l1d_quiescent_i)) continue;
-                    if (sq_q[s].is_sc && (sq_q[s].rob_idx != rob_head_i)) continue;
+                    if (sq_q[s].is_sc && (!SMP_COHERENCE_EN ? (sq_q[s].rob_idx != rob_head_i) :
+                                          ((sq_drain_head_q != 4'(s)) || (sq_q[s].rob_idx != rob_head_i) ||
+                                           ((sc_state_q != SC_READY_COMP) && !((sc_state_q == SC_IDLE) && !sc_local_res_ok))))) continue;
                     if (sq_q[s].is_amo && ((sq_drain_head_q != 4'(s)) || (sq_q[s].rob_idx != rob_head_i) || (amo_state_q != AMO_READY_COMP))) continue;
                     if (sq_q[s].is_mmio) continue;
 
                     if (!has_store || (comp_s_dist < dist_store)) begin
                         sc_ok_val = 1'b0;
                         if (sq_q[s].is_sc) begin
-                            sc_ok_val = res_valid_q &&
-                                        (res_pa_q == sq_q[s].pa) && (res_size_q == sq_q[s].size);
+                            sc_ok_val = SMP_COHERENCE_EN ? ((sc_state_q == SC_READY_COMP) && sc_acq_ok_q) :
+                                        (res_valid_q && (res_pa_q == sq_q[s].pa) && (res_size_q == sq_q[s].size));
                         end
 
                         has_store       = 1'b1;
@@ -1245,6 +1353,31 @@ module fursoy_s1_lsu_queues
 
     assign mmio_rsp_ready_o = 1'b1;
 
+    // Atomic MMIO Bus-to-Retire IRQ Interlock (P0-1):
+    // Inhibit async interrupts from MMIO launch (mmio_state_q != MMIO_IDLE)
+    // through bus completion until the completed ROB-head MMIO retires.
+    // Depends strictly on registered flop state (zero combinational loop with irq_pending_i).
+    wire mmio_store_done_uncommitted = sq_q[sq_drain_head_q].valid &&
+                                       !sq_q[sq_drain_head_q].committed &&
+                                       sq_q[sq_drain_head_q].is_mmio &&
+                                       !sq_q[sq_drain_head_q].is_amo &&
+                                       sq_q[sq_drain_head_q].drained &&
+                                       (sq_q[sq_drain_head_q].rob_idx == rob_head_i);
+    wire mmio_load_done_uncommitted  = head0_lq_found &&
+                                       lq_q[head0_lq_idx].is_mmio &&
+                                       lq_q[head0_lq_idx].completed &&
+                                       lq_q[head0_lq_idx].wb_done &&
+                                       !lq_q[head0_lq_idx].align_fault &&
+                                       !lq_q[head0_lq_idx].page_fault &&
+                                       !lq_q[head0_lq_idx].access_fault;
+    wire mmio_irq_inhibit            = (mmio_state_q != MMIO_IDLE) ||
+                                       mmio_store_done_uncommitted ||
+                                       mmio_load_done_uncommitted;
+
+    assign atomic_irq_inhibit_o = (SMP_COHERENCE_EN &&
+                                   ((sc_state_q != SC_IDLE) || sc_written_uncommitted || (amo_state_q != AMO_IDLE))) ||
+                                  mmio_irq_inhibit;
+
     logic        mmio_cand_valid;
     logic        mmio_cand_is_store;
     lq_idx_t     mmio_cand_lq_idx;
@@ -1276,7 +1409,8 @@ module fursoy_s1_lsu_queues
         mmio_cand_wdata     = 64'd0;
         mmio_cand_wstrb     = 8'd0;
 
-        if (!flush_valid_i && !recover_valid_i) begin
+        if (!flush_valid_i && !recover_valid_i && !irq_pending_i &&
+            (!SMP_COHERENCE_EN || ((sc_state_q == SC_IDLE) && (amo_state_q == AMO_IDLE)))) begin
             // 1. MMIO Load at ROB head (all older stores resolved & drained)
             for (int l = 0; l < LQ_DEPTH; l++) begin
                 if (lq_q[l].valid && lq_q[l].is_mmio && lq_q[l].pa_valid &&
@@ -1324,8 +1458,17 @@ module fursoy_s1_lsu_queues
         end
     end
 
-    wire mmio_comp_valid = ((mmio_state_q == MMIO_WAIT_RSP) ||
-                            (mmio_state_q == MMIO_REQ && mmio_req_ready_i)) && mmio_rsp_valid_i;
+    wire mmio_rsp_arrived = ((mmio_state_q == MMIO_WAIT_RSP) ||
+                             (mmio_state_q == MMIO_REQ && mmio_req_ready_i)) && mmio_rsp_valid_i;
+    wire mmio_entry_live  = !flush_valid_i && (mmio_is_store_q
+        ? (sq_q[mmio_sq_idx_q].valid && !sq_q[mmio_sq_idx_q].committed &&
+           sq_q[mmio_sq_idx_q].is_mmio &&
+           (sq_q[mmio_sq_idx_q].rob_idx == mmio_rob_idx_q) &&
+           (sq_q[mmio_sq_idx_q].rob_epoch == mmio_rob_epoch_q))
+        : (lq_q[mmio_lq_idx_q].valid && lq_q[mmio_lq_idx_q].is_mmio &&
+           (lq_q[mmio_lq_idx_q].rob_idx == mmio_rob_idx_q) &&
+           (lq_q[mmio_lq_idx_q].rob_epoch == mmio_rob_epoch_q)));
+    wire mmio_comp_valid  = mmio_rsp_arrived && mmio_entry_live;
 
     logic [63:0] mmio_formatted_rdata;
     always_comb begin
@@ -1630,6 +1773,11 @@ module fursoy_s1_lsu_queues
             m3_viol_rob_epoch_q <= '0;
             amo_state_q       <= AMO_IDLE;
             amo_old_val_q     <= 64'd0;
+            sc_state_q        <= SC_IDLE;
+            sc_acq_ok_q       <= 1'b0;
+            sc_fail_streak_q  <= 4'd0;
+            sc_backoff_cnt_q  <= 4'd0;
+            sc_lfsr_q         <= 4'h5;
             mmio_state_q        <= MMIO_IDLE;
             mmio_req_valid_o    <= 1'b0;
             mmio_req_addr_o     <= '0;
@@ -1866,6 +2014,49 @@ module fursoy_s1_lsu_queues
                 endcase
             end
 
+            // Slice-2 Coherence-Point SC Acquire State Machine & LFSR Livelock Backoff
+            sc_lfsr_q <= (sc_lfsr_q == 4'd0) ? 4'h5 : {sc_lfsr_q[2:0], sc_lfsr_q[3] ^ sc_lfsr_q[2]};
+            if (sc_backoff_cnt_q != 4'd0) begin
+                sc_backoff_cnt_q <= sc_backoff_cnt_q - 4'd1;
+            end
+
+            if (flush_valid_i) begin
+                if (sc_state_q != SC_READY_COMP) begin
+                    sc_state_q <= SC_IDLE;
+                end
+            end else if (SMP_COHERENCE_EN) begin
+                case (sc_state_q)
+                    SC_IDLE: begin
+                        if (l1d_sc_acquire_valid_o) begin
+                            if (l1d_sc_acquire_done_i) begin
+                                sc_acq_ok_q <= l1d_sc_acquire_ok_i;
+                                sc_state_q  <= SC_READY_COMP;
+                                if (l1d_sc_acquire_ok_i) begin
+                                    sq_q[sq_drain_head_q].drained <= 1'b1;
+                                end
+                            end else if (l1d_sc_acquire_accepted_i) begin
+                                sc_state_q <= SC_WAIT_L1D;
+                            end
+                        end
+                    end
+                    SC_WAIT_L1D: begin
+                        if (l1d_sc_acquire_done_i) begin
+                            sc_acq_ok_q <= l1d_sc_acquire_ok_i;
+                            sc_state_q  <= SC_READY_COMP;
+                            if (l1d_sc_acquire_ok_i) begin
+                                sq_q[sq_drain_head_q].drained <= 1'b1;
+                            end
+                        end
+                    end
+                    SC_READY_COMP: begin
+                        if (p2_comp_valid && comp_ack_i && p2_clear_sq && sq_q[p2_cleared_sq_idx].is_sc) begin
+                            sc_state_q <= SC_IDLE;
+                        end
+                    end
+                    default: sc_state_q <= SC_IDLE;
+                endcase
+            end
+
             if (l1d0_issue_fire) begin
                 lq_q[cand_slot0].issued_to_l1d      <= 1'b1;
                 lq_q[cand_slot0].is_speculative     <= lq_entry_is_speculative[cand_slot0];
@@ -1961,6 +2152,10 @@ module fursoy_s1_lsu_queues
                 sq_q[sq_drain_head_q].valid   <= 1'b0;
                 sq_q[sq_drain_head_q].drained <= 1'b1;
                 sq_drain_head_q <= sq_drain_head_q + 4'd1;
+            end else if (SMP_COHERENCE_EN && sq_head_committed && sq_q[sq_drain_head_q].is_sc && sq_q[sq_drain_head_q].drained) begin
+                // Coherence-point SC already wrote L1D prior to ROB commit; advance SQ drain head cleanly
+                sq_q[sq_drain_head_q].valid   <= 1'b0;
+                sq_drain_head_q <= sq_drain_head_q + 4'd1;
             end else if (sq_head_committed && sq_q[sq_drain_head_q].is_fence) begin
                 if (l1d_quiescent_i) begin
                     sq_q[sq_drain_head_q].valid   <= 1'b0;
@@ -1983,13 +2178,14 @@ module fursoy_s1_lsu_queues
                 res_valid_q <= 1'b0;
             end else begin
                 // Load-Reserved completion on Port 2 or Port 3 establishes reservation unless
-                // a younger conflicting store simultaneously retires on lane 1.
+                // a remote invalidating snoop or younger conflicting store simultaneously wins.
                 if (p2_comp_valid && comp_ack_i && p2_clear_lq &&
                     ((lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_W) || (lq_q[p2_cleared_lq_idx].sub_op == MEM_LR_D))) begin
-                    if (retire_valid_i[0] &&
-                        (lq_q[p2_cleared_lq_idx].rob_idx == retire_rob_idx_i[0]) &&
-                        (lq_q[p2_cleared_lq_idx].rob_epoch == retire_epoch_i[0]) &&
-                        store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == lq_q[p2_cleared_lq_idx].pa[55:6])) begin
+                    if ((SMP_COHERENCE_EN && matches_inv_snoop(lq_q[p2_cleared_lq_idx].pa[55:6])) ||
+                        (retire_valid_i[0] &&
+                         (lq_q[p2_cleared_lq_idx].rob_idx == retire_rob_idx_i[0]) &&
+                         (lq_q[p2_cleared_lq_idx].rob_epoch == retire_epoch_i[0]) &&
+                         store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == lq_q[p2_cleared_lq_idx].pa[55:6]))) begin
                         res_valid_q <= 1'b0;
                     end else begin
                         res_valid_q <= 1'b1;
@@ -1998,10 +2194,11 @@ module fursoy_s1_lsu_queues
                     end
                 end else if (p3_comp_valid && p3_comp_ack_i && p3_clear_lq &&
                              ((lq_q[p3_cleared_lq_idx].sub_op == MEM_LR_W) || (lq_q[p3_cleared_lq_idx].sub_op == MEM_LR_D))) begin
-                    if (retire_valid_i[0] &&
-                        (lq_q[p3_cleared_lq_idx].rob_idx == retire_rob_idx_i[0]) &&
-                        (lq_q[p3_cleared_lq_idx].rob_epoch == retire_epoch_i[0]) &&
-                        store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == lq_q[p3_cleared_lq_idx].pa[55:6])) begin
+                    if ((SMP_COHERENCE_EN && matches_inv_snoop(lq_q[p3_cleared_lq_idx].pa[55:6])) ||
+                        (retire_valid_i[0] &&
+                         (lq_q[p3_cleared_lq_idx].rob_idx == retire_rob_idx_i[0]) &&
+                         (lq_q[p3_cleared_lq_idx].rob_epoch == retire_epoch_i[0]) &&
+                         store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == lq_q[p3_cleared_lq_idx].pa[55:6]))) begin
                         res_valid_q <= 1'b0;
                     end else begin
                         res_valid_q <= 1'b1;
@@ -2010,8 +2207,10 @@ module fursoy_s1_lsu_queues
                     end
                 end else if ((store0_retiring && (sq_q[retire0_sq_slot].pa[55:6] == res_pa_q[55:6])) ||
                              (store1_retiring && (sq_q[retire1_sq_slot].pa[55:6] == res_pa_q[55:6])) ||
+                             (SMP_COHERENCE_EN && res_valid_q && matches_inv_snoop(res_pa_q[55:6])) ||
+                             (SMP_COHERENCE_EN && l1d_sc_acquire_done_i) ||
                              (p2_comp_valid && comp_ack_i && p2_clear_sq && sq_q[p2_cleared_sq_idx].is_sc)) begin
-                    // Invalidation on matching-line store retiring or SC completion
+                    // Invalidation on matching-line store retiring, remote inv snoop, or SC execution/completion
                     res_valid_q <= 1'b0;
                 end
 
@@ -2023,6 +2222,17 @@ module fursoy_s1_lsu_queues
                         sq_q[p2_cleared_sq_idx].completed <= 1'b1;
                         if (sq_q[p2_cleared_sq_idx].is_sc) begin
                             sq_q[p2_cleared_sq_idx].sc_success <= sc_ok;
+                            if (SMP_COHERENCE_EN) begin
+                                if (sc_ok) begin
+                                    sc_fail_streak_q <= 4'd0;
+                                end else begin
+                                    sc_fail_streak_q <= (sc_fail_streak_q == 4'd15) ? 4'd15 : (sc_fail_streak_q + 4'd1);
+                                    if (sc_fail_streak_q >= 4'd3) begin
+                                        // Full 4-bit LFSR backoff bounded to 4..15 cycles
+                                        sc_backoff_cnt_q <= (sc_lfsr_q[3:2] == 2'b00) ? {2'b01, sc_lfsr_q[1:0]} : sc_lfsr_q[3:0];
+                                    end
+                                end
+                            end
                         end
                     end
                 end
@@ -2325,11 +2535,20 @@ module fursoy_s1_lsu_queues
                 m2_trt_valid_q  <= 1'b0;
                 m3_viol_valid_q <= 1'b0;
             end else begin
-                // Stage M3 Generation from Stage M2 Dual-CAM match (cam_match already squash-filtered)
-                if ((m2_agu_active || m2_trt_active) && viol_found) begin
-                    m3_viol_valid_q     <= 1'b1;
-                    m3_viol_rob_idx_q   <= lq_q[oldest_viol_lq].rob_idx;
-                    m3_viol_rob_epoch_q <= lq_q[oldest_viol_lq].rob_epoch;
+                // Stage M3 Generation from Stage M2 Dual-CAM or Snoop-vs-InFlight-Rsp Match
+                if (((m2_agu_active || m2_trt_active) && viol_found) || snoop_inflight_viol_found) begin
+                    if (snoop_inflight_viol_found &&
+                        (!((m2_agu_active || m2_trt_active) && viol_found) ||
+                         (rob_dist(lq_q[oldest_snoop_inflight_lq].rob_idx, rob_head_i) <
+                          rob_dist(lq_q[oldest_viol_lq].rob_idx, rob_head_i)))) begin
+                        m3_viol_valid_q     <= 1'b1;
+                        m3_viol_rob_idx_q   <= lq_q[oldest_snoop_inflight_lq].rob_idx;
+                        m3_viol_rob_epoch_q <= lq_q[oldest_snoop_inflight_lq].rob_epoch;
+                    end else begin
+                        m3_viol_valid_q     <= 1'b1;
+                        m3_viol_rob_idx_q   <= lq_q[oldest_viol_lq].rob_idx;
+                        m3_viol_rob_epoch_q <= lq_q[oldest_viol_lq].rob_epoch;
+                    end
                 end else if (recover_valid_i && m3_viol_valid_q &&
                              (rob_dist(m3_viol_rob_idx_q, rob_head_i) > rob_dist(recover_rob_idx_i, rob_head_i))) begin
                     m3_viol_valid_q     <= 1'b0;
@@ -2361,9 +2580,9 @@ module fursoy_s1_lsu_queues
                 end
 
                 // External Coherence Snoop Load Hazard Invalidation (§8.3, PROP_M7_36)
-                if (snoop_req_valid_i && snoop_do_inv) begin
+                if (snoop_chk_valid) begin
                     for (int l = 0; l < LQ_DEPTH; l++) begin
-                        if (snoop_lq_match[l]) begin
+                        if (snoop_lq_match[l] || snoop_inflight_match[l]) begin
                             lq_q[l].violated <= 1'b1;
                         end
                     end
@@ -2477,6 +2696,10 @@ module fursoy_s1_lsu_queues
             // Assertion 3: Stores must NEVER modify L1D cache before retirement
             if (l1d_store_drain_valid_o && !sq_q[sq_drain_head_q].committed) begin
                 $fatal(1, "[LSU QUEUES ASSERTION FAILED] Uncommitted store attempted L1D drain!");
+            end
+            // Assertion (P0-1): Pipeline flush must never cancel an in-flight uncached MMIO bus transaction
+            if (flush_valid_i && (mmio_state_q != MMIO_IDLE)) begin
+                $fatal(1, "[LSU QUEUES ASSERTION FAILED] Pipeline flush occurred while uncached MMIO in flight!");
             end
             // Assertion 4: Loads must NEVER access memory while older store PA unresolved unless speculative
             if (l1d0_issue_fire && (lq_q[cand_slot0].replay_safe || lq_q[cand_slot0].is_mmio || lq_q[cand_slot0].is_lr)) begin

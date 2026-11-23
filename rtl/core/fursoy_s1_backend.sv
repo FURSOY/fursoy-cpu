@@ -23,7 +23,9 @@
 
 module fursoy_s1_backend
     import fursoy_s1_pkg::*;
-(
+#(
+    parameter bit SMP_COHERENCE_EN = 1'b0
+) (
     input  logic              clk_i,
     input  logic              rst_i,
     input  logic              frontend_en_i,
@@ -181,16 +183,20 @@ module fursoy_s1_backend
     output logic              bus_rd_req_valid_o,
     output logic [49:0]       bus_rd_req_addr_o,
     output mshr_idx_t         bus_rd_req_tag_o,
+    output coh_req_op_t       bus_rd_req_op_o,
     input  logic              bus_rd_req_ready_i,
 
     input  logic              bus_rd_rsp_valid_i,
     input  mshr_idx_t         bus_rd_rsp_tag_i,
     input  logic [511:0]      bus_rd_rsp_data_i,
+    input  mesi_state_t       bus_rd_rsp_state_i,
+    input  logic              bus_rd_rsp_has_data_i,
 
     // Write Channel (WBB Dirty Evictions)
     output logic              bus_wr_req_valid_o,
     output logic [49:0]       bus_wr_req_addr_o,
     output logic [511:0]      bus_wr_req_data_o,
+    output logic              bus_wr_req_dirty_o,
     input  logic              bus_wr_req_ready_i,
 
     input  logic              bus_wr_rsp_valid_i,
@@ -287,14 +293,17 @@ module fursoy_s1_backend
     output logic [1:0]        lq_ready_o,
     output logic [1:0]        sq_ready_o,
 
-    // External Coherence Snoop Interface (Milestone 7 Section 8)
+    // External Coherence Snoop Interface (Milestone 7 Section 8 / Slice-2)
     input  logic              snoop_req_valid_i,
     input  logic [55:0]       snoop_req_addr_i,
     input  logic [1:0]        snoop_req_type_i,
+    output logic              snoop_req_ready_o,
     output logic              snoop_rsp_valid_o,
     output logic              snoop_rsp_has_data_o,
     output logic              snoop_rsp_was_dirty_o,
     output logic [511:0]      snoop_rsp_data_o,
+    input  logic              snoop_rsp_ready_i,
+    output logic              snoop_rsp_ack_only_o,
 
     // Hardware PTW Coherent Dirty-Line Snoop (Read-Only, Non-Destructive)
     input  logic [55:0]       ptw_snoop_pa_i,
@@ -380,7 +389,11 @@ module fursoy_s1_backend
     output logic              vec_mem_rsp_valid_o,
     output logic [63:0]       vec_mem_rsp_rdata_o,
     output logic              vec_mem_rsp_exception_o,
-    output logic [4:0]        vec_mem_rsp_cause_o
+    output logic [4:0]        vec_mem_rsp_cause_o,
+
+    // Slice-2 Non-Speculative IRQ Interlock for SC/AMO
+    input  logic              irq_pending_i,
+    output logic              atomic_irq_inhibit_o
 );
 
     // -------------------------------------------------------------------------
@@ -1286,7 +1299,9 @@ module fursoy_s1_backend
     // -------------------------------------------------------------------------
     wire [MEM_IQ_DEPTH-1:0] memiq_diag_ready;
 
-    fursoy_s1_lsu u_lsu (
+    fursoy_s1_lsu #(
+        .SMP_COHERENCE_EN        (SMP_COHERENCE_EN)
+    ) u_lsu (
         .clk_i                   (clk_i),
         .rst_i                   (rst_i),
         .flush_valid_i           (flush_valid_i),
@@ -1406,14 +1421,18 @@ module fursoy_s1_backend
         .bus_rd_req_valid_o      (bus_rd_req_valid_o),
         .bus_rd_req_addr_o       (bus_rd_req_addr_o),
         .bus_rd_req_tag_o        (bus_rd_req_tag_o),
+        .bus_rd_req_op_o         (bus_rd_req_op_o),
         .bus_rd_req_ready_i      (bus_rd_req_ready_i),
         .bus_rd_rsp_valid_i      (bus_rd_rsp_valid_i),
         .bus_rd_rsp_tag_i        (bus_rd_rsp_tag_i),
         .bus_rd_rsp_data_i       (bus_rd_rsp_data_i),
+        .bus_rd_rsp_state_i      (bus_rd_rsp_state_i),
+        .bus_rd_rsp_has_data_i   (bus_rd_rsp_has_data_i),
 
         .bus_wr_req_valid_o      (bus_wr_req_valid_o),
         .bus_wr_req_addr_o       (bus_wr_req_addr_o),
         .bus_wr_req_data_o       (bus_wr_req_data_o),
+        .bus_wr_req_dirty_o      (bus_wr_req_dirty_o),
         .bus_wr_req_ready_i      (bus_wr_req_ready_i),
         .bus_wr_rsp_valid_i      (bus_wr_rsp_valid_i),
 
@@ -1475,14 +1494,20 @@ module fursoy_s1_backend
         .snoop_req_valid_i       (snoop_req_valid_i),
         .snoop_req_addr_i        (snoop_req_addr_i),
         .snoop_req_type_i        (snoop_req_type_i),
+        .snoop_req_ready_o       (snoop_req_ready_o),
         .snoop_rsp_valid_o       (snoop_rsp_valid_o),
         .snoop_rsp_has_data_o    (snoop_rsp_has_data_o),
         .snoop_rsp_was_dirty_o   (snoop_rsp_was_dirty_o),
         .snoop_rsp_data_o        (snoop_rsp_data_o),
+        .snoop_rsp_ready_i       (snoop_rsp_ready_i),
+        .snoop_rsp_ack_only_o    (snoop_rsp_ack_only_o),
 
         .ptw_snoop_pa_i          (ptw_snoop_pa_i),
         .ptw_snoop_dirty_hit_o   (ptw_snoop_dirty_hit_o),
         .ptw_snoop_data_o        (ptw_snoop_data_o),
+
+        .irq_pending_i           (irq_pending_i),
+        .atomic_irq_inhibit_o    (atomic_irq_inhibit_o),
 
         .event_mem_dual_issue_o  (event_mem_dual_issue_o),
         .event_bank_access_count_o(event_bank_access_count_o),

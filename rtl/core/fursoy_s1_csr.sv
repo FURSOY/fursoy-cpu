@@ -39,6 +39,7 @@ module fursoy_s1_csr
 ) (
     input  logic              clk_i,
     input  logic              rst_i,
+    input  logic [63:0]       mhartid_i,
     input  logic [1:0]        priv_mode_i,
     input  logic [63:0]       mstatus_i,
 
@@ -167,6 +168,7 @@ module fursoy_s1_csr
     input  logic              recovering_i,
     input  logic              reconstructing_i,
     input  logic              retire_replay_i,
+    input  logic              atomic_irq_inhibit_i,
 
     // Milestone 9 Phase A: Candidate Interrupt Status & WFI Sleep Output
     output logic              irq_pending_valid_o,
@@ -414,9 +416,13 @@ module fursoy_s1_csr
             12'h343: old_csr_val = mtval_q;
             12'h344: old_csr_val = mip_val;
 
-            // Machine Identification (Read-Only 0)
-            12'hf11, 12'hf12, 12'hf13, 12'hf14: begin
+            // Machine Identification
+            12'hf11, 12'hf12, 12'hf13: begin
                 old_csr_val   = 64'd0;
+                csr_read_only = 1'b1;
+            end
+            12'hf14: begin
+                old_csr_val   = mhartid_i;
                 csr_read_only = 1'b1;
             end
 
@@ -978,7 +984,7 @@ module fursoy_s1_csr
                         sys_flush_valid_o     <= 1'b1;
                     end
                 end
-            end else if (irq_candidate_valid && !sys_retire_fire && !sys_redirect_valid_o && !sys_flush_valid_o && !recovering_i && !reconstructing_i && !retire_replay_i && (!rob_empty_i || !frontend_en_i)) begin
+            end else if (irq_candidate_valid && !atomic_irq_inhibit_i && !sys_retire_fire && !sys_redirect_valid_o && !sys_flush_valid_o && !recovering_i && !reconstructing_i && !retire_replay_i && (!rob_empty_i || !frontend_en_i)) begin
                 // Asynchronous interrupt delivery at instruction boundary
                 if (irq_candidate_priv == 2'b01) begin
                     sepc_q   <= captured_pc;
@@ -1056,11 +1062,14 @@ module fursoy_s1_csr
                     end
 
                     SYS_WFI: begin
+                        // Flush younger speculative instructions behind WFI out of the ROB/LSU/frontend
+                        // in both paths so epilogue instructions after WFI (e.g. arch_cpu_idle stack pop)
+                        // can never retire while sleeping and re-execute on wakeup.
+                        sys_redirect_valid_o  <= 1'b1;
+                        sys_redirect_target_o <= pending_sys_q.pc_p4;
+                        sys_flush_valid_o     <= 1'b1;
                         if (mip_val != 64'd0) begin
-                            wfi_sleep_q           <= 1'b0;
-                            sys_redirect_valid_o  <= 1'b1;
-                            sys_redirect_target_o <= pending_sys_q.pc_p4;
-                            sys_flush_valid_o     <= 1'b1;
+                            wfi_sleep_q <= 1'b0;
                         end else begin
                             wfi_sleep_q     <= 1'b1;
                             wfi_resume_pc_q <= pending_sys_q.pc_p4;

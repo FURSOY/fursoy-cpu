@@ -1018,6 +1018,30 @@ package fursoy_s1_pkg;
     } mshr_waiter_t;
 
     // -------------------------------------------------------------------------
+    // Slice-2 SMP Cache Coherence Types
+    // -------------------------------------------------------------------------
+    typedef enum logic [1:0] {
+        MESI_I = 2'b00,
+        MESI_S = 2'b01,
+        MESI_E = 2'b10,
+        MESI_M = 2'b11
+    } mesi_state_t;
+
+    typedef enum logic [1:0] {
+        COH_GETS    = 2'b00,
+        COH_GETM    = 2'b01,
+        COH_UPGRADE = 2'b10,
+        COH_GETS_NC = 2'b11
+    } coh_req_op_t;
+
+    typedef enum logic [1:0] {
+        SNOOP_LEGACY_INV = 2'b00,
+        SNOOP_INV        = 2'b01,
+        SNOOP_GETS       = 2'b10,
+        SNOOP_GETM       = 2'b11
+    } snoop_op_t;
+
+    // -------------------------------------------------------------------------
     // MSHR Entry Structure (Section 9)
     // -------------------------------------------------------------------------
     typedef enum logic [2:0] {
@@ -1041,6 +1065,15 @@ package fursoy_s1_pkg;
         logic             victim_dirty;       // Frozen victim dirty status
         logic [15:0]      waiter_mask;        // Active LQ waiters
         logic [15:0]      store_drain_mask;   // Committed SQ entries waiting to write-allocate
+        // Slice-2 MESI coherence extensions (unused when SMP_COHERENCE_EN=0)
+        coh_req_op_t      req_op;             // COH_GETS, COH_GETM, COH_UPGRADE
+        logic [1:0]       upgrade_way;        // Existing L1D way for COH_UPGRADE
+        mesi_state_t      grant_state;        // MESI state granted by coherence hub
+        logic             grant_has_data;     // 1=fill 512b line, 0=dataless UPGRADE ack
+        logic             grant_committed;    // Grant accepted into Beat1/commit
+        logic             snoop_inv_seen;     // Forward Inv hit pending COH_UPGRADE
+        logic             is_amo;             // Slice-2: AMO MSHR needing E/M line lock + waiter
+        logic             is_sc;              // Slice-2: SC acquire MSHR (Wait Hub -> merge SC write)
     } mshr_entry_t;
 
     // -------------------------------------------------------------------------

@@ -29,7 +29,8 @@
 module fursoy_s1_frontend
     import fursoy_s1_pkg::*;
 #(
-    parameter logic [63:0] RESET_PC = 64'h0000_0000_8000_0000
+    parameter logic [63:0] RESET_PC = 64'h0000_0000_8000_0000,
+    parameter bit SMP_COHERENCE_EN = 1'b0
 ) (
     input  logic              clk_i,
     input  logic              rst_i,
@@ -164,6 +165,8 @@ module fursoy_s1_frontend
     input  logic [1:0]        l1i_bus_rd_rsp_tag_i,
     input  logic [511:0]      l1i_bus_rd_rsp_data_i,
     input  logic              l1i_bus_rd_rsp_error_i,
+    input  logic              l1i_inval_line_valid_i,
+    input  logic [49:0]       l1i_inval_line_addr_i,
 
     // PTW Memory Bus (64-bit PTE read)
     output logic              ptw_mem_req_valid_o,
@@ -717,7 +720,9 @@ module fursoy_s1_frontend
     // L1I translation response valid
 
 
-    fursoy_s1_l1i u_l1i (
+    fursoy_s1_l1i #(
+        .SMP_COHERENCE_EN         (SMP_COHERENCE_EN)
+    ) u_l1i (
         .clk_i                    (clk_i),
         .rst_i                    (rst_i || !frontend_en_i),
 
@@ -731,6 +736,8 @@ module fursoy_s1_frontend
         .stall_f3_i               (stall_downstream),
         .redirect_flush_i         (any_redirect || fence_i_frontend_purge),
         .l1i_inval_all_i          (fence_i_l1i_inval),
+        .l1i_inval_line_valid_i   (l1i_inval_line_valid_i),
+        .l1i_inval_line_addr_i    (l1i_inval_line_addr_i),
         .sfence_vma_i             (sfence_vma_valid_i),
         .fq_free_count_i          (fq_free_count),
         .ptw_req_active_i         (ptw_mem_req_valid_o),

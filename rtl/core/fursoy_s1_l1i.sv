@@ -33,7 +33,11 @@
 /* verilator lint_off UNUSEDSIGNAL */
 module fursoy_s1_l1i
     import fursoy_s1_pkg::*;
-(
+#(
+    /* verilator lint_off UNUSEDPARAM */
+    parameter bit SMP_COHERENCE_EN = 1'b0
+    /* verilator lint_on UNUSEDPARAM */
+) (
     input  logic              clk_i,
     input  logic              rst_i,
 
@@ -51,6 +55,8 @@ module fursoy_s1_l1i
     input  logic              stall_f3_i,           // Downstream Fetch Queue backpressure
     input  logic              redirect_flush_i,     // Pipeline flush / redirect pulse
     input  logic              l1i_inval_all_i,      // FENCE.I flash tag invalidation
+    input  logic              l1i_inval_line_valid_i, // Slice-2 coherent single-line invalidation
+    input  logic [49:0]       l1i_inval_line_addr_i,  // PA[55:6]
     input  logic              sfence_vma_i,         // SFENCE.VMA or satp write address translation purge
     input  logic [4:0]        fq_free_count_i,      // Downstream Fetch Queue free slot count
     input  logic              ptw_req_active_i,     // Shared PTW memory activity priority
@@ -186,6 +192,8 @@ module fursoy_s1_l1i
     } imshr_entry_t;
 
     imshr_entry_t imshr_q [IMSHR_DEPTH];
+    logic [1:0]   imshr_discard_cnt_q  [IMSHR_DEPTH];
+    logic         imshr_line_inval_q   [IMSHR_DEPTH];
 
     assign imshr_occ_o = (imshr_q[0].valid ? 2'd1 : 2'd0) + (imshr_q[1].valid ? 2'd1 : 2'd0);
 
@@ -249,25 +257,25 @@ module fursoy_s1_l1i
     wire mshr0_idle_or_sent = !imshr_q[0].valid || imshr_q[0].req_sent;
 
     // Bus request triggers & MSHR ownership transfer
-    wire mshr0_fresh_req   = !redirect_flush_i && !f2_skid_q.valid && !mshr1_has_waiter &&
-                             f2_miss && !mshr0_match && !mshr1_match && !imshr_q[0].valid;
-    wire mshr0_retry_req   = !redirect_flush_i && imshr_q[0].valid && !imshr_q[0].req_sent;
+    wire mshr0_fresh_req   = !redirect_flush_i && !l1i_inval_all_i && !f2_skid_q.valid && !mshr1_has_waiter &&
+                             f2_miss && !mshr0_match && !mshr1_match && !imshr_q[0].valid &&
+                             (imshr_discard_cnt_q[0] == 2'd0);
+    wire mshr0_retry_req   = !redirect_flush_i && !l1i_inval_all_i && imshr_q[0].valid && !imshr_q[0].req_sent;
 
-    wire mshr1_can_promote = !redirect_flush_i && !f2_skid_q.valid &&
+    wire mshr1_can_promote = !redirect_flush_i && !l1i_inval_all_i && !f2_skid_q.valid &&
                              mshr1_collision && imshr_q[1].is_prefetch && !imshr_q[1].waiter_valid &&
-                             !mshr1_rsp_arriving &&
-                             (!mshr0_has_waiter || (imshr_q[0].req_sent && imshr_q[1].req_sent && !stall_f3_i && (fq_free_count_i >= 5'd4)));
+                             !mshr1_rsp_arriving && !mshr0_has_waiter;
 
     wire nlp_alloc_eligible = nlp_trigger_valid &&
                               !nlp_page_boundary_abort && !cand_already_resident &&
-                              !imshr_q[1].valid && mshr0_idle_or_sent &&
+                              !imshr_q[1].valid && (imshr_discard_cnt_q[1] == 2'd0) && mshr0_idle_or_sent &&
                               (fq_free_count_i >= 5'd2) &&
                               !redirect_flush_i && !l1i_inval_all_i && !sfence_vma_i &&
                               !ptw_req_active_i &&
                               !mshr0_fresh_req;
 
-    wire mshr1_retry_req = !redirect_flush_i && !sfence_vma_i && imshr_q[1].valid && !imshr_q[1].req_sent && !ptw_req_active_i && !mshr0_fresh_req && !mshr0_retry_req;
-    wire mshr1_fresh_req = !redirect_flush_i && !sfence_vma_i && nlp_alloc_eligible;
+    wire mshr1_retry_req = !redirect_flush_i && !l1i_inval_all_i && !sfence_vma_i && imshr_q[1].valid && !imshr_q[1].req_sent && !ptw_req_active_i && !mshr0_fresh_req && !mshr0_retry_req;
+    wire mshr1_fresh_req = !redirect_flush_i && !l1i_inval_all_i && !sfence_vma_i && nlp_alloc_eligible;
 
     // -------------------------------------------------------------------------
     // External Bus Read Request Arbitration (Strict Demand Prioritization)
@@ -428,9 +436,29 @@ module fursoy_s1_l1i
             end
 
             for (int i = 0; i < IMSHR_DEPTH; i++) begin
-                imshr_q[i] <= '0;
+                imshr_q[i]             <= '0;
+                imshr_discard_cnt_q[i] <= 2'd0;
+                imshr_line_inval_q[i]  <= 1'b0;
             end
         end else begin
+            // Track stale in-flight responses invalidated by FENCE.I / SFENCE.VMA
+            for (int i = 0; i < IMSHR_DEPTH; i++) begin
+                logic inval_this;
+                logic rsp_this;
+                logic req_inflight_this;
+                inval_this = (l1i_inval_all_i && imshr_q[i].valid) ||
+                             (!l1i_inval_all_i && sfence_vma_i && (i == 1) && imshr_q[1].valid && imshr_q[1].is_prefetch);
+                req_inflight_this = imshr_q[i].req_sent ||
+                                    (bus_rd_req_valid_o && bus_rd_req_ready_i && (bus_rd_req_tag_o[0] == 1'(i)));
+                rsp_this = bus_rd_rsp_valid_i && (bus_rd_rsp_tag_i[0] == 1'(i));
+
+                if (inval_this && req_inflight_this && !rsp_this) begin
+                    imshr_discard_cnt_q[i] <= imshr_discard_cnt_q[i] + 2'd1;
+                end else if (!inval_this && rsp_this && (imshr_discard_cnt_q[i] != 2'd0)) begin
+                    imshr_discard_cnt_q[i] <= imshr_discard_cnt_q[i] - 2'd1;
+                end
+            end
+
             // -----------------------------------------------------------------
             // A. FENCE.I Flash Invalidation & SFENCE.VMA Translation Purge
             // -----------------------------------------------------------------
@@ -440,9 +468,24 @@ module fursoy_s1_l1i
                         valid_array[s][w] <= 1'b0;
                     end
                 end
-                imshr_q[0].valid <= 1'b0;
-                imshr_q[1].valid <= 1'b0;
+                imshr_q[0].valid      <= 1'b0;
+                imshr_q[1].valid      <= 1'b0;
+                imshr_line_inval_q[0] <= 1'b0;
+                imshr_line_inval_q[1] <= 1'b0;
             end else begin
+                if (l1i_inval_line_valid_i) begin
+                    for (int w = 0; w < L1I_WAYS; w++) begin
+                        if (valid_array[l1i_inval_line_addr_i[5:0]][w] &&
+                            (tag_array[l1i_inval_line_addr_i[5:0]][w] == l1i_inval_line_addr_i[49:6])) begin
+                            valid_array[l1i_inval_line_addr_i[5:0]][w] <= 1'b0;
+                        end
+                    end
+                    for (int i = 0; i < IMSHR_DEPTH; i++) begin
+                        if (imshr_q[i].valid && (imshr_q[i].line_addr == l1i_inval_line_addr_i)) begin
+                            imshr_line_inval_q[i] <= 1'b1;
+                        end
+                    end
+                end
                 if (sfence_vma_i) begin
                     // SFENCE.VMA purges active speculative prefetch tracking (§7.4)
                     if (imshr_q[1].valid && imshr_q[1].is_prefetch) begin
@@ -505,6 +548,7 @@ module fursoy_s1_l1i
                 imshr_q[0].req_sent      <= bus_rd_req_ready_i;
                 imshr_q[0].is_prefetch   <= 1'b0;
                 imshr_q[0].suppress_push <= 1'b0;
+                imshr_line_inval_q[0]    <= 1'b0;
             end else if (mshr0_retry_req && bus_rd_req_ready_i) begin
                 imshr_q[0].req_sent      <= 1'b1;
             end
@@ -530,6 +574,7 @@ module fursoy_s1_l1i
                 imshr_q[1].req_sent      <= bus_rd_req_ready_i;
                 imshr_q[1].is_prefetch   <= 1'b1;
                 imshr_q[1].suppress_push <= 1'b1;
+                imshr_line_inval_q[1]    <= 1'b0;
             end else if (mshr1_retry_req && bus_rd_req_ready_i) begin
                 imshr_q[1].req_sent      <= 1'b1;
             end
@@ -537,10 +582,17 @@ module fursoy_s1_l1i
             // -----------------------------------------------------------------
             // F. Handle Memory Refill Arrival
             // -----------------------------------------------------------------
-            if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid) begin
-                imshr_q[bus_rd_rsp_tag_i[0]].valid <= 1'b0; // Deallocate MSHR
+            if (bus_rd_rsp_valid_i && imshr_q[bus_rd_rsp_tag_i[0]].valid &&
+                (imshr_discard_cnt_q[bus_rd_rsp_tag_i[0]] == 2'd0) &&
+                !l1i_inval_all_i &&
+                !(sfence_vma_i && (bus_rd_rsp_tag_i[0] == 1'b1) && imshr_q[1].is_prefetch)) begin
+                logic rsp_line_inv_hit;
+                rsp_line_inv_hit = imshr_line_inval_q[bus_rd_rsp_tag_i[0]] ||
+                                   (l1i_inval_line_valid_i && (l1i_inval_line_addr_i == imshr_q[bus_rd_rsp_tag_i[0]].line_addr));
+                imshr_q[bus_rd_rsp_tag_i[0]].valid    <= 1'b0; // Deallocate MSHR
+                imshr_line_inval_q[bus_rd_rsp_tag_i[0]] <= 1'b0;
 
-                if (!bus_rd_rsp_error_i) begin
+                if (!bus_rd_rsp_error_i && !rsp_line_inv_hit) begin
                     // Install line into L1I Cache Array using 3-bit Tree-PLRU
                     logic [1:0] victim_way;
                     logic [3:0] valids;

@@ -37,11 +37,13 @@ module fursoy_s1_core
 #(
     parameter int unsigned PRF_COUNT   = PRF_SIZE,       // 80
     parameter int unsigned AREG_NUM    = AREG_COUNT,      // 32
-    parameter int unsigned ROB_NUM     = ROB_DEPTH,       // 48
-    parameter int unsigned CHKPT_NUM   = NUM_CHECKPOINTS  // 8
+    parameter int unsigned ROB_NUM          = ROB_DEPTH,       // 48
+    parameter int unsigned CHKPT_NUM        = NUM_CHECKPOINTS, // 8
+    parameter bit          SMP_COHERENCE_EN = 1'b0
 ) (
     input  logic                   clk_i,
     input  logic                   rst_i,
+    input  logic [63:0]            mhartid_i,
 
     // -------------------------------------------------------------------------
     // Milestone 4 Frontend Mode Control
@@ -294,16 +296,20 @@ module fursoy_s1_core
     output logic                   bus_rd_req_valid_o,
     output logic [49:0]            bus_rd_req_addr_o,
     output mshr_idx_t              bus_rd_req_tag_o,
+    output coh_req_op_t            bus_rd_req_op_o,
     input  logic                   bus_rd_req_ready_i,
 
     input  logic                   bus_rd_rsp_valid_i,
     input  mshr_idx_t              bus_rd_rsp_tag_i,
     input  logic [511:0]           bus_rd_rsp_data_i,
+    input  mesi_state_t            bus_rd_rsp_state_i,
+    input  logic                   bus_rd_rsp_has_data_i,
 
     // Write Channel (L1D WBB Dirty Evictions)
     output logic                   bus_wr_req_valid_o,
     output logic [49:0]            bus_wr_req_addr_o,
     output logic [511:0]           bus_wr_req_data_o,
+    output logic                   bus_wr_req_dirty_o,
     input  logic                   bus_wr_req_ready_i,
 
     input  logic                   bus_wr_rsp_valid_i,
@@ -334,6 +340,8 @@ module fursoy_s1_core
     input  logic [1:0]             l1i_bus_rd_rsp_tag_i,
     input  logic [511:0]           l1i_bus_rd_rsp_data_i,
     input  logic                   l1i_bus_rd_rsp_error_i,
+    input  logic                   l1i_inval_line_valid_i,
+    input  logic [49:0]            l1i_inval_line_addr_i,
 
     // Shared PTW External Memory Read Channel (PTE Walk Reads)
     output logic                   ptw_mem_req_valid_o,
@@ -423,15 +431,18 @@ module fursoy_s1_core
     output logic [2:0]             ptw_dtlb_grants_since_itlb_o,
 
     // -------------------------------------------------------------------------
-    // External Coherent Caching-Agent Snoop Interface (Milestone 7 Section 8)
+    // External Coherent Caching-Agent Snoop Interface (Milestone 7 Section 8 / Slice-2)
     // -------------------------------------------------------------------------
     input  logic                   snoop_req_valid_i,
     input  logic [55:0]            snoop_req_addr_i,
     input  logic [1:0]             snoop_req_type_i,
+    output logic                   snoop_req_ready_o,
     output logic                   snoop_rsp_valid_o,
     output logic                   snoop_rsp_has_data_o,
     output logic                   snoop_rsp_was_dirty_o,
     output logic [511:0]           snoop_rsp_data_o,
+    input  logic                   snoop_rsp_ready_i,
+    output logic                   snoop_rsp_ack_only_o,
 
     // Milestone 8 Phase E Telemetry Test Injection Inputs
     input  logic                   test_ev_fp_issue_i,
@@ -618,6 +629,7 @@ module fursoy_s1_core
     logic [1:0]        csr_irq_pending_priv;
     /* verilator lint_on UNUSEDSIGNAL */
     logic              csr_wfi_sleep;
+    logic              lsu_atomic_irq_inhibit;
     logic [63:0]       fe_pc;
 
     assign wfi_sleep_o         = csr_wfi_sleep;
@@ -1034,14 +1046,14 @@ module fursoy_s1_core
         .recover_rob_idx_i       (int_recover_rob_idx),
         .recover_chkpt_id_i      (int_recover_chkpt_id),
 
-        // Flush
+        // Flush & Interrupt Retirement Gate (allow in-flight SC/AMO holding L1D lock/write to retire before taking async IRQ)
         .flush_valid_i           (core_flush_valid),
-        .irq_pending_i           (csr_irq_pending_valid),
+        .irq_pending_i           (csr_irq_pending_valid && !lsu_atomic_irq_inhibit),
 
         // Retirement (Serialization controller gates retire_ready_i when FENCE.I is at head, LSU gates when store check pending)
         .retire_ready_i          (frontend_en_i ? (retire_ready_i && fe_retire_ready && !csr_sfence_active) : retire_ready_i),
         .lsu_retire0_allow_i     (lsu_retire0_allow),
-        .lsu_retire1_allow_i     (lsu_retire1_allow && !csr_sys_pending_valid && !(frontend_en_i && fe_fence_i_at_head)),
+        .lsu_retire1_allow_i     (lsu_retire1_allow && !csr_sys_pending_valid && !(frontend_en_i && fe_fence_i_at_head) && !(csr_irq_pending_valid && lsu_atomic_irq_inhibit)),
 
         // Milestone 5 Phase B1 Memory Disambiguation Violation & Replay
         .lsu_violation_valid_i   (lsu_violation_valid),
@@ -1109,7 +1121,9 @@ module fursoy_s1_core
     // =========================================================================
     // 2. Milestone 2 & 3 Execution Backend
     // =========================================================================
-    fursoy_s1_backend u_backend (
+    fursoy_s1_backend #(
+        .SMP_COHERENCE_EN        (SMP_COHERENCE_EN)
+    ) u_backend (
         .clk_i                   (clk_i),
         .rst_i                   (rst_i),
         .frontend_en_i           (frontend_en_i),
@@ -1254,14 +1268,18 @@ module fursoy_s1_core
         .bus_rd_req_valid_o      (bus_rd_req_valid_o),
         .bus_rd_req_addr_o       (bus_rd_req_addr_o),
         .bus_rd_req_tag_o        (bus_rd_req_tag_o),
+        .bus_rd_req_op_o         (bus_rd_req_op_o),
         .bus_rd_req_ready_i      (bus_rd_req_ready_i),
         .bus_rd_rsp_valid_i      (bus_rd_rsp_valid_i),
         .bus_rd_rsp_tag_i        (bus_rd_rsp_tag_i),
         .bus_rd_rsp_data_i       (bus_rd_rsp_data_i),
+        .bus_rd_rsp_state_i      (bus_rd_rsp_state_i),
+        .bus_rd_rsp_has_data_i   (bus_rd_rsp_has_data_i),
 
         .bus_wr_req_valid_o      (bus_wr_req_valid_o),
         .bus_wr_req_addr_o       (bus_wr_req_addr_o),
         .bus_wr_req_data_o       (bus_wr_req_data_o),
+        .bus_wr_req_dirty_o      (bus_wr_req_dirty_o),
         .bus_wr_req_ready_i      (bus_wr_req_ready_i),
         .bus_wr_rsp_valid_i      (bus_wr_rsp_valid_i),
 
@@ -1354,14 +1372,20 @@ module fursoy_s1_core
         .snoop_req_valid_i       (snoop_req_valid_i),
         .snoop_req_addr_i        (snoop_req_addr_i),
         .snoop_req_type_i        (snoop_req_type_i),
+        .snoop_req_ready_o       (snoop_req_ready_o),
         .snoop_rsp_valid_o       (snoop_rsp_valid_o),
         .snoop_rsp_has_data_o    (snoop_rsp_has_data_o),
         .snoop_rsp_was_dirty_o   (snoop_rsp_was_dirty_o),
         .snoop_rsp_data_o        (snoop_rsp_data_o),
+        .snoop_rsp_ready_i       (snoop_rsp_ready_i),
+        .snoop_rsp_ack_only_o    (snoop_rsp_ack_only_o),
 
         .ptw_snoop_pa_i          (fe_ptw_mem_req_addr),
         .ptw_snoop_dirty_hit_o   (ptw_snoop_dirty_hit),
         .ptw_snoop_data_o        (ptw_snoop_data),
+
+        .irq_pending_i           (csr_irq_pending_valid),
+        .atomic_irq_inhibit_o    (lsu_atomic_irq_inhibit),
 
         .event_mem_dual_issue_o  (be_event_mem_dual_issue),
         .event_bank_access_count_o(be_event_bank_access_count),
@@ -1496,6 +1520,7 @@ module fursoy_s1_core
     ) u_csr (
         .clk_i                   (clk_i),
         .rst_i                   (rst_i),
+        .mhartid_i               (mhartid_i),
         .priv_mode_i             (priv_mode_i),
         .mstatus_i               (mstatus_i),
 
@@ -1613,6 +1638,7 @@ module fursoy_s1_core
         .recovering_i            (int_recovering),
         .reconstructing_i        (int_reconstructing),
         .retire_replay_i         (retire_replay),
+        .atomic_irq_inhibit_i    (lsu_atomic_irq_inhibit),
 
         // Milestone 9 Phase A: Candidate Interrupt Status & WFI Sleep Output
         .irq_pending_valid_o     (csr_irq_pending_valid),
@@ -2862,7 +2888,8 @@ module fursoy_s1_core
     // 3. Milestone 4 Complete Frontend Subsystem
     // =========================================================================
     fursoy_s1_frontend #(
-        .RESET_PC                (64'h0000_0000_8000_0000)
+        .RESET_PC                (64'h0000_0000_8000_0000),
+        .SMP_COHERENCE_EN        (SMP_COHERENCE_EN)
     ) u_frontend (
         .clk_i                   (clk_i),
         .rst_i                   (rst_i),
@@ -2976,6 +3003,8 @@ module fursoy_s1_core
         .l1i_bus_rd_rsp_tag_i    (l1i_bus_rd_rsp_tag_i),
         .l1i_bus_rd_rsp_data_i   (l1i_bus_rd_rsp_data_i),
         .l1i_bus_rd_rsp_error_i  (l1i_bus_rd_rsp_error_i),
+        .l1i_inval_line_valid_i  (l1i_inval_line_valid_i),
+        .l1i_inval_line_addr_i   (l1i_inval_line_addr_i),
 
         // Shared PTW Memory Read Bus (Coherent with SQ + L1D Dirty State)
         .ptw_mem_req_valid_o     (fe_ptw_mem_req_valid),
