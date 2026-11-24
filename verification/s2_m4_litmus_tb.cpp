@@ -3,10 +3,12 @@
 // =============================================================================
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <deque>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <stdexcept>
@@ -111,15 +113,24 @@ int main(int argc, char **argv) {
 
   uint64_t cycles = 0;
   std::array<uint64_t, NUM_HARTS> hart_commits{};
+  std::map<std::string, uint64_t> litmus_iters;
   std::map<std::string, uint64_t> litmus_forbidden;
   std::map<std::string, uint64_t> litmus_observed;
+  uint64_t mp_ctrl_iters = 0;
   uint64_t mp_ctrl_reordered = 0;
   uint64_t mp_ctrl_seen11 = 0;
   bool seen_all_pass = false;
   bool seen_fail = false;
+  bool watchdog_stall = false;
   std::string line_buf;
   uint64_t post_pass_drain = 0;
   bool sb_ok = true;
+
+  constexpr uint64_t kProgressInterval = 1000000ULL;
+  constexpr uint64_t kWatchdogStallLimit = 500000ULL;
+  uint64_t last_total_commits = 0;
+  uint64_t cycles_since_commit = 0;
+  auto sim_t0 = std::chrono::steady_clock::now();
 
   auto parse_litmus_line = [&](const std::string &line) {
     if (line.rfind("[LITMUS] ", 0) != 0) return;
@@ -135,10 +146,12 @@ int main(int argc, char **argv) {
       return true;
     };
     if (name == "MP_CTRL") {
+      extract_num("iters=", mp_ctrl_iters);
       extract_num("reordered=", mp_ctrl_reordered);
       extract_num("observed=", mp_ctrl_seen11);
     } else {
-      uint64_t f = 0, o = 0;
+      uint64_t it = 0, f = 0, o = 0;
+      if (extract_num("iters=", it)) litmus_iters[name] = it;
       if (extract_num("forbidden=", f)) litmus_forbidden[name] = f;
       if (extract_num("observed=", o)) litmus_observed[name] = o;
     }
@@ -223,6 +236,32 @@ int main(int argc, char **argv) {
     }
 
     cycles++;
+    uint64_t total_commits = 0;
+    for (int h = 0; h < NUM_HARTS; h++) total_commits += hart_commits[h];
+    if (total_commits != last_total_commits) {
+      last_total_commits = total_commits;
+      cycles_since_commit = 0;
+    } else if (!seen_all_pass && !seen_fail) {
+      cycles_since_commit++;
+      if (cycles_since_commit >= kWatchdogStallLimit) {
+        std::cerr << "[WATCHDOG ERROR] No hart committed for " << kWatchdogStallLimit
+                  << " cycles at cycle=" << cycles << " total_commits=" << total_commits << std::endl;
+        watchdog_stall = true;
+        break;
+      }
+    }
+
+    if ((cycles % kProgressInterval) == 0) {
+      double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - sim_t0).count();
+      double cps = (elapsed > 0.0) ? (double(cycles) / elapsed) : 0.0;
+      std::cout << "[PROGRESS] N=" << NUM_HARTS << " cycles=" << cycles
+                << " elapsed_s=" << std::fixed << std::setprecision(1) << elapsed
+                << " cyc_per_s=" << std::setprecision(1) << cps
+                << " commits=" << total_commits
+                << " tests_done=" << litmus_forbidden.size() << "/8"
+                << std::endl;
+    }
+
     if (seen_all_pass || seen_fail) {
       post_pass_drain++;
       if (post_pass_drain >= 64) break;
@@ -242,7 +281,7 @@ int main(int argc, char **argv) {
     if (hart_commits[h] == 0) all_harts_ok = false;
   }
 
-  bool passed = sb_ok && seen_all_pass && !seen_fail && all_tests_present && zero_forbidden && all_harts_ok;
+  bool passed = sb_ok && !watchdog_stall && seen_all_pass && !seen_fail && all_tests_present && zero_forbidden && all_harts_ok;
 
   std::cout << "{\n"
             << "  \"status\": \"" << (passed ? "pass" : "fail") << "\",\n"
@@ -252,14 +291,17 @@ int main(int argc, char **argv) {
             << "  \"zero_forbidden\": " << (zero_forbidden ? "true" : "false") << ",\n"
             << "  \"all_harts_ok\": " << (all_harts_ok ? "true" : "false") << ",\n"
             << "  \"sb_ok\": " << (sb_ok ? "true" : "false") << ",\n"
+            << "  \"watchdog_stall\": " << (watchdog_stall ? "true" : "false") << ",\n"
+            << "  \"mp_ctrl_iters\": " << mp_ctrl_iters << ",\n"
             << "  \"mp_ctrl_reordered\": " << mp_ctrl_reordered << ",\n"
             << "  \"mp_ctrl_seen11\": " << mp_ctrl_seen11 << ",\n"
             << "  \"litmus_tests\": {";
   for (size_t i = 0; i < 8; i++) {
     const char *t = req_tests[i];
+    uint64_t it = litmus_iters.count(t) ? litmus_iters[t] : 0;
     uint64_t f = litmus_forbidden.count(t) ? litmus_forbidden[t] : 999999;
     uint64_t o = litmus_observed.count(t) ? litmus_observed[t] : 0;
-    std::cout << (i ? "," : "") << "\n    \"" << t << "\": {\"forbidden\": " << f << ", \"observed\": " << o << "}";
+    std::cout << (i ? "," : "") << "\n    \"" << t << "\": {\"iters\": " << it << ", \"forbidden\": " << f << ", \"observed\": " << o << "}";
   }
   std::cout << "\n  },\n"
             << "  \"swmr_violations\": " << sb.stats.swmr_violations << ",\n"

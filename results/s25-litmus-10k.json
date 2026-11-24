@@ -1,0 +1,233 @@
+{
+  "milestone": "S2.5-M2b",
+  "suite": "rvwmo_litmus_10k",
+  "contract_ref": "docs/architecture/slice2-smp-v1.md \u00a76.1-\u00a76.2",
+  "generated_at_utc": "2026-11-24T10:06:36Z",
+  "rtl_sha256": "3da97dcef426ef3d3bfebd6c21399df21ba24ea9fce2ce4fd5503e1b408da7dc",
+  "iters_per_test": 10000,
+  "max_cycles": 150000000,
+  "patterns": [
+    "MP",
+    "SB",
+    "LB",
+    "IRIW",
+    "CoRR",
+    "CoWR",
+    "CoRW",
+    "CoWW"
+  ],
+  "scoreboard_mode": "per_cycle_100pct",
+  "status": "pass",
+  "configs": {
+    "n2": {
+      "num_harts": 2,
+      "verilator_threads": 4,
+      "iters_per_test": 10000,
+      "max_cycles": 150000000,
+      "status": "pass",
+      "exit_code": 0,
+      "started_at_utc": "2026-11-23T21:11:31Z",
+      "finished_at_utc": "2026-11-24T01:54:01Z",
+      "soc_rebuilt": false,
+      "soc_build_seconds": 0.0,
+      "link_seconds": 2.943,
+      "wall_seconds": 16950.572,
+      "cycles": 37830985,
+      "cycles_per_second": 2231.84,
+      "peak_rss_kib": 281732,
+      "host_mem_end_kib": {
+        "MemTotal": 16244356,
+        "MemAvailable": 14903016,
+        "SwapTotal": 4194304,
+        "SwapFree": 4194304,
+        "SwapUsed": 0
+      },
+      "total_commits": 57225023,
+      "aggregate_ipc": 1.5126,
+      "per_hart_commits": [
+        30426733,
+        26798290
+      ],
+      "all_tests_present": true,
+      "zero_forbidden": true,
+      "iters_verified": true,
+      "all_harts_ok": true,
+      "sb_ok": true,
+      "sb_full_cycle_coverage": true,
+      "watchdog_stall": false,
+      "swmr_violations": 0,
+      "metadata_violations": 0,
+      "inclusion_violations": 0,
+      "data_coherence_violations": 0,
+      "sb_cycle_checks": 37830985,
+      "mp_ctrl_iters": 10000,
+      "mp_ctrl_reordered": 0,
+      "mp_ctrl_seen11": 219,
+      "litmus_tests": {
+        "MP": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 4908
+        },
+        "SB": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 9998
+        },
+        "LB": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 9995
+        },
+        "IRIW": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 0
+        },
+        "CoRR": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 9384
+        },
+        "CoWR": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 80000
+        },
+        "CoRW": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 4981
+        },
+        "CoWW": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 10000
+        }
+      },
+      "uart_lines": [
+        "[LITMUS] MP iters=10000 forbidden=0 observed=4908",
+        "[LITMUS] MP_CTRL iters=10000 reordered=0 observed=219",
+        "[LITMUS] SB iters=10000 forbidden=0 observed=9998",
+        "[LITMUS] LB iters=10000 forbidden=0 observed=9995",
+        "[LITMUS] IRIW iters=10000 forbidden=0 observed=0",
+        "[LITMUS] CoRR iters=10000 forbidden=0 observed=9384",
+        "[LITMUS] CoWR iters=10000 forbidden=0 observed=80000",
+        "[LITMUS] CoRW iters=10000 forbidden=0 observed=4981",
+        "[LITMUS] CoWW iters=10000 forbidden=0 observed=10000",
+        "[LITMUS_ALL_PASS]"
+      ],
+      "command": [
+        "/home/fsoye/fursoy-cpu/build/s25_litmus_10k/Vs2_m4_litmus_n2_t4",
+        "/home/fsoye/fursoy-cpu/build/s25_litmus_10k/s2_m4_litmus_n2_i10000.elf",
+        "150000000"
+      ]
+    },
+    "n4": {
+      "num_harts": 4,
+      "verilator_threads": 2,
+      "iters_per_test": 10000,
+      "max_cycles": 150000000,
+      "status": "pass",
+      "exit_code": 0,
+      "started_at_utc": "2026-11-23T21:11:34Z",
+      "finished_at_utc": "2026-11-24T10:06:22Z",
+      "soc_rebuilt": false,
+      "soc_build_seconds": 0.0,
+      "link_seconds": 4.286,
+      "wall_seconds": 46487.32,
+      "cycles": 44272075,
+      "cycles_per_second": 952.35,
+      "peak_rss_kib": 292304,
+      "host_mem_end_kib": {
+        "MemTotal": 16244356,
+        "MemAvailable": 15176040,
+        "SwapTotal": 4194304,
+        "SwapFree": 4194304,
+        "SwapUsed": 0
+      },
+      "total_commits": 78692317,
+      "aggregate_ipc": 1.7775,
+      "per_hart_commits": [
+        25197634,
+        17638625,
+        17778801,
+        18077257
+      ],
+      "all_tests_present": true,
+      "zero_forbidden": true,
+      "iters_verified": true,
+      "all_harts_ok": true,
+      "sb_ok": true,
+      "sb_full_cycle_coverage": true,
+      "watchdog_stall": false,
+      "swmr_violations": 0,
+      "metadata_violations": 0,
+      "inclusion_violations": 0,
+      "data_coherence_violations": 0,
+      "sb_cycle_checks": 44272075,
+      "mp_ctrl_iters": 10000,
+      "mp_ctrl_reordered": 0,
+      "mp_ctrl_seen11": 3265,
+      "litmus_tests": {
+        "MP": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 4824
+        },
+        "SB": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 9084
+        },
+        "LB": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 9324
+        },
+        "IRIW": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 6307
+        },
+        "CoRR": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 26469
+        },
+        "CoWR": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 80000
+        },
+        "CoRW": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 3401
+        },
+        "CoWW": {
+          "iters": 10000,
+          "forbidden": 0,
+          "observed": 10000
+        }
+      },
+      "uart_lines": [
+        "[LITMUS] MP iters=10000 forbidden=0 observed=4824",
+        "[LITMUS] MP_CTRL iters=10000 reordered=0 observed=3265",
+        "[LITMUS] SB iters=10000 forbidden=0 observed=9084",
+        "[LITMUS] LB iters=10000 forbidden=0 observed=9324",
+        "[LITMUS] IRIW iters=10000 forbidden=0 observed=6307",
+        "[LITMUS] CoRR iters=10000 forbidden=0 observed=26469",
+        "[LITMUS] CoWR iters=10000 forbidden=0 observed=80000",
+        "[LITMUS] CoRW iters=10000 forbidden=0 observed=3401",
+        "[LITMUS] CoWW iters=10000 forbidden=0 observed=10000",
+        "[LITMUS_ALL_PASS]"
+      ],
+      "command": [
+        "/home/fsoye/fursoy-cpu/build/s25_litmus_10k/Vs2_m4_litmus_n4_t2",
+        "/home/fsoye/fursoy-cpu/build/s25_litmus_10k/s2_m4_litmus_n4_i10000.elf",
+        "150000000"
+      ]
+    }
+  }
+}
