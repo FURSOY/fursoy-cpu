@@ -32,7 +32,7 @@ def render_dts(
             reg = <{h}>;
             status = "okay";
             compatible = "riscv";
-            riscv,isa = "rv64imafdv_zba_zbb_zicsr_zifencei";
+            riscv,isa = "rv64imafd_zba_zbb_zicsr_zifencei";
             mmu-type = "riscv,sv39";
 
             i-cache-size = <16384>;

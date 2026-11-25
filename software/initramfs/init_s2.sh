@@ -32,6 +32,14 @@ while [ "$IDX" -lt "$CPU_COUNT" ]; do
 done
 echo "[SMP_CPUINFO_PASS] online=${CPU_COUNT}"
 
+ISA_LINE=$(grep -m1 '^isa' /proc/cpuinfo || echo "")
+echo "CPUINFO_ISA=${ISA_LINE}"
+echo "$ISA_LINE" | grep -q 'rv64imafd' || fail "Expected rv64imafd in /proc/cpuinfo isa (${ISA_LINE})"
+if echo "$ISA_LINE" | grep -qE 'rv64imafd[a-z]*[cv]'; then
+    fail "Unexpected c or v advertised in /proc/cpuinfo isa (${ISA_LINE})"
+fi
+echo "[SMP_ISA_PASS] ${ISA_LINE}"
+
 # 2. Verify taskset (if BusyBox applet present) + C sched_setaffinity + pthreads/stdatomic
 if command -v taskset >/dev/null 2>&1; then
     echo "[SMP 02] Exercising BusyBox taskset across CPUs 0..$(( CPU_COUNT - 1 ))"

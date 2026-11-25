@@ -1,0 +1,198 @@
+{
+  "milestone": "S2.5-M3b",
+  "suite": "linux_6_6_50_smp_fpu_preempt",
+  "rtl_sha256": "3da97dcef426ef3d3bfebd6c21399df21ba24ea9fce2ce4fd5503e1b408da7dc",
+  "kernel_version": "6.6.50",
+  "kernel_image_sha256": "ce090e2dbdc0501cdb3aa238a9895d1de5270a70ab76bda04c6d93628911efaf",
+  "kernel_config_checks": {
+    "CONFIG_SMP": true,
+    "CONFIG_NR_CPUS_4": true,
+    "CONFIG_FPU": true,
+    "CONFIG_RISCV_ISA_C_disabled": true,
+    "CONFIG_RISCV_ISA_V_disabled": true,
+    "CONFIG_INITRAMFS_COMPRESSION_NONE": true
+  },
+  "rvc_checks": {
+    "vmlinux": {
+      "path": "build/linux-6.6.50-smp/vmlinux",
+      "sha256": "4adc14b48520b000afd1ae2b0b601fcc414539c9be7a85d031a63ec9bd88d43c",
+      "elf_flags": "Flags:                             0x0",
+      "riscv_arch_tag": "",
+      "rvc_absent": true
+    },
+    "s2_smp_test": {
+      "path": "build/s2_m5/s2_smp_test",
+      "sha256": "2f0224f940b1342a6a5b5569f05bde8498c657ea21cf2ea47f6289c3504a6c13",
+      "elf_flags": "Flags:                             0x0",
+      "riscv_arch_tag": "Tag_RISCV_arch: \"rv64i2p1_m2p0_a2p1_f2p2_d2p2_zicsr2p0_zmmul1p0_zba1p0_zbb1p0\"",
+      "rvc_absent": true
+    }
+  },
+  "sail_smode_fpu_precheck": {
+    "name": "smode_fpu_ctx",
+    "matched": true,
+    "sail_steps": 209,
+    "fursoy_events": 210,
+    "gprs_checked": 114,
+    "fprs_checked": 18,
+    "vrfs_checked": 0,
+    "traps_checked": 9,
+    "mismatches": []
+  },
+  "generated_at_utc": "2026-11-25T04:54:54Z",
+  "status": "pass",
+  "configs": {
+    "n2": {
+      "num_harts": 2,
+      "verilator_threads": 4,
+      "status": "pass",
+      "exit_code": 0,
+      "started_at_utc": "2026-11-24T15:43:35Z",
+      "finished_at_utc": "2026-11-24T19:59:27Z",
+      "wall_seconds": 15352.336,
+      "cycles": 45279778,
+      "cycles_per_second": 2949.37,
+      "peak_rss_kib": 282696,
+      "host_mem_end_kib": {
+        "MemTotal": 16244356,
+        "MemAvailable": 14878352,
+        "SwapTotal": 4194304,
+        "SwapFree": 4194304,
+        "SwapUsed": 0
+      },
+      "total_commits": 48158534,
+      "aggregate_ipc": 1.0636,
+      "per_hart_commits": [
+        30636592,
+        17521942
+      ],
+      "per_hart_smode_commits": [
+        28371096,
+        15753576
+      ],
+      "per_hart_umode_commits": [
+        1327480,
+        1536889
+      ],
+      "uart_bytes": 6617,
+      "dtb": {
+        "dtb_path": "build/dts/fursoy_s2_n2.dtb",
+        "dtb_sha256": "8f5efad806ebe94cb062b7d11542f8c67837ba68b9e9e49ecb28c71e59020fd4",
+        "cpu_nodes": 2,
+        "riscv_isa": "rv64imafd_zba_zbb_zicsr_zifencei"
+      },
+      "sbi_sha256": "5a06e63e62b1440cb1b0868c953b6c02ee1f6e2cf248618d3eebb4abbc516229",
+      "cpuinfo_isa": "isa\t\t: rv64imafd_zicntr_zicsr_zifencei_zihpm_zba_zbb",
+      "uname": "Linux version 6.6.50 (fsoye@FURSOY) (riscv64-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #5 SMP Tue Nov 24 18:42:10 +03 2026",
+      "fpu_preempt_metrics": {
+        "threads": 4,
+        "cpus": 2,
+        "rounds": 6,
+        "migrations": 24,
+        "regs_checked": 1536,
+        "frm_modes": 5
+      },
+      "markers": {
+        "brought_up_cpus": true,
+        "smp_cpuinfo_pass": true,
+        "smp_isa_pass": true,
+        "smp_affinity_pass": true,
+        "smp_pthreads_pass": true,
+        "smp_fpu_preempt_pass": true,
+        "mem_stress_pass": true,
+        "smp_busybox_pass": true,
+        "fursoy_userspace_pass": true,
+        "s2_m5_linux_all_pass": true
+      },
+      "fatals": {
+        "kernel_panic": false,
+        "oops_or_bug": false,
+        "rcu_stall": false,
+        "sbi_trap": false,
+        "userspace_fail": false,
+        "unhandled_signal": false,
+        "watchdog_triggered": false
+      },
+      "console_log": "build/s25_linux_fpu_smp/n2/console_n2.log"
+    },
+    "n4": {
+      "num_harts": 4,
+      "verilator_threads": 2,
+      "status": "pass",
+      "exit_code": 0,
+      "started_at_utc": "2026-11-24T15:43:36Z",
+      "finished_at_utc": "2026-11-25T04:54:35Z",
+      "wall_seconds": 47458.504,
+      "cycles": 52731214,
+      "cycles_per_second": 1111.1,
+      "peak_rss_kib": 292240,
+      "host_mem_end_kib": {
+        "MemTotal": 16244356,
+        "MemAvailable": 15153900,
+        "SwapTotal": 4194304,
+        "SwapFree": 4194304,
+        "SwapUsed": 0
+      },
+      "total_commits": 63776215,
+      "aggregate_ipc": 1.2095,
+      "per_hart_commits": [
+        28172835,
+        13427423,
+        13275617,
+        8900340
+      ],
+      "per_hart_smode_commits": [
+        26450454,
+        12593112,
+        11000181,
+        8389082
+      ],
+      "per_hart_umode_commits": [
+        843614,
+        643887,
+        1943273,
+        316566
+      ],
+      "uart_bytes": 6790,
+      "dtb": {
+        "dtb_path": "build/dts/fursoy_s2_n4.dtb",
+        "dtb_sha256": "a2b7946dc65837355672ca06a8d3b07edc5dcb5628ff543ff21b336be4ce0c3f",
+        "cpu_nodes": 4,
+        "riscv_isa": "rv64imafd_zba_zbb_zicsr_zifencei"
+      },
+      "sbi_sha256": "37cdb73f34524c748aff96839f88e6758bd0f68ca3278b50e26d2e1c59f1a01e",
+      "cpuinfo_isa": "isa\t\t: rv64imafd_zicntr_zicsr_zifencei_zihpm_zba_zbb",
+      "uname": "Linux version 6.6.50 (fsoye@FURSOY) (riscv64-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #5 SMP Tue Nov 24 18:42:10 +03 2026",
+      "fpu_preempt_metrics": {
+        "threads": 8,
+        "cpus": 4,
+        "rounds": 6,
+        "migrations": 48,
+        "regs_checked": 3072,
+        "frm_modes": 5
+      },
+      "markers": {
+        "brought_up_cpus": true,
+        "smp_cpuinfo_pass": true,
+        "smp_isa_pass": true,
+        "smp_affinity_pass": true,
+        "smp_pthreads_pass": true,
+        "smp_fpu_preempt_pass": true,
+        "mem_stress_pass": true,
+        "smp_busybox_pass": true,
+        "fursoy_userspace_pass": true,
+        "s2_m5_linux_all_pass": true
+      },
+      "fatals": {
+        "kernel_panic": false,
+        "oops_or_bug": false,
+        "rcu_stall": false,
+        "sbi_trap": false,
+        "userspace_fail": false,
+        "unhandled_signal": false,
+        "watchdog_triggered": false
+      },
+      "console_log": "build/s25_linux_fpu_smp/n4/console_n4.log"
+    }
+  }
+}

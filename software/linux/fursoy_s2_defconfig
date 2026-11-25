@@ -1,12 +1,12 @@
-# Fursoy Slice-2 SMP Multi-Hart Linux Kernel Configuration (Linux 6.6.50)
-# Target Architecture: RV64IMA_Zicsr_Zifencei (non-C), Sv39, SMP (2..4 Harts),
+# Fursoy Slice-2/2.5 SMP Multi-Hart Linux Kernel Configuration (Linux 6.6.50)
+# Target Architecture: RV64IMAFD_Zicsr_Zifencei (non-C, CONFIG_FPU=y), Sv39, SMP (2..4 Harts),
 # SBI v2.0 (HSM/sPI/RFENCE/TIME/SRST/DBCN), CLINT, Multi-Context PLIC, 16550A UART
 
 CONFIG_64BIT=y
 CONFIG_ARCH_RV64I=y
 CONFIG_NONPORTABLE=y
 # CONFIG_RISCV_ISA_C is not set
-# CONFIG_FPU is not set
+CONFIG_FPU=y
 # CONFIG_RISCV_ISA_V is not set
 # CONFIG_RISCV_ISA_ZBB is not set
 
