@@ -2,7 +2,7 @@
 
 - **Document ID:** `docs/architecture/slice3-sizing-memo.md`
 - **Status:** Slice-2.5 Closeout Analysis (`S2.5-M4`) — Grounded strictly in verified Nangate45 OpenSTA, Verilator RTL, and Sail-RISCV artifacts (zero unmeasured projections, zero RTL edits in `S2.5-M4`).
-- **Canonical RTL SHA-256:** `3da97dcef426ef3d3bfebd6c21399df21ba24ea9fce2ce4fd5503e1b408da7dc` (39 core + 7 SoC/SMP production RTL files per `tools/s1_rtl_manifest.py` / `tools/s2_verilator_lib.py`).
+- **Canonical RTL SHA-256:** `3da97dcef426ef3d3bfebd6c21399df21ba24ea9fce2ce4fd5503e1b408da7dc` (`44` `CORE_RTL` + `4` `PLATFORM_RTL` manifest files; `71` total `.sv` files under `rtl/` hashed by `compute_rtl_sha256()`).
 - **Authoritative Evidence Inputs:**
   - `results/s25-core-sta.json` (SHA-256 `7d72170b43c7...`) — Core-wide Nangate45 OpenSTA & Synchronous SRAM Sensitivity
   - `results/s25-m1b-arith.json` (SHA-256 `49688e1e9690...`) — Synthesizable Radix-4 FDIV/VDIV & Booth/Wallace Multiplier
@@ -83,7 +83,7 @@ Two primary OoO leaf blocks exceeded the `600s` per-attempt Yosys 0.33 synthesis
 
 ### 2.4 Synchronous SRAM Macro Sensitivity Sweep (`tCQ = 0.60, 0.80, 1.00 ns`, `tSetup = 0.20 ns`)
 
-To bound the realism of Slice-2's combinational SRAM blackbox Liberty (`tools/synth/sram_macros.lib`, `tAA = 0.40 ns`), `tools/run_s25_core_sta.py` evaluated the existing synthesized Slice-2 netlists (`s2_l1d_netlist.v`, `s2_l2_netlist.v`, `s2_coherence_mgr_netlist.v`) against realistic **registered synchronous SRAM Liberty models** (`timing_type : rising_edge` `clk_i -> Q` at `tCQ = 0.60, 0.80, 1.00 ns`; `setup_rising = 0.20 ns`; `hold_rising = 0.05 ns`; `0` Warning 1216/441):
+To bound the realism of Slice-2's combinational SRAM blackbox Liberty (`tools/synth/lib/fursoy_sram_macros.lib`, `tAA = 0.40 ns`), `tools/run_s25_core_sta.py` evaluated the existing synthesized Slice-2 netlists (`s2_l1d_netlist.v`, `s2_l2_netlist.v`, `s2_coherence_mgr_netlist.v`) against realistic **registered synchronous SRAM Liberty models** (`timing_type : rising_edge` `clk_i -> Q` at `tCQ = 0.60, 0.80, 1.00 ns`; `setup_rising = 0.20 ns`; `hold_rising = 0.05 ns`; `0` Warning 1216/441):
 
 | Module | Baseline Comb SRAM (`0.40 ns`) WNS | Sync Block WNS (`0.60/0.80/1.00 ns`) | Sync Block `Fmax` | SRAM-Launch Slack (`clk_i -> Q -> end`) @ `0.60 / 0.80 / 1.00 ns` | SRAM-Capture Slack (`in/ff -> D`, `tSetup=0.20 ns`) | Max `tCQ` Before Breaking `500 MHz` |
 |---|---:|---:|---:|---:|---:|---:|
