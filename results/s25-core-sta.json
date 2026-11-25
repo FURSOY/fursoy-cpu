@@ -1,0 +1,1547 @@
+{
+  "milestone": "S2.5-M4",
+  "generated_at_utc": "2026-11-25T16:17:30Z",
+  "rtl_sha256": "3da97dcef426ef3d3bfebd6c21399df21ba24ea9fce2ce4fd5503e1b408da7dc",
+  "rtl_edits": 0,
+  "toolchain": {
+    "yosys": "Yosys 0.33 (git sha1 2584903a060)",
+    "opensta": "3.1.0",
+    "sv2v": "sv2v v0.0.13",
+    "liberty": "Nangate45 Typical (size=6692032 bytes)"
+  },
+  "constraints": {
+    "target_clock_mhz": 500.0,
+    "target_period_ns": 2.0,
+    "clock_uncertainty_ns": 0.05,
+    "input_delay_ns": 0.2,
+    "output_delay_ns": 0.2,
+    "nand2_area_um2": 0.798,
+    "false_paths": 0,
+    "multicycle_paths": 0
+  },
+  "warnings_audit": {
+    "total_warning_1216": 0,
+    "total_warning_441": 0,
+    "clean": true
+  },
+  "summary": {
+    "newly_characterized_requested": 25,
+    "newly_characterized_ok": 23,
+    "newly_characterized_failed_or_timeout": [
+      "fursoy_s1_lsu_queues",
+      "fursoy_s1_bpu"
+    ],
+    "total_core_leaf_blocks_characterized": 35,
+    "core_blocks_meeting_500mhz": 27,
+    "core_blocks_violating_500mhz": 8,
+    "worst_core_block": {
+      "name": "fursoy_s1_int_iq",
+      "kge": 203.08,
+      "dffs": 12160,
+      "wns_ns": -19.883,
+      "est_fmax_mhz": 45.7,
+      "source": "s25_m4_primary_ooo",
+      "mapping_mode": "abc_d1000"
+    },
+    "top_10_fmax_walls": [
+      {
+        "name": "fursoy_s1_int_iq",
+        "kge": 203.08,
+        "dffs": 12160,
+        "wns_ns": -19.883,
+        "est_fmax_mhz": 45.7,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_mem_iq",
+        "kge": 94.7,
+        "dffs": 6080,
+        "wns_ns": -19.165,
+        "est_fmax_mhz": 47.2,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_fma",
+        "kge": 68.11,
+        "dffs": 1239,
+        "wns_ns": -3.337,
+        "est_fmax_mhz": 187.4,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_fp_iq",
+        "kge": 29.63,
+        "dffs": 2096,
+        "wns_ns": -3.136,
+        "est_fmax_mhz": 194.7,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_vec_iq",
+        "kge": 79.36,
+        "dffs": 3108,
+        "wns_ns": -1.037,
+        "est_fmax_mhz": 329.3,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "mem2reg_abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_vrat",
+        "kge": 268.98,
+        "dffs": 17120,
+        "wns_ns": -0.552,
+        "est_fmax_mhz": 391.8,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "mem2reg_abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_hpm",
+        "kge": 62.25,
+        "dffs": 4162,
+        "wns_ns": -0.485,
+        "est_fmax_mhz": 402.4,
+        "source": "s25_m4_leaf_support",
+        "mapping_mode": "abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_fconv",
+        "kge": 46.91,
+        "dffs": 3219,
+        "wns_ns": -0.031,
+        "est_fmax_mhz": 492.4,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "abc_d1000"
+      },
+      {
+        "name": "fursoy_s1_l1d",
+        "kge": 468.32,
+        "dffs": 20942,
+        "wns_ns": 0.027,
+        "est_fmax_mhz": 506.8,
+        "source": "s2_gated_6"
+      },
+      {
+        "name": "fursoy_s1_rob",
+        "kge": 572.08,
+        "dffs": 29470,
+        "wns_ns": 0.246,
+        "est_fmax_mhz": 570.1,
+        "source": "s25_m4_primary_ooo",
+        "mapping_mode": "abc_d1000"
+      }
+    ],
+    "bottom_up_single_core_leaf_kge": 5373.87,
+    "bottom_up_single_core_leaf_dffs": 316450,
+    "note_area": "Bottom-up leaf sum excludes inter-module glue logic in structural wrappers (fursoy_s1_core inline RVV integer ALU) and represents flop-array RTL for L1I/BPU/VRF/PRF/FPRF (L1D data SRAM blackboxed)."
+  },
+  "coherence_mgr_area_decomposition": {
+    "fursoy_s2_coherence_mgr_inclusive_of_l2_kge": 3831.6,
+    "fursoy_s2_coherence_mgr_inclusive_of_l2_dffs": 224327,
+    "fursoy_s2_l2_kge": 3269.96,
+    "fursoy_s2_l2_dffs": 212480,
+    "standalone_coherence_logic_kge": 561.64,
+    "standalone_coherence_logic_dffs": 11847,
+    "note": "fursoy_s2_coherence_mgr instantiates fursoy_s2_l2 internally; standalone coherence logic = inclusive minus L2."
+  },
+  "newly_characterized_core_blocks": [
+    {
+      "name": "fursoy_s1_rob",
+      "group": "primary_ooo",
+      "description": "128-Entry Reorder Buffer (2-wide alloc/retire, 16-checkpoint recovery)",
+      "sv_path": "rtl/core/fursoy_s1_rob.sv",
+      "sv_sha256": "8e180bc66af814b7c45b88bcab3be5a9e815684fd82ed08195c498ecdad09833",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 527.75,
+      "sta_seconds": 13.52,
+      "peak_rss_kib": 4005648,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 328755,
+        "dff_count": 29470,
+        "chip_area_um2": 456521.170001,
+        "gate_equivalent_ge": 572081.7
+      },
+      "sta": {
+        "wns_ns": 0.246,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.504,
+        "startpoint": "comp_rob_idx_i[4] (input port clocked by clk)",
+        "endpoint": "retire_exc_val_o[10] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 570.1,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T05:45:58Z"
+    },
+    {
+      "name": "fursoy_s1_prf",
+      "group": "primary_ooo",
+      "description": "160-Entry x 64b Integer Physical Register File (flop-array RTL)",
+      "sv_path": "rtl/core/fursoy_s1_prf.sv",
+      "sv_sha256": "ae7ac599ee9c88ebd7a52b6c12d928ff35bde06e34e5d13143a1c23b2e3509b7",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 121.67,
+      "sta_seconds": 12.27,
+      "peak_rss_kib": 882136,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 303237,
+        "dff_count": 16384,
+        "chip_area_um2": 493697.862001,
+        "gate_equivalent_ge": 618669.0
+      },
+      "sta": {
+        "wns_ns": 0.839,
+        "tns_ns": 0.0,
+        "max_delay_ns": 0.911,
+        "startpoint": "probe_paddr_i[0] (input port clocked by clk)",
+        "endpoint": "probe_pdata_o[51] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 861.3,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T05:48:12Z"
+    },
+    {
+      "name": "fursoy_s1_fprf",
+      "group": "primary_ooo",
+      "description": "64-Entry x 64b Floating-Point Physical Register File (flop-array RTL)",
+      "sv_path": "rtl/core/fursoy_s1_fprf.sv",
+      "sv_sha256": "529728165b11eef7e5d767ad92a1a2290b26e3a08e3839ef14046253e6c7a5ef",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 16.27,
+      "sta_seconds": 2.25,
+      "peak_rss_kib": 190228,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 48981,
+        "dff_count": 4096,
+        "chip_area_um2": 81965.772,
+        "gate_equivalent_ge": 102714.0
+      },
+      "sta": {
+        "wns_ns": 0.939,
+        "tns_ns": 0.0,
+        "max_delay_ns": 0.811,
+        "startpoint": "raddr3_fp_i[0] (input port clocked by clk)",
+        "endpoint": "rdata3_fp_o[51] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 942.5,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T05:48:31Z"
+    },
+    {
+      "name": "fursoy_s1_int_iq",
+      "group": "primary_ooo",
+      "description": "32-Entry Integer Issue Queue (age-ordered dual-port wakeup/select)",
+      "sv_path": "rtl/core/fursoy_s1_int_iq.sv",
+      "sv_sha256": "dd54ad857728c3bdf653d05362435166abac68811c18c7f9fd2281b8afa44701",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 140.46,
+      "sta_seconds": 4.26,
+      "peak_rss_kib": 522264,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 102681,
+        "dff_count": 12160,
+        "chip_area_um2": 162057.042,
+        "gate_equivalent_ge": 203079.0
+      },
+      "sta": {
+        "wns_ns": -19.883,
+        "tns_ns": -16908.14,
+        "max_delay_ns": 21.633,
+        "startpoint": "rob_head_i[3] (input port clocked by clk)",
+        "endpoint": "issue0_uop_o[23] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 45.7,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T05:50:56Z"
+    },
+    {
+      "name": "fursoy_s1_mem_iq",
+      "group": "primary_ooo",
+      "description": "32-Entry Memory Issue Queue (AGU/Load/Store dispatch)",
+      "sv_path": "rtl/core/fursoy_s1_mem_iq.sv",
+      "sv_sha256": "06a2e38517d58ac058094849dfca4d495455ead70b19957aff86c6796d9a1804",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 223.32,
+      "sta_seconds": 2.5,
+      "peak_rss_kib": 702632,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 50317,
+        "dff_count": 6080,
+        "chip_area_um2": 75572.994,
+        "gate_equivalent_ge": 94703.0
+      },
+      "sta": {
+        "wns_ns": -19.165,
+        "tns_ns": -120600.02,
+        "max_delay_ns": 20.915,
+        "startpoint": "rob_head_i[1] (input port clocked by clk)",
+        "endpoint": "free_count_o[4] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 47.2,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T05:54:42Z"
+    },
+    {
+      "name": "fursoy_s1_fp_iq",
+      "group": "primary_ooo",
+      "description": "16-Entry Floating-Point Issue Queue (FMA/FDIV/FCONV dispatch)",
+      "sv_path": "rtl/core/fursoy_s1_fp_iq.sv",
+      "sv_sha256": "d40a4c4a695b0212b3c44d5f121abf5ed20f73cc70eb709fcc982479a9ec05b6",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 77.11,
+      "sta_seconds": 0.75,
+      "peak_rss_kib": 464432,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 15119,
+        "dff_count": 2096,
+        "chip_area_um2": 23641.814,
+        "gate_equivalent_ge": 29626.3
+      },
+      "sta": {
+        "wns_ns": -3.136,
+        "tns_ns": -457.18,
+        "max_delay_ns": 4.886,
+        "startpoint": "rob_head_i[1] (input port clocked by clk)",
+        "endpoint": "issue_uop_o[10] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 194.7,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T05:56:00Z"
+    },
+    {
+      "name": "fursoy_s1_lsu_queues",
+      "group": "primary_ooo",
+      "description": "16-Entry Load Queue + 16-Entry Store Queue + Forward/Snoop/MMIO",
+      "sv_path": "rtl/core/fursoy_s1_lsu_queues.sv",
+      "sv_sha256": "4b9446f90f57502da63b67c5679d8df8f95b83cdcd5afa7af1719364c39bd1c3",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "timeout",
+      "mapping_mode": "mem2reg_abc_d1000",
+      "synth_seconds": 600.16,
+      "peak_rss_kib": 2739392,
+      "error": "Yosys timed out in mem2reg_abc_d1000",
+      "generated_utc": "2026-11-25T15:05:05Z"
+    },
+    {
+      "name": "fursoy_s1_bpu",
+      "group": "primary_ooo",
+      "description": "Branch Prediction Unit (512-entry BTB + 108b-GHR TAGE-Lite + 16-entry RAS)",
+      "sv_path": "rtl/core/fursoy_s1_bpu.sv",
+      "sv_sha256": "9d1e341940c02612e00dbc2f1544ce5efa13f65411bb699f4e45b70e1d486289",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "timeout",
+      "mapping_mode": "mem2reg_abc_fast",
+      "synth_seconds": 600.59,
+      "peak_rss_kib": 15510160,
+      "error": "Yosys timed out in mem2reg_abc_fast",
+      "generated_utc": "2026-11-25T15:25:36Z"
+    },
+    {
+      "name": "fursoy_s1_divider",
+      "group": "primary_ooo",
+      "description": "Iterative 64-bit Integer Divider (RV64M DIV/REM)",
+      "sv_path": "rtl/core/fursoy_s1_divider.sv",
+      "sv_sha256": "b0e6790c229472f978ffe80e70ea0f0a4bf60847414462233bfb659ce378c139",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 1.0,
+      "sta_seconds": 0.25,
+      "peak_rss_kib": 32348,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 801,
+        "dff_count": 91,
+        "chip_area_um2": 1139.278,
+        "gate_equivalent_ge": 1427.7
+      },
+      "sta": {
+        "wns_ns": 0.817,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.099,
+        "startpoint": "sub_op_i[1] (input port clocked by clk)",
+        "endpoint": "_1540_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 845.3,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T06:36:03Z"
+    },
+    {
+      "name": "fursoy_s1_fma",
+      "group": "primary_ooo",
+      "description": "IEEE-754 Single/Double Fused Multiply-Add Pipeline (SP 3c / DP 4c)",
+      "sv_path": "rtl/core/fursoy_s1_fma.sv",
+      "sv_sha256": "a0ebbe602b21a1494826d9aa26242883db71f0b3deabe12e8a7ffa967f8f44f1",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 85.13,
+      "sta_seconds": 1.75,
+      "peak_rss_kib": 352336,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 44808,
+        "dff_count": 1239,
+        "chip_area_um2": 54352.046,
+        "gate_equivalent_ge": 68110.3
+      },
+      "sta": {
+        "wns_ns": -3.337,
+        "tns_ns": -1194.74,
+        "max_delay_ns": 5.087,
+        "startpoint": "_88926_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "wb_data_o[12] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 187.4,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T06:37:31Z"
+    },
+    {
+      "name": "fursoy_s1_fconv",
+      "group": "primary_ooo",
+      "description": "IEEE-754 FP Compare, Min/Max, Sign-Inject, Move & Convert Unit",
+      "sv_path": "rtl/core/fursoy_s1_fconv.sv",
+      "sv_sha256": "07d9fcd9eb8c415609f31a87da5091c2e97aee6be91c9f069859194042b380f0",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 28.04,
+      "sta_seconds": 1.0,
+      "peak_rss_kib": 198960,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 23957,
+        "dff_count": 3219,
+        "chip_area_um2": 37434.712,
+        "gate_equivalent_ge": 46910.7
+      },
+      "sta": {
+        "wns_ns": -0.031,
+        "tns_ns": -17.93,
+        "max_delay_ns": 1.947,
+        "startpoint": "_45650_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "_43111_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 492.4,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T06:38:00Z"
+    },
+    {
+      "name": "fursoy_s1_l1i",
+      "group": "primary_ooo",
+      "description": "16 KiB 4-Way Set-Associative Instruction Cache (flop-array RTL)",
+      "sv_path": "rtl/core/fursoy_s1_l1i.sv",
+      "sv_sha256": "0fd1156c6391ce00072c0ba2cd2840bea16ace0e4c0f1183585dd4ae9b4bf5eb",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_fast_nomem2reg",
+      "synth_seconds": 381.06,
+      "sta_seconds": 37.55,
+      "peak_rss_kib": 2648864,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 1021062,
+        "dff_count": 143354,
+        "chip_area_um2": 1440409.950015,
+        "gate_equivalent_ge": 1805025.0
+      },
+      "sta": {
+        "wns_ns": 0.503,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.247,
+        "startpoint": "_1957631_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "f3_data_o[2] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 668.0,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T16:10:13Z"
+    },
+    {
+      "name": "fursoy_s1_vrf",
+      "group": "primary_ooo",
+      "description": "64-Entry x 256b Vector Register File (VLEN=256, 4x64b banks, flop-array RTL)",
+      "sv_path": "rtl/core/fursoy_s1_vrf.sv",
+      "sv_sha256": "f784d0a27ba82c1648f1e0766da3aac9ba05385a454c2e6c61b4ed18a5b3a02d",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 67.84,
+      "sta_seconds": 7.26,
+      "peak_rss_kib": 515124,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 162739,
+        "dff_count": 16384,
+        "chip_area_um2": 265234.718,
+        "gate_equivalent_ge": 332374.3
+      },
+      "sta": {
+        "wns_ns": 0.96,
+        "tns_ns": 0.0,
+        "max_delay_ns": 0.79,
+        "startpoint": "raddr3_v_i[0] (input port clocked by clk)",
+        "endpoint": "rdata3_v_o[0] (output port clocked by clk)"
+      },
+      "est_fmax_mhz": 961.5,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T06:52:41Z"
+    },
+    {
+      "name": "fursoy_s1_vrat",
+      "group": "primary_ooo",
+      "description": "Vector Register Alias Table + Bitmap Freelist + 16 Checkpoints",
+      "sv_path": "rtl/core/fursoy_s1_vrat.sv",
+      "sv_sha256": "3e7450ec3e79bb4ccd705345dfe3ea1e662f38ae3afc055a5c26122103266a27",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "mem2reg_abc_d1000",
+      "synth_seconds": 357.03,
+      "sta_seconds": 7.26,
+      "peak_rss_kib": 9655736,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 130652,
+        "dff_count": 17120,
+        "chip_area_um2": 214646.838,
+        "gate_equivalent_ge": 268981.0
+      },
+      "sta": {
+        "wns_ns": -0.552,
+        "tns_ns": -1376.62,
+        "max_delay_ns": 2.459,
+        "startpoint": "_228092_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "_229080_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 391.8,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T15:52:42Z"
+    },
+    {
+      "name": "fursoy_s1_vec_iq",
+      "group": "primary_ooo",
+      "description": "8-Entry Decoupled Vector Issue Queue",
+      "sv_path": "rtl/core/fursoy_s1_vec_iq.sv",
+      "sv_sha256": "b8fa714b8336c22c43b33f402dbdfca2e1e0ff6ea841781bad14212d9eb6ebcd",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "mem2reg_abc_d1000",
+      "synth_seconds": 36.31,
+      "sta_seconds": 2.0,
+      "peak_rss_kib": 542424,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 47007,
+        "dff_count": 3108,
+        "chip_area_um2": 63332.472,
+        "gate_equivalent_ge": 79364.0
+      },
+      "sta": {
+        "wns_ns": -1.037,
+        "tns_ns": -558.2,
+        "max_delay_ns": 2.946,
+        "startpoint": "rob_head_i[6] (input port clocked by clk)",
+        "endpoint": "_87452_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 329.3,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T15:53:51Z"
+    },
+    {
+      "name": "fursoy_s1_freelist",
+      "group": "leaf_support",
+      "description": "Integer Physical Register Freelist (128-entry, 16 checkpoints)",
+      "sv_path": "rtl/core/fursoy_s1_freelist.sv",
+      "sv_sha256": "1b3acfbb1dd6c1185c40fd7a6d7df1fdcc4361f599642fb06515ad1283e7bd6c",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 18.28,
+      "sta_seconds": 1.0,
+      "peak_rss_kib": 95184,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 18338,
+        "dff_count": 1059,
+        "chip_area_um2": 25990.062,
+        "gate_equivalent_ge": 32569.0
+      },
+      "sta": {
+        "wns_ns": 0.432,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.469,
+        "startpoint": "committed_mask_i[9] (input port clocked by clk)",
+        "endpoint": "_36160_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 637.8,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:38:31Z"
+    },
+    {
+      "name": "fursoy_s1_rat",
+      "group": "leaf_support",
+      "description": "Integer Register Alias Table (SRAT/ARAT + 16 checkpoints)",
+      "sv_path": "rtl/core/fursoy_s1_rat.sv",
+      "sv_sha256": "cd7e69055bb19034310611c069d4d2a3a31652a41d44bbc17f06383711edbe64",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 71.6,
+      "sta_seconds": 2.0,
+      "peak_rss_kib": 1291460,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 38719,
+        "dff_count": 4728,
+        "chip_area_um2": 58756.74,
+        "gate_equivalent_ge": 73630.0
+      },
+      "sta": {
+        "wns_ns": 0.332,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.573,
+        "startpoint": "_76974_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "_73201_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 599.5,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:39:44Z"
+    },
+    {
+      "name": "fursoy_s1_prf_status",
+      "group": "leaf_support",
+      "description": "160-Entry Integer PRF Ready/Scoreboard Bitvector",
+      "sv_path": "rtl/core/fursoy_s1_prf_status.sv",
+      "sv_sha256": "a5ee04cc0b8bda6304beeca0a36883cd2f846e94a53c5528b67ab060a9976ea9",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 7.01,
+      "sta_seconds": 0.5,
+      "peak_rss_kib": 306700,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 3962,
+        "dff_count": 159,
+        "chip_area_um2": 5237.54,
+        "gate_equivalent_ge": 6563.3
+      },
+      "sta": {
+        "wns_ns": 0.96,
+        "tns_ns": 0.0,
+        "max_delay_ns": 0.947,
+        "startpoint": "wb_preg_i[3] (input port clocked by clk)",
+        "endpoint": "_7845_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 961.5,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:39:52Z"
+    },
+    {
+      "name": "fursoy_s1_frat",
+      "group": "leaf_support",
+      "description": "FP Register Alias Table + 32-Entry FP Freelist + 16 Checkpoints",
+      "sv_path": "rtl/core/fursoy_s1_frat.sv",
+      "sv_sha256": "162579059de13d532b16d7f529e5a245f02833c69a61b600317e911b3516161d",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 49.82,
+      "sta_seconds": 1.75,
+      "peak_rss_kib": 546248,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 32326,
+        "dff_count": 3674,
+        "chip_area_um2": 51783.55,
+        "gate_equivalent_ge": 64891.7
+      },
+      "sta": {
+        "wns_ns": 0.281,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.628,
+        "startpoint": "_61044_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "_64182_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 581.7,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:40:44Z"
+    },
+    {
+      "name": "fursoy_s1_fprf_status",
+      "group": "leaf_support",
+      "description": "64-Entry FP PRF Ready/Scoreboard Bitvector",
+      "sv_path": "rtl/core/fursoy_s1_fprf_status.sv",
+      "sv_sha256": "35ca89a990f0ee361b1724ab351307477ba1f1663ddb986dd5fc0ac0bb87fd66",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 2.25,
+      "sta_seconds": 0.25,
+      "peak_rss_kib": 84236,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 1692,
+        "dff_count": 64,
+        "chip_area_um2": 2232.804,
+        "gate_equivalent_ge": 2798.0
+      },
+      "sta": {
+        "wns_ns": 1.108,
+        "tns_ns": 0.0,
+        "max_delay_ns": 0.798,
+        "startpoint": "wb_preg_i[1] (input port clocked by clk)",
+        "endpoint": "_3317_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 1121.1,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:40:46Z"
+    },
+    {
+      "name": "fursoy_s1_port1_buffers",
+      "group": "leaf_support",
+      "description": "Port-1 Multiply/Divide Result & Arbitration Buffers",
+      "sv_path": "rtl/core/fursoy_s1_port1_buffers.sv",
+      "sv_sha256": "b83a8bd6338e8398430dfb89922679a1ff4d6193746638712dcfc04c33cf5d29",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 2.5,
+      "sta_seconds": 0.5,
+      "peak_rss_kib": 59724,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 5426,
+        "dff_count": 588,
+        "chip_area_um2": 7989.31,
+        "gate_equivalent_ge": 10011.7
+      },
+      "sta": {
+        "wns_ns": 1.037,
+        "tns_ns": 0.0,
+        "max_delay_ns": 0.879,
+        "startpoint": "rob_head_i[2] (input port clocked by clk)",
+        "endpoint": "_10192_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 1038.4,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:40:49Z"
+    },
+    {
+      "name": "fursoy_s1_trt",
+      "group": "leaf_support",
+      "description": "32-Entry Load/Store Address Translation Request Tracker",
+      "sv_path": "rtl/core/fursoy_s1_trt.sv",
+      "sv_sha256": "638da8e5f82a2eb82ee4f7657edcfdeb5166b084bffdb1b6f18a06fd551c278f",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 34.05,
+      "sta_seconds": 0.75,
+      "peak_rss_kib": 360412,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 10260,
+        "dff_count": 1568,
+        "chip_area_um2": 16090.606,
+        "gate_equivalent_ge": 20163.7
+      },
+      "sta": {
+        "wns_ns": 0.54,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.366,
+        "startpoint": "_19188_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "_20204_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 684.9,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:41:24Z"
+    },
+    {
+      "name": "fursoy_s1_fetch_queue",
+      "group": "leaf_support",
+      "description": "Decoupled Instruction Fetch Queue",
+      "sv_path": "rtl/core/fursoy_s1_fetch_queue.sv",
+      "sv_sha256": "afe33613403b080e0a81f67772d902056917654ca86deb81fbee440f096da941",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 17.78,
+      "sta_seconds": 2.25,
+      "peak_rss_kib": 203612,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 54636,
+        "dff_count": 7329,
+        "chip_area_um2": 83227.942,
+        "gate_equivalent_ge": 104295.7
+      },
+      "sta": {
+        "wns_ns": 1.027,
+        "tns_ns": 0.0,
+        "max_delay_ns": 0.879,
+        "startpoint": "pop1_i (input port clocked by clk)",
+        "endpoint": "_101520_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 1027.7,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:41:45Z"
+    },
+    {
+      "name": "fursoy_s1_serialization",
+      "group": "leaf_support",
+      "description": "System/CSR/Fence Serialization Control FSM",
+      "sv_path": "rtl/core/fursoy_s1_serialization.sv",
+      "sv_sha256": "7adbc4e669e923628287b499fc67f24414c6510ef26c028be89e0990d25fb526",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 1.0,
+      "sta_seconds": 0.25,
+      "peak_rss_kib": 32824,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 918,
+        "dff_count": 146,
+        "chip_area_um2": 1629.516,
+        "gate_equivalent_ge": 2042.0
+      },
+      "sta": {
+        "wns_ns": 0.612,
+        "tns_ns": 0.0,
+        "max_delay_ns": 1.304,
+        "startpoint": "_1769_ (rising edge-triggered flip-flop clocked by clk)",
+        "endpoint": "_1754_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 720.5,
+      "timing_met_500mhz": true,
+      "generated_utc": "2026-11-25T14:41:46Z"
+    },
+    {
+      "name": "fursoy_s1_hpm",
+      "group": "leaf_support",
+      "description": "Hardware Performance Monitor + 8-Bucket Single-Owner CPI Engine",
+      "sv_path": "rtl/core/fursoy_s1_hpm.sv",
+      "sv_sha256": "687b2d585e3c71d76491f6417bb9fec7c3188536ad315dc5a00215e02edc7f00",
+      "pkg_sha256": "7fc4c8850ba70aba4a4acbdcf1571c32be3443bdf5a41c7358b2f0c54436c0d9",
+      "ks_sha256": "954fc9bf2badcf30f482053f18009e96bdaba31104a015bfa30f10f6060ed30e",
+      "status": "ok",
+      "mapping_mode": "abc_d1000",
+      "synth_seconds": 26.04,
+      "sta_seconds": 1.5,
+      "peak_rss_kib": 341420,
+      "yosys_div_cells": 0,
+      "yosys_mod_cells": 0,
+      "warning_1216_count": 0,
+      "warning_441_count": 0,
+      "yosys": {
+        "cell_count": 33922,
+        "dff_count": 4162,
+        "chip_area_um2": 49678.16,
+        "gate_equivalent_ge": 62253.3
+      },
+      "sta": {
+        "wns_ns": -0.485,
+        "tns_ns": -114.1,
+        "max_delay_ns": 2.401,
+        "startpoint": "retire_rob_idx_i[1] (input port clocked by clk)",
+        "endpoint": "_65344_ (rising edge-triggered flip-flop clocked by clk)"
+      },
+      "est_fmax_mhz": 402.4,
+      "timing_met_500mhz": false,
+      "generated_utc": "2026-11-25T14:42:14Z"
+    }
+  ],
+  "existing_gated_s1_blocks": [
+    {
+      "name": "fursoy_s1_branch_unit",
+      "source": "s1_gated_8",
+      "type": "Combinational",
+      "cells": 4086,
+      "dffs": 0,
+      "area_um2": 4346.17,
+      "kge": 5.45,
+      "max_delay_ns": 0.601,
+      "wns_ns": 1.399,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 1663.9,
+      "timing_met_500mhz": true,
+      "startpoint": "imm_i[2] (input port clocked by vclk)",
+      "endpoint": "actual_target_o[63] (output port clocked by vclk)"
+    },
+    {
+      "name": "fursoy_s1_csr",
+      "source": "s1_gated_8",
+      "type": "Sequential",
+      "cells": 14491,
+      "dffs": 1872,
+      "area_um2": 22253.56,
+      "kge": 27.89,
+      "max_delay_ns": 1.342,
+      "wns_ns": 0.623,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 726.2,
+      "timing_met_500mhz": true,
+      "startpoint": "irq_seip_i (input port clocked by clk)",
+      "endpoint": "_25486_ (rising edge-triggered flip-flop clocked by clk)"
+    },
+    {
+      "name": "fursoy_s1_dtlb",
+      "source": "s1_gated_8",
+      "type": "Sequential",
+      "cells": 50439,
+      "dffs": 6515,
+      "area_um2": 79759.57,
+      "kge": 99.95,
+      "max_delay_ns": 1.275,
+      "wns_ns": 0.525,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 678.0,
+      "timing_met_500mhz": true,
+      "startpoint": "p1_req_va_i[12] (input port clocked by clk)",
+      "endpoint": "p1_rsp_pa_o[30] (output port clocked by clk)"
+    },
+    {
+      "name": "fursoy_s1_itlb",
+      "source": "s1_gated_8",
+      "type": "Sequential",
+      "cells": 37063,
+      "dffs": 6304,
+      "area_um2": 61693.91,
+      "kge": 77.31,
+      "max_delay_ns": 1.21,
+      "wns_ns": 0.59,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 709.2,
+      "timing_met_500mhz": true,
+      "startpoint": "trans_req_va_i[12] (input port clocked by clk)",
+      "endpoint": "trans_rsp_pa_o[28] (output port clocked by clk)"
+    },
+    {
+      "name": "fursoy_s1_agu",
+      "source": "s1_gated_8",
+      "type": "Combinational",
+      "cells": 817,
+      "dffs": 0,
+      "area_um2": 856.25,
+      "kge": 1.07,
+      "max_delay_ns": 0.51,
+      "wns_ns": 1.49,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 1960.8,
+      "timing_met_500mhz": true,
+      "startpoint": "imm_i[2] (input port clocked by vclk)",
+      "endpoint": "ea_o[63] (output port clocked by vclk)"
+    },
+    {
+      "name": "fursoy_s1_ptw",
+      "source": "s1_gated_8",
+      "type": "Sequential",
+      "cells": 1797,
+      "dffs": 329,
+      "area_um2": 3040.91,
+      "kge": 3.81,
+      "max_delay_ns": 0.892,
+      "wns_ns": 1.069,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 1074.1,
+      "timing_met_500mhz": true,
+      "startpoint": "satp_i[6] (input port clocked by clk)",
+      "endpoint": "_3264_ (rising edge-triggered flip-flop clocked by clk)"
+    },
+    {
+      "name": "fursoy_s1_decode",
+      "source": "s1_gated_8",
+      "type": "Combinational",
+      "cells": 2777,
+      "dffs": 0,
+      "area_um2": 2953.66,
+      "kge": 3.7,
+      "max_delay_ns": 0.979,
+      "wns_ns": 1.021,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 1021.5,
+      "timing_met_500mhz": true,
+      "startpoint": "in0_entry_i[372] (input port clocked by vclk)",
+      "endpoint": "uop0_o[329] (output port clocked by vclk)"
+    },
+    {
+      "name": "fursoy_s1_alu",
+      "source": "s1_gated_8",
+      "type": "Combinational",
+      "cells": 4326,
+      "dffs": 0,
+      "area_um2": 5056.93,
+      "kge": 6.34,
+      "max_delay_ns": 1.153,
+      "wns_ns": 0.847,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 867.3,
+      "timing_met_500mhz": true,
+      "startpoint": "sub_op_i[6] (input port clocked by vclk)",
+      "endpoint": "result_o[57] (output port clocked by vclk)"
+    }
+  ],
+  "existing_gated_s2_blocks": [
+    {
+      "name": "fursoy_s2_clint",
+      "source": "s2_gated_6",
+      "params": {
+        "NUM_HARTS": 4
+      },
+      "sram_bb": false,
+      "cells": 2979,
+      "dffs": 394,
+      "area_um2": 4606.85,
+      "kge": 5.77,
+      "max_delay_ns": 1.559,
+      "wns_ns": 0.357,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 608.6,
+      "timing_met_500mhz": true,
+      "startpoint": "_5701_ (rising edge-triggered flip-flop clocked by clk)",
+      "endpoint": "_5762_ (rising edge-triggered flip-flop clocked by clk)",
+      "warning_1216_count": 0,
+      "warning_441_count": 0
+    },
+    {
+      "name": "fursoy_s2_plic",
+      "source": "s2_gated_6",
+      "params": {
+        "NUM_HARTS": 4
+      },
+      "sram_bb": false,
+      "cells": 10715,
+      "dffs": 561,
+      "area_um2": 14089.22,
+      "kge": 17.66,
+      "max_delay_ns": 1.407,
+      "wns_ns": 0.505,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 668.9,
+      "timing_met_500mhz": true,
+      "startpoint": "_20817_ (rising edge-triggered flip-flop clocked by clk)",
+      "endpoint": "_20977_ (rising edge-triggered flip-flop clocked by clk)",
+      "warning_1216_count": 0,
+      "warning_441_count": 0
+    },
+    {
+      "name": "fursoy_s2_mmio_xbar",
+      "source": "s2_gated_6",
+      "params": {
+        "NUM_HARTS": 4
+      },
+      "sram_bb": false,
+      "cells": 2059,
+      "dffs": 213,
+      "area_um2": 2861.1,
+      "kge": 3.59,
+      "max_delay_ns": 1.181,
+      "wns_ns": 0.735,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 790.5,
+      "timing_met_500mhz": true,
+      "startpoint": "mmio_req_valid_i[0] (input port clocked by clk)",
+      "endpoint": "_3807_ (rising edge-triggered flip-flop clocked by clk)",
+      "warning_1216_count": 0,
+      "warning_441_count": 0
+    },
+    {
+      "name": "fursoy_s2_l2",
+      "source": "s2_gated_6",
+      "params": {
+        "NUM_HARTS": 4,
+        "L2_SETS": 512
+      },
+      "sram_bb": true,
+      "cells": 1558821,
+      "dffs": 212480,
+      "area_um2": 2609428.08,
+      "kge": 3269.96,
+      "max_delay_ns": 1.436,
+      "wns_ns": 0.314,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 593.1,
+      "timing_met_500mhz": true,
+      "startpoint": "lu_addr_i[0] (input port clocked by clk)",
+      "endpoint": "lu_hit_data_o[100] (output port clocked by clk)",
+      "warning_1216_count": 0,
+      "warning_441_count": 0
+    },
+    {
+      "name": "fursoy_s2_coherence_mgr",
+      "source": "s2_gated_6",
+      "params": {
+        "NUM_HARTS": 4,
+        "L2_SETS": 512
+      },
+      "sram_bb": true,
+      "cells": 1857576,
+      "dffs": 224327,
+      "area_um2": 3057617.33,
+      "kge": 3831.6,
+      "max_delay_ns": 1.902,
+      "wns_ns": 0.008,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 502.0,
+      "timing_met_500mhz": true,
+      "startpoint": "_577329_ (rising edge-triggered flip-flop clocked by clk)",
+      "endpoint": "_579575_ (rising edge-triggered flip-flop clocked by clk)",
+      "warning_1216_count": 0,
+      "warning_441_count": 0
+    },
+    {
+      "name": "fursoy_s1_l1d",
+      "source": "s2_gated_6",
+      "params": {
+        "SMP_COHERENCE_EN": 1,
+        "L1D_SETS_PARAM": 64
+      },
+      "sram_bb": true,
+      "cells": 216202,
+      "dffs": 20942,
+      "area_um2": 373719.09,
+      "kge": 468.32,
+      "max_delay_ns": 1.723,
+      "wns_ns": 0.027,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 506.8,
+      "timing_met_500mhz": true,
+      "startpoint": "load0_req_pa_i[6] (input port clocked by clk)",
+      "endpoint": "load0_rsp_data_o[16] (output port clocked by clk)",
+      "warning_1216_count": 0,
+      "warning_441_count": 0
+    }
+  ],
+  "existing_s25_m1b_arith_blocks": [
+    {
+      "name": "fursoy_s1_fdiv",
+      "source": "s25_m1b_arith_3",
+      "cells": 12564,
+      "dffs": 850,
+      "area_um2": 18267.02,
+      "kge": 22.89,
+      "max_delay_ns": 1.431,
+      "wns_ns": 0.48,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 657.9,
+      "timing_met_500mhz": true
+    },
+    {
+      "name": "fursoy_s1_vec_div",
+      "source": "s25_m1b_arith_3",
+      "cells": 8666,
+      "dffs": 334,
+      "area_um2": 10876.47,
+      "kge": 13.63,
+      "max_delay_ns": 1.023,
+      "wns_ns": 0.887,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 898.5,
+      "timing_met_500mhz": true
+    },
+    {
+      "name": "fursoy_s1_multiplier",
+      "source": "s25_m1b_arith_3",
+      "cells": 23551,
+      "dffs": 1026,
+      "area_um2": 32913.51,
+      "kge": 41.24,
+      "max_delay_ns": 1.139,
+      "wns_ns": 0.776,
+      "tns_ns": 0.0,
+      "est_fmax_mhz": 817.0,
+      "timing_met_500mhz": true
+    }
+  ],
+  "sync_sram_sensitivity_sweep": {
+    "tcq_600ps": {
+      "tcq_ns": 0.6,
+      "tsetup_ns": 0.2,
+      "thold_ns": 0.05,
+      "modules": {
+        "fursoy_s1_l1d": {
+          "sta_seconds": 11.02,
+          "max_delay_ns": 1.808,
+          "wns_ns": 0.108,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 528.5,
+          "timing_met_500mhz": true,
+          "startpoint": "load1_req_pa_i[6] (input port clocked by clk)",
+          "endpoint": "_411708_ (rising edge-triggered flip-flop clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_bank_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "load1_rsp_data_o[16] (output port clocked by clk)",
+            "arrival_ns": 0.943,
+            "slack_ns": 0.807,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "store_drain_pa_i[6] (input port clocked by clk)",
+            "endpoint": "u_bank_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 1.423,
+            "slack_ns": 0.327,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        },
+        "fursoy_s2_l2": {
+          "sta_seconds": 60.58,
+          "max_delay_ns": 1.436,
+          "wns_ns": 0.314,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 593.1,
+          "timing_met_500mhz": true,
+          "startpoint": "lu_addr_i[0] (input port clocked by clk)",
+          "endpoint": "lu_hit_data_o[100] (output port clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "lu_hit_data_o[510] (output port clocked by clk)",
+            "arrival_ns": 0.75,
+            "slack_ns": 1.0,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "upd0_data_en_i (input port clocked by clk)",
+            "endpoint": "u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 0.229,
+            "slack_ns": 1.521,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        },
+        "fursoy_s2_coherence_mgr": {
+          "sta_seconds": 73.85,
+          "max_delay_ns": 1.902,
+          "wns_ns": 0.008,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 502.0,
+          "timing_met_500mhz": true,
+          "startpoint": "_577329_ (rising edge-triggered flip-flop clocked by clk)",
+          "endpoint": "_579575_ (rising edge-triggered flip-flop clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_l2/u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "_578986_ (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 0.791,
+            "slack_ns": 1.119,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "_567917_ (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "u_l2/u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 1.007,
+            "slack_ns": 0.743,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        }
+      }
+    },
+    "tcq_800ps": {
+      "tcq_ns": 0.8,
+      "tsetup_ns": 0.2,
+      "thold_ns": 0.05,
+      "modules": {
+        "fursoy_s1_l1d": {
+          "sta_seconds": 10.51,
+          "max_delay_ns": 1.808,
+          "wns_ns": 0.108,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 528.5,
+          "timing_met_500mhz": true,
+          "startpoint": "load1_req_pa_i[6] (input port clocked by clk)",
+          "endpoint": "_411708_ (rising edge-triggered flip-flop clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_bank_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "load1_rsp_data_o[16] (output port clocked by clk)",
+            "arrival_ns": 1.143,
+            "slack_ns": 0.607,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "store_drain_pa_i[6] (input port clocked by clk)",
+            "endpoint": "u_bank_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 1.423,
+            "slack_ns": 0.327,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        },
+        "fursoy_s2_l2": {
+          "sta_seconds": 61.84,
+          "max_delay_ns": 1.436,
+          "wns_ns": 0.314,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 593.1,
+          "timing_met_500mhz": true,
+          "startpoint": "lu_addr_i[0] (input port clocked by clk)",
+          "endpoint": "lu_hit_data_o[100] (output port clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "lu_hit_data_o[510] (output port clocked by clk)",
+            "arrival_ns": 0.95,
+            "slack_ns": 0.8,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "upd0_data_en_i (input port clocked by clk)",
+            "endpoint": "u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 0.229,
+            "slack_ns": 1.521,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        },
+        "fursoy_s2_coherence_mgr": {
+          "sta_seconds": 75.36,
+          "max_delay_ns": 1.902,
+          "wns_ns": 0.008,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 502.0,
+          "timing_met_500mhz": true,
+          "startpoint": "_577329_ (rising edge-triggered flip-flop clocked by clk)",
+          "endpoint": "_579575_ (rising edge-triggered flip-flop clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_l2/u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "_578986_ (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 0.991,
+            "slack_ns": 0.919,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "_567917_ (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "u_l2/u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 1.007,
+            "slack_ns": 0.743,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        }
+      }
+    },
+    "tcq_1000ps": {
+      "tcq_ns": 1.0,
+      "tsetup_ns": 0.2,
+      "thold_ns": 0.05,
+      "modules": {
+        "fursoy_s1_l1d": {
+          "sta_seconds": 10.52,
+          "max_delay_ns": 1.808,
+          "wns_ns": 0.108,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 528.5,
+          "timing_met_500mhz": true,
+          "startpoint": "load1_req_pa_i[6] (input port clocked by clk)",
+          "endpoint": "_411708_ (rising edge-triggered flip-flop clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_bank_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "load1_rsp_data_o[16] (output port clocked by clk)",
+            "arrival_ns": 1.343,
+            "slack_ns": 0.407,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "store_drain_pa_i[6] (input port clocked by clk)",
+            "endpoint": "u_bank_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 1.423,
+            "slack_ns": 0.327,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        },
+        "fursoy_s2_l2": {
+          "sta_seconds": 59.59,
+          "max_delay_ns": 1.436,
+          "wns_ns": 0.314,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 593.1,
+          "timing_met_500mhz": true,
+          "startpoint": "lu_addr_i[0] (input port clocked by clk)",
+          "endpoint": "lu_hit_data_o[100] (output port clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "lu_hit_data_o[510] (output port clocked by clk)",
+            "arrival_ns": 1.15,
+            "slack_ns": 0.6,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "upd0_data_en_i (input port clocked by clk)",
+            "endpoint": "u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 0.229,
+            "slack_ns": 1.521,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        },
+        "fursoy_s2_coherence_mgr": {
+          "sta_seconds": 74.11,
+          "max_delay_ns": 1.902,
+          "wns_ns": 0.008,
+          "tns_ns": 0.0,
+          "est_fmax_mhz": 502.0,
+          "timing_met_500mhz": true,
+          "startpoint": "_577329_ (rising edge-triggered flip-flop clocked by clk)",
+          "endpoint": "_579575_ (rising edge-triggered flip-flop clocked by clk)",
+          "sram_launch_path": {
+            "startpoint": "u_l2/u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "_578986_ (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 1.191,
+            "slack_ns": 0.719,
+            "status": "MET"
+          },
+          "sram_capture_path": {
+            "startpoint": "_567917_ (rising edge-triggered flip-flop clocked by clk)",
+            "endpoint": "u_l2/u_data_sram (rising edge-triggered flip-flop clocked by clk)",
+            "arrival_ns": 1.007,
+            "slack_ns": 0.743,
+            "status": "MET"
+          },
+          "warning_1216_count": 0,
+          "warning_441_count": 0
+        }
+      }
+    }
+  },
+  "hierarchy_wrappers_accounted": [
+    {
+      "name": "fursoy_s1_substrate",
+      "role": "Structural wrapper: freelist + rat + prf_status + frat + fprf_status + rob"
+    },
+    {
+      "name": "fursoy_s1_lsu",
+      "role": "Structural wrapper: agu + trt + dtlb + lsu_queues + l1d"
+    },
+    {
+      "name": "fursoy_s1_backend",
+      "role": "Structural wrapper: int_iq + mem_iq + fp_iq + alu + branch_unit + multiplier + divider + port1_buffers + fma + fdiv + fconv + lsu"
+    },
+    {
+      "name": "fursoy_s1_frontend",
+      "role": "Structural wrapper: bpu + itlb + l1i + fetch_queue + decode"
+    },
+    {
+      "name": "fursoy_s1_core",
+      "role": "Top-level core wrapper: frontend + substrate + prf + fprf + vrf + vrat + vec_iq + vec_div + backend + ptw + csr + hpm + serialization + inline vector ALU"
+    }
+  ],
+  "peak_rss_kib": 5045240,
+  "status": "complete_with_findings"
+}
